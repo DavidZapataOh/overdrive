@@ -14,8 +14,9 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Claude Code
         run: |
           curl -fsSL https://claude.ai/install.sh | bash
@@ -26,6 +27,7 @@ jobs:
   shell:
     name: shell (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -34,15 +36,54 @@ jobs:
       run:
         shell: ${{ matrix.shell }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show bash version
         run: ${{ matrix.bash }} -c 'echo "$BASH_VERSION"'
       - name: Shellcheck
         if: runner.os == 'Linux'
-        run: |
-          files=$(git ls-files '*.sh' 'plugins/overdrive/bin/*' 'plugins/overdrive/libexec/*' 'plugins/overdrive/hooks/*' | grep -vE '\.(json|md|conf)$' | sort -u)
-          if [ -n "$files" ]; then
-            shellcheck -x $files
-          fi
+        run: >
+          git ls-files -z '*.sh' 'plugins/overdrive/bin/*' 'plugins/overdrive/libexec/*' 'plugins/overdrive/hooks/*'
+          ':!*.json' ':!*.md' ':!*.conf' | xargs -0 -r shellcheck -x
       - name: Tests
         run: ${{ matrix.bash }} tests/run.sh
+
+  skills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash tools/check-skills.sh plugins/overdrive
+
+  budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash tools/check-budget.sh plugins/overdrive
+
+  terms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      OVERDRIVE_FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Pull request
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash tools/check-forbidden-terms.sh --range "$BASE_SHA..$HEAD_SHA"
+      - name: Push
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          base=$BEFORE_SHA
+          if [ -z "${base//0/}" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git merge-base origin/main "$AFTER_SHA" 2>/dev/null || git rev-list --max-parents=0 "$AFTER_SHA" | tail -n 1)
+          fi
+          bash tools/check-forbidden-terms.sh --range "$base..$AFTER_SHA"
