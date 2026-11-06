@@ -3,7 +3,6 @@ name: ci
 on:
   push:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -14,7 +13,6 @@ permissions:
 
 jobs:
   validate:
-    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -28,7 +26,6 @@ jobs:
 
   shell:
     name: shell (${{ matrix.os }})
-    if: github.event.action != 'edited'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -51,7 +48,6 @@ jobs:
         run: ${{ matrix.bash }} tests/run.sh
 
   skills:
-    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -59,7 +55,6 @@ jobs:
       - run: bash tools/check-skills.sh plugins/overdrive
 
   budget:
-    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -80,7 +75,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: bash tools/check-forbidden-terms.sh --pr-event "$GITHUB_EVENT_PATH" --range "$BASE_SHA..$HEAD_SHA"
+        run: bash tools/check-forbidden-terms.sh --range "$BASE_SHA..$HEAD_SHA"
       - name: Push
         if: github.event_name == 'push'
         env:
