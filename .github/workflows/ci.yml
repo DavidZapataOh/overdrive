@@ -3,6 +3,7 @@ name: ci
 on:
   push:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -13,6 +14,7 @@ permissions:
 
 jobs:
   validate:
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -26,6 +28,7 @@ jobs:
 
   shell:
     name: shell (${{ matrix.os }})
+    if: github.event.action != 'edited'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -43,11 +46,12 @@ jobs:
         if: runner.os == 'Linux'
         run: >
           git ls-files -z '*.sh' 'plugins/overdrive/bin/*' 'plugins/overdrive/libexec/*' 'plugins/overdrive/hooks/*'
-          ':!*.json' ':!*.md' ':!*.conf' | xargs -0 shellcheck -x
+          ':!*.json' ':!*.md' ':!*.conf' | xargs -0 -r shellcheck -x
       - name: Tests
         run: ${{ matrix.bash }} tests/run.sh
 
   skills:
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -55,6 +59,7 @@ jobs:
       - run: bash tools/check-skills.sh plugins/overdrive
 
   budget:
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

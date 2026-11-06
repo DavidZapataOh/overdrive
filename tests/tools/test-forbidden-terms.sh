@@ -175,3 +175,28 @@ test_terms_unknown_option_exits_2() {
   repo=$(make_repo)
   assert_exit 2 run_tool "$repo" "$TERM_ENV" -- --bogus
 }
+
+test_terms_git_grep_error_exits_2() {
+  repo=$(make_repo)
+  commit_file "$repo" a.txt clean
+  printf 'garbage' > "$repo/.git/index"
+  assert_exit 2 run_tool "$repo" "$TERM_ENV" --
+}
+
+test_terms_options_without_value_exit_2() {
+  repo=$(make_repo)
+  assert_exit 2 run_tool "$repo" "$TERM_ENV" -- --range
+  assert_exit 2 run_tool "$repo" "$TERM_ENV" -- --range ""
+  assert_exit 2 run_tool "$repo" "$TERM_ENV" -- --pr-event ""
+  assert_exit 2 run_tool "$repo" "$TERM_ENV" -- --message-file
+  assert_exit 2 run_tool "$repo" "$TERM_ENV" -- --pr-event "$repo/../missing.json"
+  assert_exit 2 run_tool "$repo" "$TERM_ENV" -- --message-file "$repo/../missing"
+}
+
+test_terms_are_trimmed() {
+  repo=$(make_repo)
+  commit_file "$repo" a.txt "has zebra-term"
+  printf '  zebra-term  \r\n' > "$repo/../terms"
+  assert_exit 1 run_tool "$repo" "OVERDRIVE_FORBIDDEN_TERMS_FILE=$repo/../terms" --
+  assert_exit 1 run_tool "$repo" "OVERDRIVE_FORBIDDEN_TERMS=$(printf 'zebra-term \r\n')" --
+}

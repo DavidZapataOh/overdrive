@@ -30,7 +30,7 @@ check_references() {
   done
   while IFS= read -r link; do
     [ -e "$dir/$link" ] || fail "skills/$skill/SKILL.md" "links to missing $link"
-  done < <(grep -oE 'references/[A-Za-z0-9._/-]+' "$file" | sed -E 's/[.,;:)]+$//' | sort -u)
+  done < <(grep -oE '(^|[^A-Za-z0-9._/-])references/[A-Za-z0-9._/-]+' "$file" | sed -E 's/^[^r]?references\//references\//; s/[.,;:)]+$//' | sort -u)
 }
 
 check_skill() {

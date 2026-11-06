@@ -15,9 +15,18 @@ pr_event=""
 while [ "$#" -gt 0 ]; do
   case $1 in
     --staged) staged=1 ;;
-    --range) range=${2:-}; shift ;;
-    --message-file) message_file=${2:-}; shift ;;
-    --pr-event) pr_event=${2:-}; shift ;;
+    --range | --message-file | --pr-event)
+      if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+        echo "check-forbidden-terms: $1 needs a value" >&2
+        exit 2
+      fi
+      case $1 in
+        --range) range=$2 ;;
+        --message-file) message_file=$2 ;;
+        --pr-event) pr_event=$2 ;;
+      esac
+      shift
+      ;;
     *)
       echo "check-forbidden-terms: unknown option: $1" >&2
       exit 2
@@ -34,7 +43,7 @@ patterns="$work/patterns"
   [ -n "${OVERDRIVE_FORBIDDEN_TERMS:-}" ] && printf '%s\n' "$OVERDRIVE_FORBIDDEN_TERMS"
   [ -n "${OVERDRIVE_FORBIDDEN_TERMS_FILE:-}" ] && [ -f "$OVERDRIVE_FORBIDDEN_TERMS_FILE" ] &&
     cat "$OVERDRIVE_FORBIDDEN_TERMS_FILE"
-} 2>/dev/null | tr -d '\r' | grep -v '^[[:space:]]*$' > "$patterns"
+} 2>/dev/null | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' > "$patterns"
 
 if [ ! -s "$patterns" ]; then
   if [ "${CI:-}" = "true" ]; then
@@ -62,17 +71,30 @@ has_term() { grep -qiF -f "$patterns"; }
 
 if [ "$staged" -eq 1 ]; then
   grep_args="--cached"
-  paths=$(git diff --cached --name-only --diff-filter=AMR -z | tr '\0' '\n')
+  list=(git diff --cached --name-only --diff-filter=AMR -z)
 else
   grep_args=""
-  paths=$(git ls-files -z | tr '\0' '\n')
+  list=(git ls-files -z)
 fi
 
-# -I skips binary files; -z keeps unusual file names intact.
+# A failing git must never read as "no hits".
+"${list[@]}" > "$work/paths" 2>/dev/null || {
+  echo "check-forbidden-terms: ${list[0]} ${list[1]} failed" >&2
+  exit 2
+}
+paths=$(tr '\0' '\n' < "$work/paths")
+
+# -I skips binary files; -z keeps unusual file names intact. Exit 1 only means no match.
 # shellcheck disable=SC2086
+git grep -I -i -F -l -z -f "$patterns" $grep_args -- > "$work/content" 2>/dev/null
+rc=$?
+if [ "$rc" -gt 1 ]; then
+  echo "check-forbidden-terms: git grep failed (exit $rc)" >&2
+  exit 2
+fi
 while IFS= read -r -d '' file; do
   report "content: $file"
-done < <(git grep -I -i -F -l -z -f "$patterns" $grep_args -- 2>/dev/null)
+done < "$work/content"
 
 while IFS= read -r path; do
   [ -n "$path" ] || continue
@@ -96,6 +118,10 @@ if [ -n "$range" ]; then
 fi
 
 if [ -n "$message_file" ]; then
+  [ -r "$message_file" ] || {
+    echo "check-forbidden-terms: cannot read $message_file" >&2
+    exit 2
+  }
   has_term < "$message_file" && report "commit message file"
 fi
 

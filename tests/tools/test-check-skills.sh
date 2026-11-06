@@ -151,3 +151,18 @@ test_reports_every_failure() {
   assert_line "$out" "skills/alpha/SKILL.md: description contains < or >"
   assert_line "$out" "skills/beta/SKILL.md: description must be third person (starts with \"You \")"
 }
+
+test_cross_skill_reference_link_is_not_resolved_locally() {
+  mk_skill p alpha "Use when planning."
+  # shellcheck disable=SC2016
+  printf 'Read ${CLAUDE_PLUGIN_ROOT}/skills/other/references/y.md first.\nAlso skills/other/references/z.md\n' >> p/skills/alpha/SKILL.md
+  tool p
+}
+
+test_relative_link_after_punctuation_is_checked() {
+  mk_skill p alpha "Use when planning."
+  # shellcheck disable=SC2016
+  printf '(see `references/gone.md`)\n' >> p/skills/alpha/SKILL.md
+  out=$(tool p 2>&1) && return 1
+  assert_line "$out" "skills/alpha/SKILL.md: links to missing references/gone.md"
+}
