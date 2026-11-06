@@ -1,0 +1,17 @@
+{
+  "name": "overdrive",
+  "owner": {
+    "name": "David Zapata",
+    "url": "https://github.com/DavidZapataOh"
+  },
+  "metadata": {
+    "description": "Risk-scaled agentic skill framework for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "overdrive",
+      "source": "./plugins/overdrive",
+      "description": "Process that scales with risk: direct, standard and critical lanes chosen by a deterministic classifier."
+    }
+  ]
+}

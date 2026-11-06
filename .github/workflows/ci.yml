@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: claude plugin validate --strict .
+      - run: claude plugin validate --strict plugins/overdrive
+
+  shell:
+    name: shell (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON((github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && '[{"os":"ubuntu-latest","shell":"bash","bash":"bash"},{"os":"macos-latest","shell":"/bin/bash {0}","bash":"/bin/bash"},{"os":"windows-latest","shell":"bash","bash":"bash"}]' || '[{"os":"ubuntu-latest","shell":"bash","bash":"bash"}]') }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show bash version
+        run: ${{ matrix.bash }} -c 'echo "$BASH_VERSION"'
+      - name: Shellcheck
+        if: runner.os == 'Linux'
+        run: |
+          files=$(git ls-files '*.sh' 'plugins/overdrive/bin/*' 'plugins/overdrive/libexec/*' 'plugins/overdrive/hooks/*' | grep -vE '\.(json|md|conf)$' | sort -u)
+          if [ -n "$files" ]; then
+            shellcheck -x $files
+          fi
+      - name: Tests
+        run: ${{ matrix.bash }} tests/run.sh
