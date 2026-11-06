@@ -3,7 +3,7 @@
 
 tool() { bash "$(dirname "$(dirname "$RUNNER")")/tools/check-budget.sh" "$@"; }
 
-rep() { awk -v n="$2" -v c="$1" 'BEGIN { for (i = 0; i < n; i++) printf "%s", c }'; }
+rep() { C=$1 awk -v n="$2" 'BEGIN { for (i = 0; i < n; i++) printf "%s", ENVIRON["C"] }'; }
 
 # session_start PLUGIN TEXT: a hook that emits TEXT as SessionStart context.
 session_start() {

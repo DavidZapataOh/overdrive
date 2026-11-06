@@ -3,7 +3,7 @@
 
 tool() { bash "$(dirname "$(dirname "$RUNNER")")/tools/check-skills.sh" "$@"; }
 
-rep() { awk -v n="$2" -v c="$1" 'BEGIN { for (i = 0; i < n; i++) printf "%s", c }'; }
+rep() { C=$1 awk -v n="$2" 'BEGIN { for (i = 0; i < n; i++) printf "%s", ENVIRON["C"] }'; }
 
 # mk_skill DIR NAME DESCRIPTION [EXTRA_FRONTMATTER]
 mk_skill() {
