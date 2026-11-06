@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 # Tests for the harness itself.
 
 test_assert_line_requires_full_line_match() {
@@ -48,27 +49,43 @@ test_commit_file_and_stage_all() {
   assert_line "$(git -C "$repo" diff --cached --name-only)" "b.txt"
 }
 
-test_runner_isolates_cwd_a() {
-  cd /
-  LEAKED_VAR=1
-  export LEAKED_VAR
+# Runs the runner on a fixture file; sets RUN_OUT and RUN_RC.
+run_fixture() {
+  local root
+  root=$(mktemp -d "${TMPDIR:-/tmp}/od.XXXXXX")
+  mkdir "$root/area"
+  printf '%s\n' "$1" > "$root/area/test-x.sh"
+  RUN_RC=0
+  RUN_OUT=$(TESTS_DIR="$root" "$BASH" "$RUNNER" 2>&1) || RUN_RC=$?
+  rm -rf "$root"
 }
 
-test_runner_isolates_cwd_b() {
-  assert_eq "" "${LEAKED_VAR:-}"
-  if [ "$(pwd)" = "/" ]; then return 1; fi
+test_runner_isolates_cwd_and_state() {
+  run_fixture 'test_a_leaks() { cd /; LEAKED_VAR=1; export LEAKED_VAR; }
+test_b_clean() { [ -z "${LEAKED_VAR:-}" ] && [ "$(pwd)" != "/" ]; }'
+  assert_eq 0 "$RUN_RC"
+  assert_line "$RUN_OUT" 'ok 1 test_a_leaks'
+  assert_line "$RUN_OUT" 'ok 2 test_b_clean'
 }
 
 test_runner_reports_failure_and_exits_one() {
-  local root out rc
-  root=$(mktemp -d "${TMPDIR:-/tmp}/od.XXXXXX")
-  mkdir "$root/area"
-  printf 'test_boom() { return 1; }\ntest_fine() { :; }\n' > "$root/area/test-x.sh"
-  rc=0
-  out=$(TESTS_DIR="$root" "$BASH" "$RUNNER" 2>&1) || rc=$?
-  rm -rf "$root"
-  assert_eq 1 "$rc"
-  printf '%s\n' "$out" > out.txt
-  assert_file_contains out.txt '^not ok 1 test_boom'
-  assert_file_contains out.txt '^ok 2 test_fine'
+  run_fixture 'test_boom() { return 1; }
+test_fine() { :; }'
+  assert_eq 1 "$RUN_RC"
+  assert_line "$RUN_OUT" 'not ok 1 test_boom'
+  assert_line "$RUN_OUT" 'ok 2 test_fine'
+}
+
+test_runner_fails_on_first_failing_assertion() {
+  run_fixture 'test_bad() { assert_eq 1 2; echo after; }'
+  assert_eq 1 "$RUN_RC"
+  assert_line "$RUN_OUT" 'not ok 1 test_bad'
+  assert_no_line "$RUN_OUT" '^ok '
+}
+
+test_runner_fails_on_failure_inside_helper() {
+  run_fixture 'helper() { assert_eq a b; echo still; }
+test_bad() { helper; echo after; }'
+  assert_eq 1 "$RUN_RC"
+  assert_line "$RUN_OUT" 'not ok 1 test_bad'
 }

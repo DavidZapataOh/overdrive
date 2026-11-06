@@ -29,14 +29,18 @@ while IFS= read -r file; do
     n=$((n + 1))
     sandbox="$work/t$n"
     mkdir "$sandbox"
-    if (
+    # Not in an if condition: bash disables set -e inside a subshell used as one,
+    # and so does the left side of ||.
+    (
       set -e
       cd "$sandbox"
       . "$here/lib/assert.sh"
       . "$here/lib/gitrepo.sh"
       . "$file"
       "$name"
-    ) >"$work/out$n" 2>&1; then
+    ) >"$work/out$n" 2>&1
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
       printf 'ok %d %s\n' "$n" "$name"
     else
       failed=$((failed + 1))
