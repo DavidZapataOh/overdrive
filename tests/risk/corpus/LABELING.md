@@ -41,7 +41,7 @@ Path tokens match whole segments split on `/ . _ -` (case-insensitive). No items
 
 Content case rules: the SQL and concurrency phrases (`DROP TABLE`, `DROP COLUMN`, `ALTER TABLE`, `TRUNCATE`, `DELETE FROM`, `FOR UPDATE`, `SKIP LOCKED`, `SERIALIZABLE`, `isolation level`, `ROW LEVEL SECURITY`, `CREATE POLICY`) match case-insensitively, because SQL keywords are case-insensitive. Identifiers (`bcrypt`, `argon2`, `verifyToken`, `getServerSession`, `tenant_id`, `tenantId`, `advisory_lock`, `pg_advisory`, `Mutex`, `Semaphore`, `Atomics.`) match case-sensitively, as written. Secret patterns are regular expressions and match exactly as written.
 
-Clarification: a change that only edits documentation is `direct` even when a documentation path contains a token (`docs/payments.md`); path tokens are not evaluated on documentation files (`*.md`, `*.mdx`, `*.rst`, `*.adoc`). Path globs and content signals still apply to them.
+Clarification: a change that only edits documentation is `direct` even when a documentation path contains a token (`docs/payments.md`); path tokens are not evaluated on documentation files: names ending in `.md`, `.mdx`, `.rst`, `.txt` or `.adoc` (any case), and every file under the top-level `docs/` directory. Path globs and content signals still apply to them.
 
 ## How to label
 

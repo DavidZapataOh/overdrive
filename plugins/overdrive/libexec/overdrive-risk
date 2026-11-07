@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+# overdrive risk: put a change in the direct, standard or critical lane from facts.
+# Any failure to classify prints the critical lane and exits 3: a change is never
+# placed below critical because something could not be read.
+
+set -u -o pipefail
+export LC_ALL=C
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive risk [--repo DIR] [--map FILE] MODE... [--intent TEXT]
+
+Modes (combine freely; at least one, or --intent):
+  --diff A..B | --diff A...B   committed changes in a range (works in a bare repository)
+  --staged                     the index against HEAD
+  --worktree                   tracked changes against HEAD plus untracked files
+  --paths P...                 paths named before any change exists, relative to the
+                               repository root; takes every argument up to the next --option
+
+  --repo DIR    repository to classify (default: the one containing the current directory)
+  --map FILE    project risk map (default: .overdrive/risk-map.conf of the repository)
+  --intent TEXT the request, before any work starts
+
+Output: lane, item, note and next lines, then "Risk: <lane> — <items | none>".
+Exit: 0 classified, 3 classification failed (reported as critical), 64 usage error.
+USAGE
+}
+
+usage_error() {
+  printf 'overdrive risk: %s\n' "$1" >&2
+  usage >&2
+  exit 64
+}
+
+next_critical='Full TDD plan approved by the user; per-task critical review and final review.'
+
+# fail_closed REASON: the classification failed, so the change is critical.
+fail_closed() {
+  printf 'overdrive risk: classification failed: %s\n' "$1" >&2
+  printf 'lane critical\nitem classification-failed critical failure %s\nnext %s\nRisk: critical — classification-failed\n' \
+    "$1" "$next_critical"
+  exit 3
+}
+
+repo=''
+map=''
+intent=''
+have_mode=''
+staged=''
+worktree=''
+ranges=()
+paths=()
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --repo | --map | --intent | --diff)
+      [ "$#" -ge 2 ] || usage_error "$1 needs a value"
+      case $1 in
+        --repo) repo=$2 ;;
+        --map) map=$2 ;;
+        --intent) intent=$2 ;;
+        --diff)
+          case $2 in
+            -*) usage_error "invalid range: $2" ;;
+            *..*) ranges+=("$2"); have_mode=1 ;;
+            *) usage_error "--diff takes A..B or A...B, got: $2" ;;
+          esac
+          ;;
+      esac
+      shift 2
+      ;;
+    --staged) staged=1 have_mode=1; shift ;;
+    --worktree) worktree=1 have_mode=1; shift ;;
+    --paths)
+      shift
+      n=${#paths[@]}
+      while [ "$#" -gt 0 ]; do
+        case $1 in --*) break ;; esac
+        paths+=("$1")
+        shift
+      done
+      [ "${#paths[@]}" -gt "$n" ] || usage_error "--paths needs at least one path"
+      have_mode=1
+      ;;
+    -h | --help) usage; exit 0 ;;
+    *) usage_error "unknown argument: $1" ;;
+  esac
+done
+[ -n "$have_mode" ] || [ -n "$intent" ] || usage_error "give a mode or --intent"
+
+lib=${OVERDRIVE_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib
+# shellcheck source=../lib/common.sh
+. "$lib/common.sh" || fail_closed "cannot load the library"
+# shellcheck source=../lib/glob.sh
+. "$lib/glob.sh" || fail_closed "cannot load the library"
+# shellcheck source=../lib/riskmap.sh
+. "$lib/riskmap.sh" || fail_closed "cannot load the library"
+# shellcheck source=../lib/signals.sh
+. "$lib/signals.sh" || fail_closed "cannot load the library"
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive-risk.XXXXXX") || fail_closed "cannot create a work directory"
+trap 'rm -rf "$work"' EXIT
+
+# git_error: the first line git wrote on stderr, for the failure reason.
+git_error() {
+  local line=''
+  [ -s "$work/git.err" ] && IFS= read -r line < "$work/git.err"
+  printf '%s' "${line:-git failed}"
+}
+
+# The repository is found from --repo or the current directory, never from the session's
+# project directory: sessions often start in a folder above the repository.
+top=''
+if [ -n "$repo" ]; then
+  inside=$(git -C "$repo" rev-parse --is-inside-work-tree 2>/dev/null) || fail_closed "not a git repository"
+  if [ "$inside" = true ]; then
+    # The top level is spelled from DIR, not resolved, so that absolute --paths written
+    # the way the caller sees the repository (through symlinks, too) fall inside it.
+    cdup=$(git -C "$repo" rev-parse --show-cdup 2>/dev/null) || fail_closed "not a git repository"
+    _od_posix_path "$repo"
+    case $_OD_PATH in /*) top=$_OD_PATH/$cdup ;; *) top=$PWD/$_OD_PATH/$cdup ;; esac
+    _od_normalize_path "$top"
+    top=$_OD_PATH
+    gitdir=$top
+  else
+    gitdir=$repo
+  fi
+else
+  top=$(od_repo_root "$PWD") || fail_closed "not a git repository"
+  gitdir=$top
+fi
+if [ -z "$top" ] && { [ -n "$staged" ] || [ -n "$worktree" ]; }; then
+  fail_closed "no working tree for --staged or --worktree"
+fi
+
+notes=''
+if [ -z "$map" ]; then
+  if [ -n "$top" ]; then
+    [ ! -e "$top/.overdrive/risk-map.conf" ] || map=$top/.overdrive/risk-map.conf
+  elif [ "${#ranges[@]}" -gt 0 ]; then
+    # A bare repository has no working tree: the map is the one in the range's end commit.
+    last=${ranges[${#ranges[@]} - 1]}
+    rev=${last##*..}
+    rev=${rev:-HEAD}
+    listed=$(git -C "$gitdir" ls-tree --name-only "$rev" -- .overdrive/risk-map.conf 2>"$work/git.err") ||
+      fail_closed "cannot read $rev: $(git_error)"
+    if [ -n "$listed" ]; then
+      git -C "$gitdir" cat-file blob "$rev:.overdrive/risk-map.conf" > "$work/map.conf" 2>"$work/git.err" ||
+        fail_closed "cannot read the risk map at $rev: $(git_error)"
+      map=$work/map.conf
+    fi
+  fi
+  [ -n "$map" ] || notes='risk-map missing'
+fi
+
+rc=0
+signals_rules "$lib/floors.conf" ${map:+"$map"} > "$work/rules" || rc=$?
+case $rc in
+  0) ;;
+  65) fail_closed "invalid risk map" ;;
+  *) fail_closed "cannot read risk map" ;;
+esac
+
+: > "$work/records"
+for range in ${ranges[@]+"${ranges[@]}"}; do
+  signals_changes "$gitdir" "$work" diff "$range" >> "$work/records" ||
+    fail_closed "cannot read the changes in $range: $(git_error)"
+done
+if [ -n "$staged" ]; then
+  signals_changes "$gitdir" "$work" staged >> "$work/records" ||
+    fail_closed "cannot read the staged changes: $(git_error)"
+fi
+if [ -n "$worktree" ]; then
+  signals_changes "$gitdir" "$work" worktree >> "$work/records" ||
+    fail_closed "cannot read the working tree changes: $(git_error)"
+fi
+if [ "${#paths[@]}" -gt 0 ]; then
+  named=()
+  physical=''
+  for p in "${paths[@]}"; do
+    _od_posix_path "$p"
+    p=$_OD_PATH
+    case $p in
+      /*)
+        if [ -n "$top" ] && [ "${p#"$top"/}" != "$p" ]; then
+          p=${p#"$top"/}
+        elif [ -n "$top" ]; then
+          [ -n "$physical" ] || physical=$(cd "$top" && pwd -P) || physical=$top
+          [ "${p#"$physical"/}" = "$p" ] || p=${p#"$physical"/}
+        fi
+        ;;
+    esac
+    _od_normalize_path "$p"
+    named+=("$_OD_PATH")
+  done
+  signals_changes "$gitdir" "$work" paths "${named[@]}" >> "$work/records" ||
+    fail_closed "cannot record the named paths"
+fi
+
+signals_path_items "$work/records" "$work/rules" > "$work/items" || fail_closed "path signals failed"
+
+# Item lines are ordered critical first, then standard, by item, keeping evidence in the
+# order the changes were read; the Risk line lists each item once in the same order.
+tab=$(printf '\t')
+LC_ALL=C awk -F '\t' '
+  { rank = ($2 == "critical") ? 0 : 1
+    if (!($1 in best) || rank < best[$1]) best[$1] = rank
+    line[NR] = $0; it[NR] = $1 }
+  END { for (i = 1; i <= NR; i++) printf "%d\t%s\t%d\t%s\n", best[it[i]], it[i], i, line[i] }
+' "$work/items" | sort -t "$tab" -k1,1n -k2,2 -k3,3n > "$work/sorted" || fail_closed "cannot sort items"
+
+NOTES=$notes NEXT_CRITICAL=$next_critical LC_ALL=C awk -F '\t' '
+  BEGIN {
+    next_text["direct"] = "Work inline; test first if testable; verify with evidence."
+    next_text["standard"] = "Short decision plan; TDD where testable; one review at the end of the slice."
+    next_text["critical"] = ENVIRON["NEXT_CRITICAL"]
+  }
+  {
+    if (NR == 1) lane = ($1 == 0) ? "critical" : "standard"
+    out[NR] = sprintf("item %s %s %s %s", $4, $5, $6, $7)
+    if (!($2 in listed)) { listed[$2] = 1; risk = risk (risk == "" ? "" : ", ") $2 }
+  }
+  END {
+    if (NR == 0) { lane = "direct"; risk = "none" }
+    print "lane " lane
+    for (i = 1; i <= NR; i++) print out[i]
+    if (ENVIRON["NOTES"] != "") print "note " ENVIRON["NOTES"]
+    print "next " next_text[lane]
+    print "Risk: " lane " — " risk
+  }
+' "$work/sorted" > "$work/out" || fail_closed "cannot print the classification"
+# Printed only once complete, so a failure never leaves a partial classification behind.
+cat "$work/out"
