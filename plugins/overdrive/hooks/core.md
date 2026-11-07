@@ -1,25 +1,23 @@
-# Overdrive: process scales with risk
+# Overdrive
 
-Questions and explanations are read-only: answer, then stop. Change nothing.
+R = `{{PLUGIN_ROOT}}`; `overdrive` below is `R/bin/overdrive`. A reply that says work is done or ready, gives a go-ahead or status line, relays a report, or answers yes/no about a vendor, price or law first loads overdrive:evidence-based-verification, in every lane.
 
-Before the first edit of any repo change, classify it inside the repo (or add `--repo <dir>`):
-`overdrive risk --intent '<request>' --paths <files you expect to touch>`
-Lane = max(script, your judgment): raise it for risk the script misses, never lower it. If classification fails, the lane is critical.
+Questions and explanations are read-only.
 
-| Lane | When | Plan | Tests | Review |
-|---|---|---|---|---|
-| direct | clear in one read, no risk items | none | test first if testable | none |
-| standard | neither | short decision plan | TDD where it applies | one per slice |
-| critical | a floor or the project risk map | full TDD plan; ask approval, keep building independent work | TDD, hard cases, real deps | per task + final (opus) |
+Before a repo change's first edit, classify it (in the repo, or add `--repo <dir>`):
+`overdrive risk --intent '<request>' --paths <files to touch>`
+Lane = max(script, your judgment); failed classification = critical. Load overdrive:risk-triage before acting when the lane is above direct, the output names it, you raise it, or the user asks to change a lane. The user may raise any lane; a lane drops only on their explicit yes to the risk you state, recorded as a decision; the Risk line ends `(lowered by user, D-NNNN)`.
 
-Direct lane: no skills; classification is the only process step; verify inline with the change's own evidence.
+- direct: clear in one batch of ≤ 3 reads, no risk items. No plan or skill; test first if testable; verify inline.
+- standard: neither. Short decision plan; TDD where testable; one review per slice.
+- critical: a floor or a risk-map rule. Full TDD plan approved before building (other work goes on); hard cases, real deps; review per task + final.
 
-Floors (always critical): irreversible data or migrations, auth and tenant isolation, money, secrets, security and CI/delivery, public contracts, concurrency, changes no test would catch.
+Floors (critical): irreversible data/migrations, auth, tenant isolation, money, secrets, security, CI/delivery, public contracts, concurrency, untested changes.
 
-Close every change with the Risk line `overdrive risk` prints: `--worktree` if uncommitted, `--diff <base>...HEAD` if committed: `Risk: <lane> — <items | none>`. Never merge below the lane of the real diff.
+End every change with the printed Risk line: `Risk: <lane> — <items | none>`. Before review or merge, reclassify the diff (`--worktree`; `--diff <base>...HEAD` once committed); never merge below it. Uncommitted direct work needs no second call: Stop reclassifies it and blocks a lower line.
 
-Stop and ask only for: irreversible actions, destructive actions, the user's accounts, money or secrets, a product decision only the user can make. Asking for critical plan approval stops nothing else. Otherwise decide, write `Ruling: <what> — <why> — <cost if wrong>`, continue.
+Stop and ask only for: irreversible actions, destructive actions, the user's accounts, money or secrets, a product decision only the user can make. Otherwise decide, write `Ruling: <what> — <why> — <cost if wrong>`, continue.
 
-Skills (overdrive:<name>): lane doubt → risk-triage; new non-trivial work → intent-discovery; plan → decision-planning; testable change → test-driven-development; build → risk-scaled-execution; independent tasks → parallel-execution; review → risk-scaled-review; bug or failure → root-cause-debugging; decisions → decision-log; after a correction → compound-learning; before saying done → evidence-based-verification. User-only, read {{PLUGIN_ROOT}}/skills/<name>/SKILL.md when needed: research → deep-research; PR, merge, deploy → release-gates; writing a skill → skill-evaluation.
+Skills (overdrive:<name>): new work → intent-discovery; plan → decision-planning; tests → test-driven-development; build → risk-scaled-execution; parallel → parallel-execution; review → risk-scaled-review; bug → root-cause-debugging; decisions, copy → decision-log; corrections → compound-learning. User-only (read R/skills/<name>/SKILL.md): research → deep-research; PR, merge, deploy → release-gates; new skills → skill-evaluation.
 
 If you were dispatched with a brief, follow the brief instead of this routing.

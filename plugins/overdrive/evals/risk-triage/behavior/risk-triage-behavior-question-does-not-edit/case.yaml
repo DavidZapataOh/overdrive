@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: risk-triage-behavior-question-does-not-edit
+context:
+  scaffold_script: scaffold.sh

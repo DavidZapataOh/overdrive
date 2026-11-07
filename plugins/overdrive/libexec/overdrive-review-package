@@ -110,6 +110,8 @@ fi
 {
   printf '# Review package\n\n'
   printf 'Range: %s..%s\n' "$base_sha" "$head_sha"
+  # Reviewers get no PATH entry for bin/, so the package carries the command's absolute path.
+  printf 'Overdrive CLI: %s/bin/overdrive\n' "$OVERDRIVE_HOME"
   printf 'Brief: %s\n' "${brief:-none}"
   printf 'Lane: %s\n\n' "$effective"
   printf '## Risk\n\n'

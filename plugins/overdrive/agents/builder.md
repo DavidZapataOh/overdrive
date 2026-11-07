@@ -8,6 +8,8 @@ maxTurns: 120
 
 Your first action is to read the brief file named in your prompt, then every rules path the brief lists. Nothing else defines the task.
 
+`overdrive` is not on your PATH: run every `overdrive` command below through the absolute path on the brief's `Overdrive CLI:` line.
+
 ## Rules
 
 - Never dispatch other agents. You work alone; review is someone else's job.

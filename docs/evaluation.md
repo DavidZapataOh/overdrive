@@ -145,7 +145,9 @@ A `tool_used: Skill` grader is excluded from the score (`scored: false`) in a tw
 
 **Plugin hooks run in the with-arm; `bin/` is not on the Bash tool's `PATH`.** A `SessionStart` hook ran with the plugin loaded (`hook_started` and `hook_response` records in the trace), its `additionalContext` reached the model, and the same prompt in the baseline arm did not see it. The hook ran in the workspace with `CLAUDE_PLUGIN_ROOT` set, but `overdrive` was not on its `PATH`. With `Bash` granted, `command -v overdrive` found nothing and `CLAUDE_PLUGIN_ROOT` was not set in the tool's shell. Consequence: skills call the CLI by absolute path (`${CLAUDE_PLUGIN_ROOT}/bin/overdrive`, substituted in skill content) and the session-start router text uses the substituted root, never the bare command name.
 
-The plugin in this repository has no hooks yet; the hook probe used a temporary one in the throwaway copy.
+The hook probe used a temporary hook in the throwaway copy; the plugin's own hooks (`SessionStart`, `PreToolUse`, `Stop`) run in every with-arm run.
+
+**Shell commands in a Bash-granted run cannot write to the workspace or to `TMPDIR`.** A probe on 2026-11-07 (Linux, WSL2) found the run's working directory, its home and the `TMPDIR` it sets read-only to Bash, while `/tmp` was writable; the Edit and Write tools still write the workspace. `overdrive risk` therefore falls back from `TMPDIR` to `/tmp` (and then to the repository's run directory) before it gives up and reports critical.
 
 ## Risk classifier
 

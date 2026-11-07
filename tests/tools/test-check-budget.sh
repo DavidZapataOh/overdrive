@@ -112,3 +112,20 @@ test_budget_measures_shipped_session_start() {
     return 1
   }
 }
+
+# The plugin root in the injected text is measured as a marketplace install spells it,
+# not as this checkout's path.
+test_budget_measures_the_install_path() {
+  local install
+  mkdir -p p/hooks
+  cat > p/hooks/session-start <<'HOOK'
+#!/usr/bin/env bash
+printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$CLAUDE_PLUGIN_ROOT"
+HOOK
+  chmod +x p/hooks/session-start
+  install=/home/ana/.claude/plugins/cache/overdrive/overdrive/0.1.0
+  out=$(HOME=/home/ana tool p)
+  # 57 characters -> 17 tokens, whatever this checkout's path is.
+  assert_eq 57 "${#install}"
+  assert_line "$out" "injection_tokens=17 descriptions_tokens=0"
+}
