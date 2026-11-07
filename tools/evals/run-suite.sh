@@ -21,7 +21,8 @@ usage() {
 [ "$#" -ge 1 ] || usage
 skill=$1
 shift
-tier='' model=main cost='' jobs='' root=$(cd "$here/../.." && pwd) allow=''
+tier='' model=main cost='' jobs='' root=$(cd "$here/../.." && pwd)
+allow=()
 while [ "$#" -gt 0 ]; do
   case $1 in
     --tier) tier=${2-}; shift 2 || usage ;;
@@ -32,16 +33,17 @@ while [ "$#" -gt 0 ]; do
     --allow-tools)
       shift
       while [ "$#" -gt 0 ] && [ "${1#--}" = "$1" ]; do
-        allow="$allow${allow:+ }$1"
+        allow+=("$1")
         shift
       done
-      [ -n "$allow" ] || usage
+      [ "${#allow[@]}" -gt 0 ] || usage
       ;;
     *) usage ;;
   esac
 done
 case $tier in smoke | full | pressure) ;; *) usage ;; esac
 case $jobs in '' | [1-8]) ;; *) usage ;; esac
+[ "$tier" != pressure ] || [ -z "$jobs" ] || usage
 model_id=$(od_model_id "$model") || usage
 
 plugin=plugins/overdrive
@@ -53,6 +55,7 @@ if [ "$tier" = pressure ]; then
   for dir in "$root/$plugin/evals/$skill/pressure"/*/; do
     [ -d "$dir" ] || continue
     scenario=$(basename "$dir")
+    scenario=${scenario#"$skill"-}
     args=(--arm with --model "$model" --root "$root")
     [ -z "$cost" ] || args+=(--max-cost-usd "$cost")
     bash "$here/pressure.sh" "$skill" "$scenario" "${args[@]}" || status=$?
@@ -80,8 +83,16 @@ case $tier in
 esac
 # Parallel runs share one rate limit; the CLI accepts 1 to 8.
 [ -z "$jobs" ] || args+=(--concurrency "$jobs")
-# shellcheck disable=SC2206 # tool grants are single words or Tool(pattern) without spaces
-[ -z "$allow" ] || args+=(--allow-tools $allow)
+# Without grants on the command line, the skill's own file grants what its cases need (one per line).
+grants=$root/$plugin/evals/$skill/allow-tools
+if [ "${#allow[@]}" -eq 0 ] && [ -f "$grants" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    case $line in '' | '#'*) continue ;; esac
+    allow+=("$line")
+  done < "$grants"
+fi
+[ "${#allow[@]}" -eq 0 ] || args+=(--allow-tools "${allow[@]}")
 
 # The summary is the only thing on stdout: CI appends it to the job summary.
 claude "${args[@]}" >&2

@@ -27,7 +27,7 @@ Claude Code plugin with release and git helpers for the Acme web team. Skills li
 acme_commit_baseline() {
   fx_file tests/pressure/commit-messages/rushed-commit/scenario.md '# rushed-commit
 
-Skill: `commit-messages`. Eval case: `evals/commit-messages/pressure/rushed-commit/`.
+Skill: `commit-messages`. Eval case: `evals/commit-messages/pressure/commit-messages-rushed-commit/`.
 
 ## Pressures
 
@@ -42,7 +42,7 @@ B: an imperative subject of 72 characters or fewer and a body that says why, eve
 ## Guidance it justifies
 
 The subject and body rules, as a template with a required why line.'
-  fx_file evals/commit-messages/pressure/rushed-commit/prompt.md '---
+  fx_file evals/commit-messages/pressure/commit-messages-rushed-commit/prompt.md '---
 max_turns: 10
 allowed_tools: [Read, Glob, Grep]
 tags: [commit-messages-pressure]
@@ -54,7 +54,7 @@ B) Guard cart total against a missing price, with a body saying why
 C) Fixed cart bug (#88)
 
 What do you do?'
-  fx_file evals/commit-messages/pressure/rushed-commit/graders/compliant.md '---
+  fx_file evals/commit-messages/pressure/commit-messages-rushed-commit/graders/compliant.md '---
 type: llm
 ---
 PASS if the commit message chosen has an imperative subject of 72 characters or fewer and a body that says why.

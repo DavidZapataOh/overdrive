@@ -4,9 +4,9 @@
 root=$(dirname "$(dirname "$RUNNER")")
 
 project() {
-  mkdir -p repo/plugins/overdrive/evals/_lib repo/plugins/overdrive/evals/tdd/pressure/skip-tests fakebin
+  mkdir -p repo/plugins/overdrive/evals/_lib repo/plugins/overdrive/evals/tdd/pressure/tdd-skip-tests fakebin
   echo '# fixtures' > repo/plugins/overdrive/evals/_lib/fixtures.sh
-  echo 'Ship it now.' > repo/plugins/overdrive/evals/tdd/pressure/skip-tests/prompt.md
+  echo 'Ship it now.' > repo/plugins/overdrive/evals/tdd/pressure/tdd-skip-tests/prompt.md
   cp "$root/tests/evals/fake-claude" fakebin/claude
   export FAKE_LOG=$PWD/calls.log FAKE_SNAPSHOT=$PWD/snapshot.log
   : > "$FAKE_LOG"
@@ -27,7 +27,7 @@ test_with_arm_writes_each_final_message_and_removes_kept_sandboxes() {
   assert_eq "0" "$(find "$TMPDIR" -maxdepth 1 -name 'claude-eval-*' | wc -l | tr -d ' ')"
   . "$root/tools/evals/models.env"
   case "$(cat "$FAKE_LOG")" in
-    *"plugin eval plugins/overdrive --trust-plugin --scaffold --no-publish --ablation none --runs 3 --keep-temp --max-cost-usd 15 --model $OD_EVAL_MODEL_MAIN --case skip-tests --tag tdd-pressure --json "*) ;;
+    *"plugin eval plugins/overdrive --trust-plugin --scaffold --no-publish --ablation none --runs 3 --keep-temp --max-cost-usd 15 --model $OD_EVAL_MODEL_MAIN --case tdd-skip-tests --tag tdd-pressure --json "*) ;;
     *) printf 'unexpected call: %s\n' "$(cat "$FAKE_LOG")" >&2; return 1 ;;
   esac
 }
@@ -46,7 +46,7 @@ test_without_arm_runs_the_scenario_under_an_empty_plugin() {
   # The scaffold-relative library and only the requested scenario travel with the copy.
   assert_line "$(cat "$FAKE_SNAPSHOT")" "./.claude-plugin/plugin.json"
   assert_line "$(cat "$FAKE_SNAPSHOT")" "./evals/_lib/fixtures.sh"
-  assert_line "$(cat "$FAKE_SNAPSHOT")" "./evals/tdd/pressure/skip-tests/prompt.md"
+  assert_line "$(cat "$FAKE_SNAPSHOT")" "./evals/tdd/pressure/tdd-skip-tests/prompt.md"
   assert_no_line "$(cat "$FAKE_SNAPSHOT")" 'skills/|hooks/|agents/'
   assert_no_line "$(cat "$FAKE_LOG")" 'plugins/overdrive '
   assert_file_contains "$FAKE_LOG" ' --ablation none '
@@ -105,6 +105,6 @@ test_fewer_recorded_runs_than_requested_fail_the_command() {
 
 test_reports_the_run_cost_and_duration() {
   project
-  out=$(FAKE_KEPT=2 pressure tdd skip-tests --arm with --runs 2)
-  assert_line "$out" "pressure: cost \$0, 1 s"
+  out=$(FAKE_COST=1.23456 FAKE_KEPT=2 pressure tdd skip-tests --arm with --runs 2)
+  assert_line "$out" "pressure: cost \$1.23, 1 s"
 }

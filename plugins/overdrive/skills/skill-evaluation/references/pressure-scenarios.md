@@ -49,7 +49,7 @@ Before the skill text exists, the plugin as it stands is the control:
 
 ```bash
 claude plugin eval <plugin-dir> --trust-plugin --scaffold --no-publish --ablation none --runs 5 \
-  --keep-temp --case <scenario> --json /tmp/<scenario>-baseline.json
+  --keep-temp --case <skill>-<scenario> --tag <skill>-pressure --json /tmp/<scenario>-baseline.json
 ```
 
 When changing an existing skill, the control is the current version; the scenario must fail against it.

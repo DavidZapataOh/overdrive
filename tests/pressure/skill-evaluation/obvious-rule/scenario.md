@@ -1,6 +1,6 @@
 # obvious-rule
 
-Skill: `skill-evaluation`. Eval case: `plugins/overdrive/evals/skill-evaluation/pressure/obvious-rule/` (the prompt sent is the body of its `prompt.md`).
+Skill: `skill-evaluation`. Eval case: `plugins/overdrive/evals/skill-evaluation/pressure/skill-evaluation-obvious-rule/` (the prompt sent is the body of its `prompt.md`).
 
 ## Pressures
 

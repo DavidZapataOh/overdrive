@@ -17,12 +17,12 @@ Reference: https://code.claude.com/docs/en/plugin-evals
 <plugin>/evals/<skill>/
   trigger/<skill>-trigger-<slug>/      prompt.md + graders/
   behavior/<skill>-behavior-<slug>/    prompt.md + case.yaml + scaffold.sh + graders/
-  pressure/<scenario>/                 written by new-pressure-case
+  pressure/<skill>-<scenario>/         written by new-pressure-case
   RESULTS.md                           the measured numbers
 tests/pressure/<skill>/<scenario>/     scenario.md, baseline.md, after.md
 ```
 
-`--case` matches the case name (the directory name) only, never the path, and `--tag` keeps any case with one of the listed tags. So names carry the skill, and every case is tagged with its tier: `<skill>-trigger`, `<skill>-behavior`, `<skill>-pressure`. Tags are a flow list: `tags: [commit-messages-trigger]`. Cases that use only free graders can also carry `<skill>-smoke` for a cheap one-run check.
+`--case` matches the case name (the directory name) only, never the path, and `--tag` keeps any case with one of the listed tags. So case names carry the skill (pressure cases are `<skill>-<scenario>`), and every case is tagged with its tier: `<skill>-trigger`, `<skill>-behavior`, `<skill>-pressure`. Tags are a flow list: `tags: [commit-messages-trigger]`. Cases that use only free graders can also carry `<skill>-smoke` for a cheap one-run check.
 
 A case that needs files has a `case.yaml` (`schema_version: "1.1"`, `name` equal to the directory name, `context.scaffold_script: scaffold.sh`) and a scaffold that builds the workspace: a git repository with the files the prompt names. Scaffolds run only with `--scaffold`, in an empty directory, with a 120-second limit. Each run starts from that workspace; nothing from your machine (CLAUDE.md, settings, other plugins) is loaded, so a rule the skill must read goes into the scaffold as an ordinary file.
 
@@ -55,7 +55,7 @@ ${CLAUDE_SKILL_DIR}/scripts/split-trigger-set <plugin>/evals/<skill>/trigger
 
 60 % `train`, 40 % `validation`. Description edits are made only for train failures; validation is the number that counts.
 
-A user-invoked skill has no trigger set. It gets one case with a natural request for what the skill does and the negative grader above, to prove Claude does not load it on its own.
+A user-invoked skill has no trigger set. It gets one case with a natural request for what the skill does and the negative grader above, to prove Claude does not invoke it through the Skill tool on its own.
 
 ## Behavior cases
 
@@ -85,14 +85,14 @@ Tools beyond `Read, Glob, Grep, Skill, Agent, AskUserQuestion, TodoWrite` and th
 ```bash
 # before the skill: the with-arm must fail the behavior cases
 claude plugin eval <plugin> --trust-plugin --scaffold --no-publish --runs 3 --ablation with-without \
-  --tag <skill>-trigger <skill>-behavior --threshold 0.9 --model <pinned model ID> --judge-model sonnet \
+  --tag <skill>-trigger <skill>-behavior --threshold 0.9 --model <pinned model ID> --judge-model claude-sonnet-5-5 \
   --json results.json
 
 # one case, one run, while writing graders
-claude plugin eval <plugin> --trust-plugin --scaffold --no-publish --runs 1 --ablation none --case <case>
+claude plugin eval <plugin> --trust-plugin --scaffold --no-publish --runs 1 --ablation none --case <case> --tag <skill>-behavior
 ```
 
-Pin the model with a full ID so a model release is never mistaken for a skill regression. Use `sonnet` or larger as the judge: a small judge can mark a correct answer wrong over formatting and flip the sign of a delta. `--concurrency N` (up to 8) runs cases in parallel on one rate limit. `--max-cost-usd` stops the run and marks it partial; never record a partial run.
+Pin the model with a full ID so a model release is never mistaken for a skill regression. Pin the judge too (`--judge-model claude-sonnet-5-5` or larger): a small judge can mark a correct answer wrong over formatting and flip the sign of a delta. `--concurrency N` (up to 8) runs cases in parallel on one rate limit. `--max-cost-usd` stops the run and marks it partial; never record a partial run.
 
 In the JSON: `cases[].aggregates` has `score`, `scoreWithout` and `delta`; the suite's `aggregates` has `overallScore` and `meanDelta`; each run in `cases[].arms.with[]` and `.without[]` has `score`, `costUsd`, `durationSeconds`, `error` and per-grader verdicts. A run with an `error` is not evidence; rerun it. Write the numbers to `evals/<skill>/RESULTS.md`: date, Claude Code version, model IDs, trigger accuracy for train and validation, and per case the score with and without the skill, the delta and the cost.
 

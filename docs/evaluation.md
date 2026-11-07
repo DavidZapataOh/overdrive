@@ -15,7 +15,8 @@ plugins/overdrive/evals/
     RESULTS.md                           # written by run-suite.sh --tier full
     trigger/<skill>-trigger-<slug>/      # prompt.md + graders/
     behavior/<skill>-behavior-<slug>/    # case.yaml + prompt.md + scaffold.sh + graders/
-    pressure/<scenario>/                 # case.yaml + prompt.md + scaffold.sh + graders/
+    pressure/<skill>-<scenario>/         # case.yaml + prompt.md + scaffold.sh + graders/
+    allow-tools                          # tool grants the cases need, one per line
   results/                               # runner output, gitignored
 tests/pressure/<skill>/<scenario>/       # scenario.md, baseline.md, after.md
 tests/pressure/<skill>/<scenario>/runs/  # final messages of each run, gitignored
@@ -23,7 +24,7 @@ tests/pressure/<skill>/<scenario>/runs/  # final messages of each run, gitignore
 
 ### Naming and tags
 
-The directory name is the case name. `--case` matches only the case name, never the path, and `--tag` keeps a case that has any of the listed tags, so the tooling selects by tag and uses `--case` to narrow to one scenario. Every case carries:
+The directory name is the case name. `--case` matches only the case name, never the path, and `--tag` keeps a case that has any of the listed tags, so the tooling selects by tag and uses `--case` to narrow to one scenario. Pressure case directories are named `<skill>-<scenario>` so that `--case` never matches another skill's scenario of the same name; `pressure.sh SKILL SCENARIO` and `tests/pressure/<skill>/<scenario>/` use the bare scenario name. Every case carries:
 
 | Tag | On |
 | --- | --- |
@@ -92,6 +93,8 @@ Give each case one grader on the result and one on the steps taken. Prefer `rege
 ```bash
 tools/evals/run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--allow-tools TOOL...]
 ```
+
+Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) get them from `plugins/overdrive/evals/<skill>/allow-tools`, one grant per line (blank lines and `#` comments are ignored); CI's eval job uses the same file through `run-suite.sh`. `--allow-tools` on the command line replaces the file. `--concurrency N` (1 to 8, not for the pressure tier) runs cases in parallel on one rate limit.
 
 | Tier | What runs | Default ceiling |
 | --- | --- | --- |

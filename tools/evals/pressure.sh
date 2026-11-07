@@ -40,7 +40,9 @@ case $runs in '' | *[!0-9]* | 0) usage ;; esac
 model_id=$(od_model_id "$model") || usage
 
 plugin=plugins/overdrive
-scenario_dir=$root/$plugin/evals/$skill/pressure/$scenario
+# Case names carry the skill, so --case never matches another skill's scenario of the same name.
+case_name=$skill-$scenario
+scenario_dir=$root/$plugin/evals/$skill/pressure/$case_name
 [ -d "$scenario_dir" ] || { echo "pressure: no scenario $skill/$scenario" >&2; exit 1; }
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/od-pressure.XXXXXX") || exit 1
@@ -53,12 +55,12 @@ if [ "$arm" = without ]; then
   mkdir -p "$target/.claude-plugin" "$target/evals/$skill/pressure"
   printf '{"name":"no-plugin","version":"0.0.0","description":"Empty plugin that stands in for the no-plugin arm."}\n' > "$target/.claude-plugin/plugin.json"
   [ ! -d "$root/$plugin/evals/_lib" ] || cp -R "$root/$plugin/evals/_lib" "$target/evals/_lib"
-  cp -R "$scenario_dir" "$target/evals/$skill/pressure/$scenario"
+  cp -R "$scenario_dir" "$target/evals/$skill/pressure/$case_name"
 fi
 
 result=$work/result.json
 claude plugin eval "$target" --trust-plugin --scaffold --no-publish --ablation none --runs "$runs" \
-  --keep-temp --max-cost-usd "$cost" --model "$model_id" --case "$scenario" --tag "$skill-pressure" \
+  --keep-temp --max-cost-usd "$cost" --model "$model_id" --case "$case_name" --tag "$skill-pressure" \
   --json "$result" > /dev/null
 rc=$?
 if [ ! -s "$result" ]; then
@@ -117,7 +119,7 @@ while IFS=$'\t' read -r trace err; do
 done < "$runs_tsv"
 
 printf 'pressure: wrote %d run(s) to %s\n' "$n" "$out_dir"
-jq -r '"pressure: cost $\(.costUsd // 0), \(.durationSeconds // 0) s"' "$result"
+jq -r '"\(.costUsd // 0) \(.durationSeconds // 0)"' "$result" | awk '{ printf "pressure: cost $%.2f, %s s\n", $1, $2 }'
 [ "$rc" -ge 2 ] && exit "$rc"
 if [ "$bad" -gt 0 ] || [ "$n" -lt "$runs" ]; then
   printf 'pressure: %d of %d requested run(s) recorded, %d errored\n' "$n" "$runs" "$bad" >&2

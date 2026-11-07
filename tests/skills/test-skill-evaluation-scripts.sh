@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # backticks in patterns are literal Markdown
 # Tests for the scripts shipped with the skill-evaluation skill.
 
 root=$(dirname "$(dirname "$RUNNER")")
@@ -21,15 +22,16 @@ test_new_pressure_case_scaffolds_scenario_and_case_in_a_marketplace_repo() {
   mkdir -p "$repo/plugins/acme/evals/_lib"
   cp "$root/plugins/overdrive/evals/_lib/fixtures.sh" "$repo/plugins/acme/evals/_lib/"
   out=$(cd "$repo" && new_case commit-messages rushed-release)
-  case_dir=$repo/plugins/acme/evals/commit-messages/pressure/rushed-release
+  case_dir=$repo/plugins/acme/evals/commit-messages/pressure/commit-messages-rushed-release
   # git may spell the repository root differently (/private/var on macOS, C:/ on Windows).
   printf '%s\n' "$out" | grep -q '/tests/pressure/commit-messages/rushed-release/scenario\.md$' || { echo "scenario.md not printed: $out" >&2; return 1; }
-  printf '%s\n' "$out" | grep -q '/plugins/acme/evals/commit-messages/pressure/rushed-release/prompt\.md$' || { echo "prompt.md not printed: $out" >&2; return 1; }
+  printf '%s\n' "$out" | grep -q '/plugins/acme/evals/commit-messages/pressure/commit-messages-rushed-release/prompt\.md$' || { echo "prompt.md not printed: $out" >&2; return 1; }
   [ -f "$repo/tests/pressure/commit-messages/rushed-release/scenario.md" ] || { echo "scenario.md missing" >&2; return 1; }
   assert_file_contains "$repo/tests/pressure/commit-messages/rushed-release/scenario.md" '^## Compliant choice$'
   assert_file_contains "$case_dir/prompt.md" '^tags: \[commit-messages-pressure\]$'
   assert_file_contains "$case_dir/prompt.md" 'What do you do\?$'
-  assert_file_contains "$case_dir/case.yaml" '^name: rushed-release$'
+  assert_file_contains "$case_dir/case.yaml" '^name: commit-messages-rushed-release$'
+  assert_file_contains "$case_dir/prompt.md" '^tags: \[commit-messages-pressure\]$'
   assert_file_contains "$case_dir/case.yaml" '^  scaffold_script: scaffold\.sh$'
   assert_file_contains "$case_dir/graders/compliant.md" '^type: llm$'
   assert_file_contains "$case_dir/scaffold.sh" '_lib/fixtures\.sh'
@@ -43,14 +45,14 @@ test_scaffold_from_the_fixture_library_builds_a_repository() {
   cp "$root/plugins/overdrive/evals/_lib/fixtures.sh" "$repo/plugins/acme/evals/_lib/"
   (cd "$repo" && new_case commit-messages rushed-release > /dev/null)
   mkdir ws
-  (cd ws && bash "$repo/plugins/acme/evals/commit-messages/pressure/rushed-release/scaffold.sh")
+  (cd ws && bash "$repo/plugins/acme/evals/commit-messages/pressure/commit-messages-rushed-release/scaffold.sh")
   assert_eq "1" "$(git -C ws rev-list --count HEAD)"
 }
 
 test_new_pressure_case_without_fixture_library_writes_a_plain_git_scaffold() {
   plugin_at acme
   (cd acme && new_case lint-fix friday-deploy > /dev/null)
-  scaffold=acme/evals/lint-fix/pressure/friday-deploy/scaffold.sh
+  scaffold=acme/evals/lint-fix/pressure/lint-fix-friday-deploy/scaffold.sh
   assert_exit 1 grep -q '_lib/fixtures' "$scaffold"
   mkdir ws
   (cd ws && bash "../$scaffold")
@@ -62,7 +64,7 @@ test_new_pressure_case_without_fixture_library_writes_a_plain_git_scaffold() {
 test_new_pressure_case_honors_a_custom_eval_directory() {
   plugin_at acme '{"name": "acme", "experimental": {"evals": "quality/evals"}}'
   (cd acme && new_case lint-fix friday-deploy > /dev/null)
-  [ -f acme/quality/evals/lint-fix/pressure/friday-deploy/prompt.md ] || { echo "case not under quality/evals" >&2; return 1; }
+  [ -f acme/quality/evals/lint-fix/pressure/lint-fix-friday-deploy/prompt.md ] || { echo "case not under quality/evals" >&2; return 1; }
 }
 
 test_new_pressure_case_takes_an_explicit_plugin_directory() {
@@ -70,15 +72,15 @@ test_new_pressure_case_takes_an_explicit_plugin_directory() {
   plugin_at two/b
   assert_exit 1 new_case lint-fix friday-deploy
   new_case lint-fix friday-deploy --plugin two/b > /dev/null
-  [ -f two/b/evals/lint-fix/pressure/friday-deploy/case.yaml ] || { echo "case not under --plugin" >&2; return 1; }
+  [ -f two/b/evals/lint-fix/pressure/lint-fix-friday-deploy/case.yaml ] || { echo "case not under --plugin" >&2; return 1; }
 }
 
 test_new_pressure_case_never_overwrites() {
   plugin_at acme
   (cd acme && new_case lint-fix friday-deploy > /dev/null)
-  echo 'edited' > acme/evals/lint-fix/pressure/friday-deploy/prompt.md
+  echo 'edited' > acme/evals/lint-fix/pressure/lint-fix-friday-deploy/prompt.md
   assert_exit 1 in_acme lint-fix friday-deploy
-  assert_eq "edited" "$(cat acme/evals/lint-fix/pressure/friday-deploy/prompt.md)"
+  assert_eq "edited" "$(cat acme/evals/lint-fix/pressure/lint-fix-friday-deploy/prompt.md)"
 }
 
 test_new_pressure_case_rejects_names_that_are_not_kebab_case() {
@@ -97,4 +99,23 @@ test_shipped_split_trigger_set_runs_on_its_own() {
   bash alone/split-trigger-set set
   assert_file_contains set/tdd-trigger-plain/prompt.md '^tags: \[tdd-trigger, train\]$'
   assert_file_contains set/tdd-trigger-bugfix/prompt.md '^tags: \[validation\]$'
+}
+
+# The record names the case by its path inside the repository, never by a machine path.
+test_scenario_record_names_the_case_relative_to_the_repository() {
+  repo=$(make_repo)
+  plugin_at "$repo/plugins/acme"
+  ln -s "$repo" link
+  (cd link && new_case commit-messages rushed-release > /dev/null)
+  assert_file_contains "$repo/tests/pressure/commit-messages/rushed-release/scenario.md" \
+    '^Skill: `commit-messages`\. Eval case: `plugins/acme/evals/commit-messages/pressure/commit-messages-rushed-release/`'
+  (cd "$repo/plugins/acme" && new_case lint-fix friday-deploy > /dev/null)
+  assert_file_contains "$repo/tests/pressure/lint-fix/friday-deploy/scenario.md" \
+    'Eval case: `plugins/acme/evals/lint-fix/pressure/lint-fix-friday-deploy/`'
+}
+
+test_scenario_record_outside_git_names_the_case_relative_to_the_plugin() {
+  plugin_at acme
+  (cd acme && new_case lint-fix friday-deploy > /dev/null)
+  assert_file_contains acme/tests/pressure/lint-fix/friday-deploy/scenario.md 'Eval case: `evals/lint-fix/pressure/lint-fix-friday-deploy/`'
 }

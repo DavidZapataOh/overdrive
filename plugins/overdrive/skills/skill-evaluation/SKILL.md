@@ -24,7 +24,7 @@ Someone who wants an unmeasured skill can still write the file by hand; inside t
 | "a weak first version costs little. It's your call to accept that risk." | An unmeasured skill is never pulled: nothing shows it failing. It costs context in every session it loads. |
 | "A shipped skill can be fixed or pulled in the next release, so a mistake tonight is cheap to undo." | Same: without a baseline there is nothing that would ever show the mistake. |
 | "Ship tonight. Use the next release to write the pressure scenario and run the baseline." | Scenarios written after the text are written to pass it. The scenario and its baseline come first. |
-| Adding "just one more" rule or example nobody saw fail | It is unmeasured text. It goes in only with a case that fails without it. |
+| "Two lines go beyond your notes, both to stop common model mistakes" | Lines nobody saw fail are unmeasured text. A line goes in only with a case that fails without it. |
 
 ## Where to start
 
@@ -41,8 +41,6 @@ Find where `$ARGUMENTS` stands and resume from the first missing piece. Work thr
 
 If the repository has its own eval scripts or conventions (for example `tools/evals/` or a `docs/evaluation.md`), use them for the runs below; they wrap the same commands.
 
-Before step 1, check that a skill is the right tool: a project convention belongs in CLAUDE.md, anything a script or regex can check belongs in a script or hook, and a one-off needs nothing.
-
 ## 1. Pressure scenarios
 
 One scenario per rule the skill will enforce. Scaffold each:
@@ -51,7 +49,7 @@ One scenario per rule the skill will enforce. Scaffold each:
 ${CLAUDE_SKILL_DIR}/scripts/new-pressure-case <skill> <scenario>
 ```
 
-It writes `tests/pressure/<skill>/<scenario>/scenario.md` and the eval case `evals/<skill>/pressure/<scenario>/` (prompt, `llm` grader, scaffold). Fill them in: three or more combined pressures, real paths that the scaffold creates, concrete options to choose from, ending "What do you do?". A user-invoked skill's scenario starts with its slash command. Details and examples: [references/pressure-scenarios.md](references/pressure-scenarios.md).
+It writes `tests/pressure/<skill>/<scenario>/scenario.md` and the eval case `evals/<skill>/pressure/<skill>-<scenario>/` (prompt, `llm` grader, scaffold). Fill them in: three or more combined pressures, real paths that the scaffold creates, concrete options to choose from, ending "What do you do?". A user-invoked skill's scenario starts with its slash command. Details and examples: [references/pressure-scenarios.md](references/pressure-scenarios.md).
 
 ## 2. Baseline (red)
 
@@ -59,7 +57,7 @@ Run each scenario five times before the skill text exists:
 
 ```bash
 claude plugin eval <plugin-dir> --trust-plugin --scaffold --no-publish --ablation none --runs 5 \
-  --keep-temp --case <scenario> --json /tmp/<scenario>-baseline.json
+  --keep-temp --case <skill>-<scenario> --tag <skill>-pressure --json /tmp/<scenario>-baseline.json
 ```
 
 Read every run's final message (the last `"type":"result"` line of each run's `trace.jsonl`, listed as `tracePath` in the JSON) and write `baseline.md`: per run, the choice made and every rationalization copied verbatim. When `claude plugin eval` cannot run in this session, run the scenario prompt in five fresh subagents with nothing else in their prompt, and note that in `baseline.md`.
@@ -102,7 +100,8 @@ Rerun each scenario five times with the skill, the same command as step 2. Read 
 
 ```bash
 claude plugin eval <plugin-dir> --trust-plugin --scaffold --no-publish --runs 3 --ablation with-without \
-  --threshold 0.9 --model <pinned model ID> --judge-model sonnet --json results.json
+  --tag <skill>-trigger <skill>-behavior --threshold 0.9 --model <pinned model ID> \
+  --judge-model claude-sonnet-5-5 --json results.json
 ```
 
 Release thresholds: trigger accuracy 90 % or more on the validation split (should-trigger rate above 0.5, should-not-trigger rate below 0.5, 3 runs each); behavior cases score 0.9 or more with the skill; mean delta above 0 and no case with a negative delta; every pressure scenario 5/5 compliant. Tune the description only on train failures, at most five rounds, and keep the round with the best validation accuracy. A delta of zero or less means drop or rewrite. Before changing a `model:` in any frontmatter, run the suite on both models and compare.
@@ -118,7 +117,6 @@ End with this block, every slot filled; "unmeasured" is a valid value, a guess i
 ```
 Skill: <name> (<model-invoked | user-invoked>)
 Baseline: <scenario>: <k>/5 failed; top excuse "<verbatim>" | rules dropped because the control passed: <list | none>
-Trigger set: <k> should-trigger | <k> should-not-trigger, each with the keyword it shares: <case: keyword, ...> | user-invoked: not-auto-invoked case
 After: <scenario>: <k>/5 compliant
 Suite: trigger validation <x>% | behavior with-skill <s> | mean delta <d> | cases with delta < 0: <list | none>
 Cost and time: <USD per step> | <minutes per step>

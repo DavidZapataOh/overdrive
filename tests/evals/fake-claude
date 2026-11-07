@@ -10,6 +10,7 @@
 # FAKE_NO_RESULT  omit the final result record from the traces
 # FAKE_STDOUT  text written to stdout, like the progress the real command prints
 # FAKE_RUN_ERROR  error string recorded on every kept run
+# FAKE_COST     costUsd of the kept-runs document (default 0)
 # FAKE_EXIT     exit status (default 0)
 
 printf '%s ' "$@" >> "${FAKE_LOG:?}"
@@ -48,7 +49,7 @@ if [ -n "${FAKE_KEPT-}" ] && [ -n "$json" ]; then
     runs="$runs${runs:+,}{\"score\":1,\"error\":$err,\"tracePath\":\"$kept/out/trace.jsonl\",\"graders\":[]}"
     i=$((i + 1))
   done
-  printf '{"schemaVersion":1,"claudeVersion":"2.1.319","startedAt":"2026-11-07T00:00:00.000Z","durationSeconds":1,"costUsd":0,"partial":false,"cases":[{"name":"x","dir":"evals/tdd/pressure/x","graders":[],"arms":{"with":[%s],"without":[]},"aggregates":{"score":1}}],"aggregates":{"casesTotal":1,"casesPassed":1,"overallScore":1}}\n' "$runs" > "$json"
+  printf '{"schemaVersion":1,"claudeVersion":"2.1.319","startedAt":"2026-11-07T00:00:00.000Z","durationSeconds":1,"costUsd":%s,"partial":false,"cases":[{"name":"x","dir":"evals/tdd/pressure/x","graders":[],"arms":{"with":[%s],"without":[]},"aggregates":{"score":1}}],"aggregates":{"casesTotal":1,"casesPassed":1,"overallScore":1}}\n' "${FAKE_COST:-0}" "$runs" > "$json"
 elif [ -n "${FAKE_RESULT-}" ] && [ -n "$json" ]; then
   cp "$FAKE_RESULT" "$json"
 fi

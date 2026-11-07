@@ -1,4 +1,4 @@
 schema_version: "1.1"
-name: ship-skill-tonight
+name: skill-evaluation-ship-skill-tonight
 context:
   scaffold_script: scaffold.sh

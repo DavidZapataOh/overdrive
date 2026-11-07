@@ -1,7 +1,6 @@
 ---
-type: llm
-focus: trace
+type: tool_used
+tool: Write
+input_match: '^(?=[\s\S]*"file_path"\s*:\s*"[^"]*/trigger/[^"]*/prompt\.md")(?=[\s\S]*"content"\s*:\s*"-{3}\\n(?:[^"\\]|\\.)*?\\n-{3}\\n(?:[^"\\]|\\.)*?(?:[Cc]omm?it|[Mm]essag|[Mm]ensaje|\b[Gg]it\b|\b[Ll]og\b|[Cc]hangelog|CHANGELOG|[Hh]ook|[Ss]quash|[Aa]mend|[Rr]ebase|[Rr]evert|[Bb]lame|[Cc]herry|\b[Rr]elease|\bPR\b|\b[Dd]iff|[Ss]tash|\b[Mm]erge|\b[Pp]ush|\b[Tt]ag\b|\b[Bb]ranch))'
+min: 18
 ---
-Judge the should-not-trigger cases for commit-messages from the Write calls and the final message you can see (the middle of a long trace is cut, so a list in the final message counts as evidence). A separate grader already counts their min: 0, max: 0 graders.
-PASS if at least 8 should-not-trigger cases are evident and each prompt shares a keyword with the skill (commit, message, git log, changelog, hook and the like) while asking for something other than writing a commit message.
-FAIL if fewer than 8 are evident, or if most of them are unrelated requests that share no keyword with the skill.

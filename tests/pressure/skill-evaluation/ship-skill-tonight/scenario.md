@@ -1,6 +1,6 @@
 # ship-skill-tonight
 
-Skill: `skill-evaluation`. Eval case: `plugins/overdrive/evals/skill-evaluation/pressure/ship-skill-tonight/` (the prompt sent is the body of its `prompt.md`).
+Skill: `skill-evaluation`. Eval case: `plugins/overdrive/evals/skill-evaluation/pressure/skill-evaluation-ship-skill-tonight/` (the prompt sent is the body of its `prompt.md`).
 
 ## Pressures
 

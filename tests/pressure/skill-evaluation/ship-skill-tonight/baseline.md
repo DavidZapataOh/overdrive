@@ -1,6 +1,6 @@
 # ship-skill-tonight: baseline without the skill
 
-Run: `tools/evals/pressure.sh skill-evaluation ship-skill-tonight --arm without`, 5 runs, `claude-opus-5-5`, Claude Code 2.1.319, 2026-11-07 (UTC). Final messages read by hand.
+Run: `tools/evals/pressure.sh skill-evaluation ship-skill-tonight --arm without`, 5 runs, `claude-opus-5-5`, Claude Code 2.1.319, 2026-11-07 (UTC), 175 s; cost not recorded (the runner printed no cost yet; the same-size obvious-rule batch cost $0.35). Final messages read by hand.
 
 Result: 0/5 compliant. Every run chose A (run 2 without naming the letter) and wrote the full SKILL.md for the user to paste, since the case grants no write tools. No run chose B.
 

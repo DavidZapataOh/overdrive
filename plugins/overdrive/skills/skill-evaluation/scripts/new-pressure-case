@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Usage: new-pressure-case SKILL SCENARIO [--plugin DIR]
 # Scaffolds a pressure scenario for SKILL: the scenario record in
-# tests/pressure/SKILL/SCENARIO/scenario.md (at the repository root) and the eval case in
-# EVALS/SKILL/pressure/SCENARIO/ inside the plugin. Never overwrites; prints each file it wrote.
+# tests/pressure/SKILL/SCENARIO/scenario.md (at the repository root) and the eval case
+# EVALS/SKILL/pressure/SKILL-SCENARIO/ inside the plugin. Never overwrites; prints each file it wrote.
 # The plugin is --plugin DIR, the current directory when it has .claude-plugin/plugin.json, or the
 # only plugin found one or two levels below it.
 
@@ -54,9 +54,18 @@ evals=$(sed -n 's/.*"evals"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$plugin
 [ -n "$evals" ] || evals=evals
 case $evals in /* | *..*) echo "new-pressure-case: unusable eval directory in plugin.json: $evals" >&2; exit 1 ;; esac
 
-repo=$(git -C "$plugin" rev-parse --show-toplevel 2>/dev/null) || repo=$plugin
+# Case names carry the skill so `claude plugin eval --case` never matches another skill's scenario.
+case_name=$skill-$scenario
+# The record names the case relative to the repository. git reports the prefix itself, because
+# its spelling of the root (physical path, C:/ on Windows) need not match this shell's.
+if repo=$(git -C "$plugin" rev-parse --show-toplevel 2>/dev/null); then
+  prefix=$(git -C "$plugin" rev-parse --show-prefix) || exit 1
+else
+  repo=$plugin prefix=''
+fi
 record_dir=$repo/tests/pressure/$skill/$scenario
-case_dir=$plugin/$evals/$skill/pressure/$scenario
+case_dir=$plugin/$evals/$skill/pressure/$case_name
+case_rel=$prefix$evals/$skill/pressure/$case_name
 
 for dir in "$record_dir" "$case_dir"; do
   if [ -e "$dir" ]; then
@@ -67,7 +76,6 @@ done
 
 mkdir -p "$record_dir" "$case_dir/graders" || exit 1
 
-case_rel=${case_dir#"$repo"/}
 cat > "$record_dir/scenario.md" <<EOF
 # $scenario
 
@@ -88,7 +96,7 @@ EOF
 
 cat > "$case_dir/case.yaml" <<EOF
 schema_version: "1.1"
-name: $scenario
+name: $case_name
 context:
   scaffold_script: scaffold.sh
 EOF
