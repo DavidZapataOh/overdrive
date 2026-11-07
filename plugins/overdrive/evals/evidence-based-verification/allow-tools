@@ -1,0 +1,3 @@
+# Behavior cases run the tests and read git history; the OS sandbox confines Bash and blocks the network,
+# so not-found-lists-attempts still has no way to reach a vendor source.
+Bash
