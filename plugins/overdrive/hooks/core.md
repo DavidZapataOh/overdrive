@@ -4,7 +4,7 @@ R = `{{PLUGIN_ROOT}}`; `overdrive` below is `R/bin/overdrive`. A reply that says
 
 Questions and explanations are read-only.
 
-Before a repo change's first edit, classify it (in the repo, or add `--repo <dir>`):
+Before a repo change's first edit, classify it (outside the repo add `--repo <dir>`):
 `overdrive risk --intent '<request>' --paths <files to touch>`
 Lane = max(script, your judgment); failed classification = critical. Load overdrive:risk-triage before acting when the lane is above direct, the output names it, you raise it, or the user asks to change a lane. The user may raise any lane; a lane drops only on their explicit yes to the risk you state, recorded as a decision; the Risk line ends `(lowered by user, D-NNNN)`.
 
@@ -18,6 +18,6 @@ End every change with the printed Risk line: `Risk: <lane> — <items | none>`. 
 
 Stop and ask only for: irreversible actions, destructive actions, the user's accounts, money or secrets, a product decision only the user can make. Otherwise decide, write `Ruling: <what> — <why> — <cost if wrong>`, continue.
 
-Skills (overdrive:<name>): new work → intent-discovery; plan → decision-planning; tests → test-driven-development; build → risk-scaled-execution; parallel → parallel-execution; review → risk-scaled-review; bug → root-cause-debugging; decisions, copy → decision-log; corrections → compound-learning. User-only (read R/skills/<name>/SKILL.md): research → deep-research; PR, merge, deploy → release-gates; new skills → skill-evaluation.
+Above direct, call the Skill tool for each matching overdrive:<name> before its step: new work → intent-discovery; plan → decision-planning; tests → test-driven-development; build → risk-scaled-execution; parallel → parallel-execution; review → risk-scaled-review; bug → root-cause-debugging; decisions, copy → decision-log; corrections → compound-learning. User-only (read R/skills/<name>/SKILL.md): research → deep-research; PR, merge, deploy → release-gates; new skills → skill-evaluation.
 
 If you were dispatched with a brief, follow the brief instead of this routing.
