@@ -222,3 +222,16 @@ test_unwritable_tmp_uses_the_repository_run_dir() {
   assert_eq 0 "$rc" "exit code"
   assert_eq "Risk: direct — none" "$(risk_line)"
 }
+
+# With no writable place at all the change is critical, and the reason says why.
+test_no_work_dir_anywhere_fails_closed() {
+  local repo fake=$PWD/fake
+  repo=$(make_repo)
+  write_file "$repo" README.md 'receive'
+  mkdir fake
+  printf '#!/usr/bin/env bash\necho "mktemp: refused by the test" >&2\nexit 1\n' > fake/mktemp
+  chmod +x fake/mktemp
+  rc=0
+  out=$(cd "$repo" && PATH=$fake:$PATH overdrive risk --worktree 2>err) || rc=$?
+  assert_failed_closed "cannot create a work directory: mktemp: refused by the test"
+}

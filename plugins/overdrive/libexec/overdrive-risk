@@ -138,11 +138,14 @@ lib=${OVERDRIVE_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib
 
 # A sandboxed shell can hand out a TMPDIR nobody may write to. /tmp comes next, then
 # the repository's self-ignoring run directory, writable wherever the change can be made.
-work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive-risk.XXXXXX" 2>/dev/null) ||
-  work=$(mktemp -d /tmp/overdrive-risk.XXXXXX 2>/dev/null) ||
-  work=$(top=$(od_repo_root "${repo:-$PWD}") && run=$(od_run_dir "$top") &&
-    mktemp -d "$run/risk.XXXXXX") ||
-  fail_closed "cannot create a work directory"
+if ! work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive-risk.XXXXXX" 2>/dev/null) &&
+  ! work=$(mktemp -d /tmp/overdrive-risk.XXXXXX 2>/dev/null); then
+  top=$(od_repo_root "${repo:-$PWD}") ||
+    fail_closed "cannot create a work directory: TMPDIR and /tmp refused it and no repository was found"
+  run=$(od_run_dir "$top" 2>&1) || fail_closed "cannot create a work directory: ${run%%"$_OD_NL"*}"
+  # mktemp prints only the path on success, so its output is the path or the reason.
+  work=$(mktemp -d "$run/risk.XXXXXX" 2>&1) || fail_closed "cannot create a work directory: ${work%%"$_OD_NL"*}"
+fi
 trap 'rm -rf "$work"' EXIT
 
 # git_error: the first line git wrote on stderr, for the failure reason.
@@ -242,7 +245,14 @@ else
     fi
     maps+=("$work/map.$blob")
   done < "$work/found"
-  [ "${#maps[@]}" -gt 0 ] || add_note 'risk-map missing'
+  # The note says who acts on it: a direct change loads no skill on its own account.
+  if [ "${#maps[@]}" -eq 0 ]; then
+    if [ -n "$top" ] && [ -f "$top/.overdrive/run/risk-map.proposed" ]; then
+      add_note 'risk-map missing; a proposal waits for approval in .overdrive/run/risk-map.proposed'
+    else
+      add_note 'risk-map missing; propose one with overdrive:risk-triage'
+    fi
+  fi
 fi
 
 rc=0
