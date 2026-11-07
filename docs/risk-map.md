@@ -2,10 +2,10 @@
 
 The risk classifier puts every change in one of three lanes: `direct`, `standard` or `critical`. It decides from facts: the paths a change touches, the lines it adds and removes, and, before any work starts, the text of the request. Two rule files tell it which facts matter:
 
-- **Floors** (`plugins/overdrive/lib/floors.conf`) ship with Overdrive and apply to every project: data and irreversible migrations, auth and tenant isolation, money, secrets, delivery and CI, public contracts, concurrency, dependencies and test harness configuration. Floors cannot be removed by a project.
+- **Floors** (`plugins/overdrive/lib/floors.conf`) ship with Overdrive and apply to every project: data and irreversible migrations, auth and tenant isolation, money, secrets, delivery and CI, public contracts, concurrency, dependencies, test harness configuration and the project map itself. Floors cannot be removed by a project.
 - **The project map** (`.overdrive/risk-map.conf`) is committed in each project's repository and names what is risky there in particular: a billing module with an unusual name, a domain word in the team's language, an internal API other services consume.
 
-Both files use the grammar below. A change's lane is the highest lane among the rules it matches; a change that matches nothing is `direct`.
+Both files use the grammar below. A change's lane is the highest lane among the items it raises; a change that raises none is `direct`. Besides the rules, the classifier computes four items from the change itself: `test-removed` (critical: a deleted test file, or a test file whose removed `it(`, `test(`, `def test_` or `func Test` lines outnumber the added ones), `untested-change` (critical: a changed source file with no test named after it, in a change that touches no test file), `deletion` (standard: a deleted file that is not a test) and `exec-bit` (standard: an existing file made executable).
 
 ## Grammar
 
@@ -32,6 +32,8 @@ One rule per line:
 | `symbol` | identifier | added or removed lines, at identifier boundaries | sensitive |
 | `content` | extended regular expression | added lines | sensitive |
 
+Lines are read from the change's patch; binary files have none, so their content is never read. Documentation files (below) are read only for `content` rules of the item `secrets`: a key pasted into a README is still a leaked key, while SQL quoted in a guide is not a migration. Each item is reported once per file, at its first line.
+
 ### path
 
 Globs are relative to the repository root and anchored at both ends. `**` matches any number of characters including `/`, and `**/` matches zero or more whole directories; `*` matches within one segment; `?` matches one character other than `/`. Every other character is literal.
@@ -48,7 +50,7 @@ A glob that starts with `/` is rejected, because no repository path starts with 
 
 The token matches a whole segment after splitting the path on `/ . _ -`, ignoring case, or one word of a segment: a segment is also split where a lowercase letter meets an uppercase one, before the last capital of a run of capitals followed by lowercase, and between letters and digits. `pathtoken auth` matches `src/auth/session.ts`, `lib/auth.ts`, `auth.config.json`, `AuthController.ts` and `OAuthToken.ts` (`o`, `auth`, `token`), but not `authors.ts`, `Author.tsx` or `src/billing page/x.ts` (a space does not split). `pathtoken jwt` matches `JWTSecret.ts`; `pathtoken oauth` matches `oauth2/cb.ts`. A token cannot contain any of the separators.
 
-Tokens are not evaluated on documentation files, which describe a subject without being it: `docs/payments.md` is prose, not money code. A documentation file is one whose name ends in `.md`, `.mdx`, `.rst`, `.txt` or `.adoc` (any case), or any file under the repository's top-level `docs/` directory. Path globs still apply to documentation files, so `path "docs/legal/**" legal` and `.github/workflows/**` match them.
+Tokens are not evaluated on documentation files, which describe a subject without being it: `docs/payments.md` is prose, not money code. A documentation file is one whose name ends in `.md`, `.mdx`, `.rst` or `.adoc` (any case), or any file under a directory named `docs` or `doc` at any depth; a `.txt` file counts only there, so `src/auth/blocklist.txt` keeps its tokens. Path globs still apply to documentation files, so `path "docs/legal/**" legal` and `.github/workflows/**` match them.
 
 ```
 pathtoken ledger   money
@@ -57,7 +59,7 @@ pathtoken wompi    money
 
 ### keyword
 
-Keywords match whole words, ignoring case, in the request text (when the classifier runs before work starts) and in added lines (when it runs on the diff). Several words in one keyword match the same words separated by any whitespace. Keywords hold letters, digits and underscores; non-ASCII letters such as `ñ` are allowed and are compared byte for byte.
+Keywords match whole words, ignoring case, in the request text (`overdrive risk --intent`, before work starts) and in added lines (when it runs on the diff). Several words in one keyword match the same words separated by any whitespace. Keywords hold letters, digits and underscores; non-ASCII letters such as `ñ` are allowed and are compared byte for byte.
 
 ```
 keyword cobro                  money
@@ -110,6 +112,10 @@ invalid rule at .overdrive/risk-map.conf:12: unknown lane 'high' (critical or st
 ```
 
 A missing or unreadable file returns 66 with `cannot read risk map: FILE`. The classifier treats an invalid project map as a classification failure, which means `critical`.
+
+## Which map applies
+
+On a change (`--diff`, `--staged`, `--worktree`) the project map is read on both sides of the change and the two are joined: the map at the range's base and end commits (the merge base for `A...B`), at `HEAD`, in the index and in the working tree, as each mode has them. A change that deletes a rule is still judged by it, and one that adds a rule is judged by the new rule too, so editing the map can never lower the change's own lane. Editing `.overdrive/risk-map.conf` is itself the critical item `risk-map`, a floor. Every map read must be valid; one invalid side fails the classification, which then reports `critical`. `--map FILE` replaces the project map entirely, for trying a map out; floors still apply.
 
 ## How a project gets its map
 

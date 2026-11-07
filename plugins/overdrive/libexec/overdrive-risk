@@ -3,14 +3,16 @@
 # Any failure to classify prints the critical lane and exits 3: a change is never
 # placed below critical because something could not be read.
 
-set -u -o pipefail
+set -E -u -o pipefail
 export LC_ALL=C
+# These would change the patch git prints; the classifier pins its own diff options.
+unset GIT_DIFF_OPTS GIT_EXTERNAL_DIFF
 
 usage() {
   cat <<'USAGE'
 Usage: overdrive risk [--repo DIR] [--map FILE] MODE... [--intent TEXT]
 
-Modes (combine freely; at least one, or --intent):
+Modes (combine freely; at least one, or --intent alone):
   --diff A..B | --diff A...B   committed changes in a range (works in a bare repository)
   --staged                     the index against HEAD
   --worktree                   tracked changes against HEAD plus untracked files
@@ -20,9 +22,11 @@ Modes (combine freely; at least one, or --intent):
                                it, from the current directory too
 
   --repo DIR    repository to classify (default: the one containing the current directory)
-  --map FILE    project risk map (default: .overdrive/risk-map.conf of the repository)
-  --intent TEXT the request, before any work starts (not evaluated yet: alone it fails
-                closed, with a mode it adds a note)
+  --map FILE    risk map to use instead of the project's. By default the project map is
+                .overdrive/risk-map.conf on both sides of the change, joined, so that a
+                change cannot lower its own lane by editing the map
+  --intent TEXT the request, before any work starts: its words are matched against the
+                keyword rules
 
 Output: lane, item, note and next lines, then "Risk: <lane> — <items | none>".
 Exit: 0 classified, 3 classification failed (reported as critical), 64 usage error.
@@ -45,10 +49,13 @@ add_note() {
 }
 printf -v _OD_NL '\n'
 
-# fail_closed REASON: the classification failed, so the change is critical.
+# fail_closed REASON: the classification failed, so the change is critical. In a subshell
+# it only exits, and the caller that checks the subshell prints the classification.
 fail_closed() {
   local n rest=$notes
+  trap - ERR
   printf 'overdrive risk: classification failed: %s\n' "$1" >&2
+  [ "$BASH_SUBSHELL" -eq 0 ] || exit 3
   printf 'lane critical\nitem classification-failed critical failure %s\n' "$1"
   while [ -n "$rest" ]; do
     n=${rest%%"$_OD_NL"*}
@@ -59,10 +66,13 @@ fail_closed() {
   printf 'next %s\nRisk: critical — classification-failed\n' "$next_critical"
   exit 3
 }
+# Every command whose failure is not handled where it runs ends here.
+trap 'fail_closed "internal error at line $LINENO"' ERR
 
 repo=''
 map=''
 intent=''
+have_intent=''
 have_mode=''
 staged=''
 worktree=''
@@ -75,7 +85,7 @@ while [ "$#" -gt 0 ]; do
       case $1 in
         --repo) repo=$2 ;;
         --map) map=$2 ;;
-        --intent) intent=$2 ;;
+        --intent) intent=$2 have_intent=1 ;;
         --diff)
           case $2 in
             -*) usage_error "invalid range: $2" ;;
@@ -110,9 +120,7 @@ while [ "$#" -gt 0 ]; do
     *) usage_error "unknown argument: $1" ;;
   esac
 done
-[ -n "$have_mode" ] || [ -n "$intent" ] || usage_error "give a mode or --intent"
-# Request text is not read yet, so it can never make a change look safer than it is.
-[ -z "$intent" ] || add_note "intent not evaluated"
+[ -n "$have_mode" ] || [ -n "$have_intent" ] || usage_error "give a mode or --intent"
 
 lib=${OVERDRIVE_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib
 # shellcheck source=../lib/common.sh
@@ -130,7 +138,7 @@ trap 'rm -rf "$work"' EXIT
 # git_error: the first line git wrote on stderr, for the failure reason.
 git_error() {
   local line=''
-  [ -s "$work/git.err" ] && IFS= read -r line < "$work/git.err"
+  if [ -s "$work/git.err" ]; then IFS= read -r line < "$work/git.err" || :; fi
   printf '%s' "${line:-git failed}"
 }
 
@@ -161,28 +169,63 @@ fi
 # Without a first commit there is nothing to compare against, in any mode.
 git -C "$gitdir" rev-parse -q --verify 'HEAD^{commit}' >/dev/null 2>&1 || fail_closed "no commits yet"
 
-if [ -z "$map" ]; then
-  if [ -n "$top" ]; then
-    [ ! -e "$top/.overdrive/risk-map.conf" ] || map=$top/.overdrive/risk-map.conf
-  elif [ "${#ranges[@]}" -gt 0 ]; then
-    # A bare repository has no working tree: the map is the one in the range's end commit.
-    last=${ranges[${#ranges[@]} - 1]}
-    rev=${last##*..}
-    rev=${rev:-HEAD}
-    listed=$(git -C "$gitdir" ls-tree --name-only "$rev" -- .overdrive/risk-map.conf 2>"$work/git.err") ||
+maps=()
+blobs=' '
+# map_at REV: add the risk map at commit REV, or in the index when REV is ":", to the
+# maps; a blob already added is skipped. An unreadable REV fails closed.
+map_at() {
+  local rev=$1 listing mode kind blob rest where=$1
+  if [ "$rev" = : ]; then
+    where='the index'
+    listing=$(git -C "$gitdir" ls-files -s -- .overdrive/risk-map.conf 2>"$work/git.err") ||
+      fail_closed "cannot read the index: $(git_error)"
+  else
+    listing=$(git -C "$gitdir" ls-tree "$rev" -- .overdrive/risk-map.conf 2>"$work/git.err") ||
       fail_closed "cannot read $rev: $(git_error)"
-    if [ -n "$listed" ]; then
-      git -C "$gitdir" cat-file blob "$rev:.overdrive/risk-map.conf" > "$work/map.conf" 2>"$work/git.err" ||
-        fail_closed "cannot read the risk map at $rev: $(git_error)"
-      map=$work/map.conf
-    fi
   fi
-  [ -n "$map" ] || add_note 'risk-map missing'
+  # ls-files -s: mode blob stage path (one line per stage during a merge); ls-tree:
+  # mode type blob path.
+  while read -r mode kind blob rest; do
+    [ -n "$mode" ] || continue
+    [ "$rev" != : ] || blob=$kind
+    case $blobs in *" $blob "*) continue ;; esac
+    blobs="$blobs$blob "
+    git -C "$gitdir" cat-file blob "$blob" > "$work/map.${#maps[@]}" 2>"$work/git.err" ||
+      fail_closed "cannot read the risk map in $where: $(git_error)"
+    maps+=("$work/map.${#maps[@]}")
+  done <<EOF
+$listing
+EOF
+}
+
+if [ -n "$map" ]; then
+  maps=("$map")
+else
+  [ -z "$top" ] || [ ! -e "$top/.overdrive/risk-map.conf" ] || maps=("$top/.overdrive/risk-map.conf")
+  for range in ${ranges[@]+"${ranges[@]}"}; do
+    case $range in
+      *...*) base=${range%%...*} end=${range#*...} ;;
+      *) base=${range%%..*} end=${range#*..} ;;
+    esac
+    case $range in
+      *...*)
+        base=$(git -C "$gitdir" merge-base "${base:-HEAD}" "${end:-HEAD}" 2>"$work/git.err") ||
+          fail_closed "cannot find the merge base of $range: $(git_error)"
+        ;;
+    esac
+    map_at "${base:-HEAD}"
+    map_at "${end:-HEAD}"
+  done
+  [ -z "$staged" ] || map_at :
+  # Without a working tree or a range, the map in force is the one at HEAD.
+  if [ -n "$staged" ] || [ -n "$worktree" ] || { [ -z "$top" ] && [ "${#ranges[@]}" -eq 0 ]; }; then
+    map_at HEAD
+  fi
+  [ "${#maps[@]}" -gt 0 ] || add_note 'risk-map missing'
 fi
-[ -n "$have_mode" ] || fail_closed "intent not evaluated"
 
 rc=0
-signals_rules "$lib/floors.conf" ${map:+"$map"} > "$work/rules" || rc=$?
+signals_rules "$lib/floors.conf" ${maps[@]+"${maps[@]}"} > "$work/rules" || rc=$?
 case $rc in
   0) ;;
   65) fail_closed "invalid risk map" ;;
@@ -246,17 +289,42 @@ if [ "${#paths[@]}" -gt 0 ]; then
     fail_closed "cannot record the named paths"
 fi
 
-signals_path_items "$work/records" "$work/rules" > "$work/items" || fail_closed "path signals failed"
+# One patch for every mode, read in a single pass. A failing git ends the group, and
+# pipefail carries the failure out.
+{
+  for range in ${ranges[@]+"${ranges[@]}"}; do
+    signals_patch "$gitdir" "$work" diff "$range" || exit
+  done
+  if [ -n "$staged" ]; then signals_patch "$gitdir" "$work" staged || exit; fi
+  if [ -n "$worktree" ]; then signals_patch "$gitdir" "$work" worktree || exit; fi
+} 2>"$work/git.err" | signals_content "$work/rules" "$work/records" "$intent" > "$work/content" ||
+  fail_closed "cannot read the changed lines: $(git_error)"
+
+: > "$work/listing"
+for range in ${ranges[@]+"${ranges[@]}"}; do
+  signals_listing "$gitdir" diff "$range" >> "$work/listing" 2>"$work/git.err" ||
+    fail_closed "cannot list the files of $range: $(git_error)"
+done
+if [ -n "$staged" ] || [ -n "$worktree" ]; then
+  signals_listing "$gitdir" index >> "$work/listing" 2>"$work/git.err" ||
+    fail_closed "cannot list the files of the index: $(git_error)"
+fi
+
+signals_path_items "$work/records" "$work/rules" "$work/listing" > "$work/items" ||
+  fail_closed "path signals failed"
 
 # Item lines are ordered critical first, then standard, by item, keeping evidence in the
 # order the changes were read; the Risk line lists each item once in the same order.
+# The same evidence reached twice (two modes, two maps) is printed once.
 tab=$(printf '\t')
 LC_ALL=C awk -F '\t' '
-  { rank = ($2 == "critical") ? 0 : 1
+  $0 in seen { next }
+  { seen[$0] = 1; n++
+    rank = ($2 == "critical") ? 0 : 1
     if (!($1 in best) || rank < best[$1]) best[$1] = rank
-    line[NR] = $0; it[NR] = $1 }
-  END { for (i = 1; i <= NR; i++) printf "%d\t%s\t%d\t%s\n", best[it[i]], it[i], i, line[i] }
-' "$work/items" | sort -t "$tab" -k1,1n -k2,2 -k3,3n > "$work/sorted" || fail_closed "cannot sort items"
+    line[n] = $0; it[n] = $1 }
+  END { for (i = 1; i <= n; i++) printf "%d\t%s\t%d\t%s\n", best[it[i]], it[i], i, line[i] }
+' "$work/items" "$work/content" | sort -t "$tab" -k1,1n -k2,2 -k3,3n > "$work/sorted" || fail_closed "cannot sort items"
 
 NOTES=$notes NEXT_CRITICAL=$next_critical LC_ALL=C awk -F '\t' '
   BEGIN {

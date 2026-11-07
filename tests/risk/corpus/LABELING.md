@@ -34,6 +34,7 @@ These labels are the ground truth for the deterministic risk classifier. They ar
 | `exec-bit` | standard | mode change to `100755` |
 | `deletion` | standard | any deleted non-test file |
 | `test-harness` | standard | `vitest.config.*`, `vitest.workspace.*`, `jest.config.*`, `playwright.config.*`, `pytest.ini`, `conftest.py`, `turbo.json` |
+| `risk-map` | critical | `.overdrive/risk-map.conf` (the map decides lanes, so changing it changes delivery itself); the change is judged by the map on both of its sides, joined |
 | project map items | from map | `.overdrive/risk-map.conf` rules |
 | `classification-failed` | critical | any internal error, invalid map, missing range, unborn HEAD |
 
@@ -41,12 +42,12 @@ Path tokens match whole segments split on `/ . _ -` (case-insensitive), and the 
 
 Content case rules: the SQL and concurrency phrases (`DROP TABLE`, `DROP COLUMN`, `ALTER TABLE`, `TRUNCATE`, `DELETE FROM`, `FOR UPDATE`, `SKIP LOCKED`, `SERIALIZABLE`, `isolation level`, `ROW LEVEL SECURITY`, `CREATE POLICY`) match case-insensitively, because SQL keywords are case-insensitive. Identifiers (`bcrypt`, `argon2`, `verifyToken`, `getServerSession`, `tenant_id`, `tenantId`, `advisory_lock`, `pg_advisory`, `Mutex`, `Semaphore`, `Atomics.`) match case-sensitively, as written. Secret patterns are regular expressions and match exactly as written.
 
-Clarification: a change that only edits documentation is `direct` even when a documentation path contains a token (`docs/payments.md`); path tokens are not evaluated on documentation files: names ending in `.md`, `.mdx`, `.rst`, `.txt` or `.adoc` (any case), and every file under the top-level `docs/` directory. Path globs and content signals still apply to them.
+Clarification: a change that only edits documentation is `direct` even when a documentation path contains a token (`docs/payments.md`) or a line quotes a signal (`FOR UPDATE` in a guide). Documentation files are names ending in `.md`, `.mdx`, `.rst` or `.adoc` (any case), and every file under a `docs/` or `doc/` directory at any depth; `.txt` files are documentation only there. Path tokens and content signals are not evaluated on documentation files, except the `secrets` line patterns: a key in a README is still a leaked key. Path globs still apply to them.
 
 ## How to label
 
 - Read the whole change: file list with statuses and modes, then the patch. Do not label from commit messages.
-- Check every content signal against added lines (removed lines for test-case counts and map `symbol` rules), and read the hunks around each hit.
+- Check every content signal against added lines (removed lines for test-case counts and map `symbol` rules), and read the hunks around each hit. In documentation files only the `secrets` patterns count.
 - Apply the table literally: an item applies when its signal is present. Never drop an item whose signal is present, even if it looks harmless; record the disagreement in the note as `policy-doubt: …`.
 - When a change plainly touches a fixed floor that no signal catches (for example, an authorization check in a file without an auth path token), add the floor item and explain it in the note as `judgment: …`.
 - `untested-change` looks at the test files present at the change's final commit, not only at the diff.
@@ -90,6 +91,8 @@ cd tests/risk/corpus && find synthetic oss.tsv -type f | LC_ALL=C sort | xargs s
 
 - `lowercase-prose-is-not-concurrency` replaced by `update-form-prose-is-not-concurrency`, and `lowercase-for-update-is-concurrency` and `truncate-lowercase-is-data-migration` added: SQL and concurrency phrases match case-insensitively, so lowercase `for update` in prose is no longer a valid negative.
 - policy: camelCase/digit token split, added authentication/authorization. Path tokens are also matched on the words of camelCase and letter/digit segments, and `authentication` and `authorization` join the `auth` tokens. No existing label changed; cases `camel-case-*`, `digit-split-oauth2`, `authentication-and-authorization-dirs`, `author-component-is-not-auth` and `charger-component-is-not-money` were added and SHA256SUMS regenerated.
+
+- policy: documentation set and the `risk-map` item. Documentation files are `.md .mdx .rst .adoc` anywhere plus any file under a `docs/` or `doc/` directory at any depth, `.txt` only there, and only secret patterns are read in them; editing `.overdrive/risk-map.conf` is the critical item `risk-map`, and a change is judged by the map on both of its sides. No existing label changed; cases `risk-map-edit`, `risk-map-rule-dropped-still-applies`, `txt-outside-docs-keeps-tokens`, `nested-docs-dir-is-documentation` and `documentation-content-is-not-scanned` were added and SHA256SUMS regenerated.
 
 ### Pending conflicts
 
