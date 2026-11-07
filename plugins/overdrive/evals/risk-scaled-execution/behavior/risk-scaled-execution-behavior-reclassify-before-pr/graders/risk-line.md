@@ -1,5 +1,6 @@
 ---
 type: regex
-pattern: 'Risk: critical — delivery'
-target: last_message
+pattern: '^\{"type":"assistant"[^\n]*"type":"text","text":"[^\n]*Risk: critical — delivery'
+flags: m
+target: trace
 ---

@@ -8,7 +8,7 @@ Context cost decides, not task size. A builder starts with an empty context and 
 | Parallel independent units | `OD overlap --plan FILE --tasks N,N` lists them as independent and none is waiting on the other | read `${CLAUDE_PLUGIN_ROOT}/skills/parallel-execution/SKILL.md` |
 | Context backstop | this session is near ~150k tokens | dispatch the remaining critical or longest task; record `Note: context backstop` |
 
-Not reasons: many files, a long task, "cleaner", a unit that sounds complicated. Units of about 100 changed lines or fewer run inline in every lane, except that a critical task still gets its critical review.
+Not reasons: many files, a long task, "cleaner", a unit that sounds complicated. Direct and standard units of about 100 changed lines or fewer always run inline. A critical-lane task is always built by an `overdrive:builder`, however small, because isolation is the reason.
 
 Dispatch recipe:
 

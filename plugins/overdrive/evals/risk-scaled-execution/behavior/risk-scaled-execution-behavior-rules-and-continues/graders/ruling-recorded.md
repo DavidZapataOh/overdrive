@@ -1,5 +1,5 @@
 ---
 type: regex
-pattern: 'Ruling: [^"\\]+ — [^"\\]+ — [^"\\]+'
+pattern: 'Ruling: [^<"\\]+ — [^<"\\]+ — [^<"\\]+'
 target: trace
 ---
