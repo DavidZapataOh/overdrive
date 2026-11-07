@@ -53,7 +53,7 @@ assert_blocks() {
   fi
 }
 
-MISSING='Close this change with its Risk line: run overdrive risk --worktree (or --diff <base>...HEAD) and end with the Risk line it prints.'
+MISSING="Close this change with its Risk line: run $(plugin_dir)/bin/overdrive risk --worktree (or --diff <base>...HEAD) and end with the Risk line it prints."
 
 # lower_reason STATED CLASSIFIED ITEMS
 lower_reason() {
@@ -539,4 +539,23 @@ test_latency_under_400ms_with_classifier() {
   marked "$repo" && { echo "the classified stop did not pass" >&2; return 1; }
   median=$(printf '%s' "$times" | sort -n | sed -n 3p)
   [ "$median" -lt 400000 ] || { echo "median ${median} us over 400 ms" >&2; return 1; }
+}
+
+# A read-only command can mark a repository (the guard cannot prove every command
+# harmless), so a turn that left it exactly as it started needs no Risk line.
+test_allows_missing_line_when_nothing_changed() {
+  local repo
+  repo=$(main_repo)
+  mark "$repo"
+  assert_allows "$(stop_event 'It rounds down so the charge never exceeds the shown price.' "$repo")"
+  marked "$repo" && { echo "marker kept for an unchanged repository" >&2; return 1; }
+  # A commit made during the turn is a change, even with a clean worktree.
+  mark "$repo"
+  commit_file "$repo" src/a.ts 'export const a = 1'
+  assert_blocks "$(stop_event 'Committed.' "$repo")" "$MISSING"
+  # So is an untracked file.
+  repo=$(main_repo)
+  mark "$repo"
+  write_file "$repo" notes.txt 'x'
+  assert_blocks "$(stop_event 'Wrote notes.' "$repo")" "$MISSING"
 }
