@@ -208,3 +208,25 @@ od_unlock() {
     sleep 0.05 2>/dev/null || sleep 1
   done
 }
+
+# od_append FILE LINE: append LINE to FILE under FILE.lock, so concurrent writers never
+# interleave or lose lines (O_APPEND alone is not atomic on every supported platform).
+od_append() {
+  local rc=0
+  od_lock "$1.lock" || { printf 'overdrive: cannot lock %s\n' "$1" >&2; return 1; }
+  printf '%s\n' "$2" >> "$1" || rc=1
+  od_unlock "$1.lock"
+  return "$rc"
+}
+
+# od_active_ledger RUN: print the active ledger, the file named (relative to RUN) in
+# RUN/active-ledger, which `overdrive ledger init` rewrites. Returns 1 when there is no
+# pointer, it escapes RUN, or the ledger it names does not exist.
+od_active_ledger() {
+  local rel=''
+  [ -r "$1/active-ledger" ] || return 1
+  { IFS= read -r rel || [ -n "$rel" ]; } < "$1/active-ledger" || return 1
+  case /$rel/ in //* | */../* | */./*) return 1 ;; esac
+  [ -f "$1/$rel" ] || return 1
+  printf '%s\n' "$1/$rel"
+}
