@@ -27,11 +27,14 @@ PINS_FILE=.overdrive/run/pins
 # The plugin's own files (a skill's references) are not a project's change, even when the
 # plugin sits inside the repository (vendored, or a checkout under development).
 _od_posix_path "$plugin"
+_od_normalize_path "$_OD_PATH"
 own=${_OD_PATH%/}
 
 # in_plugin PATH: true when PATH is the plugin directory or inside it.
 in_plugin() {
-  case $1/ in "$own"/*) return 0 ;; esac
+  local path=$1
+  case $path in *//* | */./* | */../*) _od_normalize_path "$path"; path=$_OD_PATH ;; esac
+  case $path/ in "$own"/*) return 0 ;; esac
   return 1
 }
 US=$'\037'
