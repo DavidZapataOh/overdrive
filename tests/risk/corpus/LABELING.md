@@ -25,15 +25,17 @@ These labels are the ground truth for the deterministic risk classifier. They ar
 | `tenant-isolation` | critical | path tokens `tenant tenants tenancy rls`; added lines `ROW LEVEL SECURITY`, `CREATE POLICY`, `tenant_id`, `tenantId` |
 | `money` | critical | path tokens `billing payment payments checkout invoice invoices invoicing subscription subscriptions refund refunds payout payouts charge charges` |
 | `secrets` | critical | paths `.env`, `.env.*`, `**/*.pem`, `**/*.key`, `**/*secret*`, `**/credentials*`; added lines matching `AKIA[0-9A-Z]{16}`, `sk_live_[0-9a-zA-Z]{10,}`, `-----BEGIN [A-Z ]*PRIVATE KEY-----`, `gh[pousr]_[A-Za-z0-9]{36}`, `xox[baprs]-`, `(api[_-]?key|secret|token|password)[[:space:]]*[:=][[:space:]]*["'][^"']{12,}` |
-| `delivery` | critical | `.github/workflows/**`, `.github/actions/**`, `.gitlab-ci.yml`, `.circleci/**`, `**/Dockerfile*`, `vercel.json`, `netlify.toml`, `fly.toml`, `**/deploy/**`, `.husky/**`, `lefthook.yml`, `.pre-commit-config.yaml`, `CODEOWNERS`, `.github/CODEOWNERS`, `renovate.json*`, `.github/dependabot.yml`, `.gitleaks.toml` |
+| `delivery` | critical | `.github/workflows/**`, `.github/actions/**`, `.gitlab-ci.yml`, `.circleci/**`, `**/Dockerfile*`, `vercel.json`, `netlify.toml`, `fly.toml`, `**/deploy/**`, `.husky/**`, `lefthook.yml`, `.pre-commit-config.yaml`, `CODEOWNERS`, `.github/CODEOWNERS`, `renovate.json*`, `.github/dependabot.yml`, `.gitleaks.toml`, `**/.gitattributes` |
 | `public-contract` | critical | `**/*.proto`, `**/*.graphql`, `**/openapi*`, `**/swagger*`, `**/api/**` |
 | `concurrency` | critical | added lines `FOR UPDATE`, `SKIP LOCKED`, `advisory_lock`, `pg_advisory`, `Mutex`, `Semaphore`, `Atomics.`, `SERIALIZABLE`, `isolation level` |
-| `test-removed` | critical | a deleted test file, or a test file whose removed `it(`/`test(`/`def test_`/`func Test` lines outnumber added ones |
+| `test-removed` | critical | a deleted test file, a test file renamed to a name that is not a test's, or a test file whose removed `it(`/`test(`/`def test_`/`func Test` lines outnumber added ones |
 | `untested-change` | critical | a changed (not deleted) source file (`ts tsx js jsx mjs cjs py go rs rb java kt swift cs php`, excluding `*.d.ts`, `*.config.*`, test files) when the diff changes no test file and the repo has no test named after its stem (`stem.test.*`, `stem.spec.*`, `test_stem.py`, `stem_test.*`, `__tests__/stem.*`) |
 | `dependencies` | standard | `package.json`, `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `bun.lock*`, `go.mod`, `go.sum`, `Cargo.toml`, `Cargo.lock`, `requirements*.txt`, `pyproject.toml`, `poetry.lock`, `uv.lock`, `Gemfile*` |
 | `exec-bit` | standard | mode change to `100755` |
 | `deletion` | standard | any deleted non-test file |
 | `test-harness` | standard | `vitest.config.*`, `vitest.workspace.*`, `jest.config.*`, `playwright.config.*`, `pytest.ini`, `conftest.py`, `turbo.json` |
+| `unscanned-content` | critical | a changed file whose lines git does not show (git takes it as binary: a NUL byte, or a `-diff`/`binary` attribute) and whose name is not a binary format: `png jpg jpeg gif webp avif bmp ico icns tif tiff heic psd woff woff2 ttf otf eot zip gz tgz bz2 xz zst 7z rar tar jar war mp3 mp4 m4a wav ogg oga flac webm mov avi mkv pdf wasm o a so dylib dll exe class pyc bin dat db sqlite lockb docx xlsx pptx odt ods` |
+| `risk-map` | critical | `.overdrive/risk-map.conf` (the map decides lanes, so changing it changes delivery itself); the change is judged by the map on both of its sides, joined |
 | project map items | from map | `.overdrive/risk-map.conf` rules |
 | `classification-failed` | critical | any internal error, invalid map, missing range, unborn HEAD |
 
@@ -41,12 +43,12 @@ Path tokens match whole segments split on `/ . _ -` (case-insensitive), and the 
 
 Content case rules: the SQL and concurrency phrases (`DROP TABLE`, `DROP COLUMN`, `ALTER TABLE`, `TRUNCATE`, `DELETE FROM`, `FOR UPDATE`, `SKIP LOCKED`, `SERIALIZABLE`, `isolation level`, `ROW LEVEL SECURITY`, `CREATE POLICY`) match case-insensitively, because SQL keywords are case-insensitive. Identifiers (`bcrypt`, `argon2`, `verifyToken`, `getServerSession`, `tenant_id`, `tenantId`, `advisory_lock`, `pg_advisory`, `Mutex`, `Semaphore`, `Atomics.`) match case-sensitively, as written. Secret patterns are regular expressions and match exactly as written.
 
-Clarification: a change that only edits documentation is `direct` even when a documentation path contains a token (`docs/payments.md`); path tokens are not evaluated on documentation files: names ending in `.md`, `.mdx`, `.rst`, `.txt` or `.adoc` (any case), and every file under the top-level `docs/` directory. Path globs and content signals still apply to them.
+Clarification: a change that only edits documentation is `direct` even when a documentation path contains a token (`docs/payments.md`) or a line quotes a signal (`FOR UPDATE` in a guide). Documentation files are names ending in `.md`, `.mdx`, `.rst` or `.adoc` (any case), and, under a `docs/` or `doc/` directory at any depth, also `.txt` files, images (`png jpg jpeg gif webp avif bmp ico svg`) and fonts (`woff woff2 ttf otf eot`). Everything else under those directories (a docs site's code and configuration: `.ts`, `.mts`, `.vue`, `.json`, `.sh`, ...) is code. Path tokens and content signals are not evaluated on documentation files, except the `secrets` line patterns: a key in a README is still a leaked key. Path globs still apply to them.
 
 ## How to label
 
 - Read the whole change: file list with statuses and modes, then the patch. Do not label from commit messages.
-- Check every content signal against added lines (removed lines for test-case counts and map `symbol` rules), and read the hunks around each hit.
+- Check every content signal against added lines (removed lines for test-case counts and map `symbol` rules), and read the hunks around each hit. In documentation files only the `secrets` patterns count.
 - Apply the table literally: an item applies when its signal is present. Never drop an item whose signal is present, even if it looks harmless; record the disagreement in the note as `policy-doubt: …`.
 - When a change plainly touches a fixed floor that no signal catches (for example, an authorization check in a file without an auth path token), add the floor item and explain it in the note as `judgment: …`.
 - `untested-change` looks at the test files present at the change's final commit, not only at the diff.
@@ -90,6 +92,12 @@ cd tests/risk/corpus && find synthetic oss.tsv -type f | LC_ALL=C sort | xargs s
 
 - `lowercase-prose-is-not-concurrency` replaced by `update-form-prose-is-not-concurrency`, and `lowercase-for-update-is-concurrency` and `truncate-lowercase-is-data-migration` added: SQL and concurrency phrases match case-insensitively, so lowercase `for update` in prose is no longer a valid negative.
 - policy: camelCase/digit token split, added authentication/authorization. Path tokens are also matched on the words of camelCase and letter/digit segments, and `authentication` and `authorization` join the `auth` tokens. No existing label changed; cases `camel-case-*`, `digit-split-oauth2`, `authentication-and-authorization-dirs`, `author-component-is-not-auth` and `charger-component-is-not-money` were added and SHA256SUMS regenerated.
+
+- policy: documentation set and the `risk-map` item. Documentation files are `.md .mdx .rst .adoc` anywhere plus any file under a `docs/` or `doc/` directory at any depth, `.txt` only there, and only secret patterns are read in them; editing `.overdrive/risk-map.conf` is the critical item `risk-map`, and a change is judged by the map on both of its sides. No existing label changed; cases `risk-map-edit`, `risk-map-rule-dropped-still-applies`, `txt-outside-docs-keeps-tokens`, `nested-docs-dir-is-documentation` and `documentation-content-is-not-scanned` were added and SHA256SUMS regenerated.
+
+- policy: content git does not show, `.gitattributes`, test renames, docs-directory code and accented keywords. A changed file git prints as binary without a binary-format name is the critical item `unscanned-content` (attributes or a NUL byte would otherwise hide its lines); `**/.gitattributes` joins `delivery`; renaming a test file to a non-test name is `test-removed`, and only new paths count as tests the change carries; source files under `docs/` or `doc/` are code; keywords match whether or not the text is accented or uppercase (`FACTURACIÓN`, `facturacion`). No existing label changed; cases `gitattributes-hides-content`, `info-attributes-hide-content`, `nul-byte-in-source-hides-content`, `gitattributes-edit-is-delivery`, `test-renamed-to-fixture`, `accented-keyword-uppercase` and `source-under-docs-dir-is-code` were added and SHA256SUMS regenerated.
+
+- policy: documentation under `docs/` and `doc/` is prose, images and fonts only; any other file there is code (`docs/.vitepress/config.mts`, `docs/conf.vue`). Case `nested-docs-dir-is-documentation` changed its file from `nav.json` (now code) to `notes.txt` so it still shows a nested documentation directory; its label is unchanged. Cases `docs-mts-is-code` and `docs-vue-is-code` were added and SHA256SUMS regenerated.
 
 ### Pending conflicts
 

@@ -252,7 +252,7 @@ test_errors_return_instead_of_exiting() {
 test_floors_conf_parses() {
   out=$(load "$(lib_dir)/floors.conf")
   items=$(printf '%s\n' "$out" | awk -F '\t' '{ print $3 "=" $4 }' | LC_ALL=C sort -u | tr '\n' ' ')
-  assert_eq "auth=critical concurrency=critical data-migration=critical delivery=critical dependencies=standard money=critical public-contract=critical secrets=critical tenant-isolation=critical test-harness=standard " "$items"
+  assert_eq "auth=critical concurrency=critical data-migration=critical delivery=critical dependencies=standard money=critical public-contract=critical risk-map=critical secrets=critical tenant-isolation=critical test-harness=standard " "$items"
 }
 
 test_floors_conf_encodes_table_signals() {
@@ -272,6 +272,7 @@ test_floors_conf_encodes_table_signals() {
   assert_line "$out" "path${tab}**/api/**${tab}public-contract${tab}critical"
   assert_line "$out" "path${tab}**/pnpm-lock.yaml${tab}dependencies${tab}standard"
   assert_line "$out" "path${tab}**/conftest.py${tab}test-harness${tab}standard"
+  assert_line "$out" "path${tab}.overdrive/risk-map.conf${tab}risk-map${tab}critical"
   assert_no_line "$out" "test-removed|untested-change|deletion|exec-bit|classification-failed"
 }
 

@@ -1,27 +1,8 @@
 #!/usr/bin/env bash
 # Tests for overdrive risk: change collection and path signals.
 
-overdrive() { "$(dirname "$(dirname "$RUNNER")")/plugins/overdrive/bin/overdrive" "$@"; }
-
-# risk REPO ARGS...: classifier output for REPO; the exit code is kept in $rc.
-risk() {
-  local repo=$1
-  shift
-  rc=0
-  out=$(overdrive risk --repo "$repo" "$@" 2>err) || rc=$?
-}
-
-# A test next to each source file keeps the computed untested-change item out of
-# assertions that are about paths.
-source_with_test() {
-  write_file "$1" "$2" 'export const x = 1;'
-  write_file "$1" "${2%.*}.test.${2##*.}" 'test("x", () => {});'
-}
-
-windows_fs() {
-  case $OSTYPE in msys* | cygwin*) return 0 ;; esac
-  return 1
-}
+# shellcheck source=helpers.sh
+. "$(dirname "$RUNNER")/risk/helpers.sh"
 
 test_docs_only_is_direct() {
   local repo
@@ -67,19 +48,25 @@ test_path_tokens_skip_documentation_files() {
   write_file "$repo" guides/billing.mdx 'x'
   write_file "$repo" notes/session.rst 'x'
   write_file "$repo" notes/checkout.adoc 'x'
-  write_file "$repo" lists/passwords.txt 'x'
   write_file "$repo" docs/tenants/diagram.svg '<svg/>'
+  write_file "$repo" packages/docs/billing/fee.png 'x'
+  write_file "$repo" doc/session/notes.txt 'x'
   risk "$repo" --worktree
   assert_line "$out" "lane direct"
   assert_no_line "$out" "^item "
 
-  # Globs still apply to documentation files, and docs/ is only the root directory.
+  # Globs still apply to documentation files, and .txt is documentation only under docs/ or doc/.
   write_file "$repo" .github/workflows/README.md 'x'
-  source_with_test "$repo" packages/docs/billing/fee.ts
+  write_file "$repo" lists/passwords.txt 'x'
   risk "$repo" --worktree
   assert_line "$out" "item delivery critical floor path .github/workflows/README.md"
-  assert_line "$out" "item money critical floor path packages/docs/billing/fee.ts"
-  assert_no_line "$out" "path (docs/payments.md|src/auth/README.MD|lists/passwords.txt)$"
+  assert_line "$out" "item auth critical floor path lists/passwords.txt"
+  assert_no_line "$out" "path (docs/payments.md|src/auth/README.MD|packages/docs/billing/fee.png)$"
+  # Under docs/, only prose, images and fonts are documentation: a docs site's
+  # configuration is code.
+  write_file "$repo" packages/docs/billing/nav.json '{}'
+  risk "$repo" --worktree
+  assert_line "$out" "item money critical floor path packages/docs/billing/nav.json"
 }
 
 test_rename_out_of_auth_counts_old_path() {
@@ -479,17 +466,4 @@ test_paths_double_dash_ends_options() {
   assert_line "$out" "item auth critical floor path --odd/auth.ts"
   risk "$repo" --paths -- --billing.ts
   assert_line "$out" "item money critical floor path --billing.ts"
-}
-
-test_intent_alone_fails_closed_until_evaluated() {
-  local repo
-  repo=$(make_repo)
-  risk "$repo" --intent "ajusta el cobro"
-  assert_eq 3 "$rc" "exit code"
-  assert_line "$out" "item classification-failed critical failure intent not evaluated"
-  assert_line "$out" "note intent not evaluated"
-  risk "$repo" --intent "ajusta el cobro" --paths docs/x.md
-  assert_eq 0 "$rc" "exit code"
-  assert_line "$out" "note intent not evaluated"
-  assert_line "$out" "lane direct"
 }
