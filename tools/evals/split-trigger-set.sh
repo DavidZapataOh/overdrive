@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
-# Usage: split-trigger-set.sh DIR
+# Usage: split-trigger-set DIR
 # Tags every trigger case (a directory with a prompt.md) below DIR as train or validation.
 # The tags line must be a flow list (tags: [a, b]) or absent.
 
 set -u
-here=$(cd "$(dirname "$0")" && pwd)
-# shellcheck source=lib.sh
-. "$here/lib.sh"
+
+# Stable 60/40 assignment by checksum of the case name, so adding or removing cases never moves
+# another case between the splits. Kept inline because the skill ships this file on its own.
+od_split_bucket() {
+  local sum
+  sum=$(printf '%s' "$1" | cksum | awk '{ print $1 }')
+  if [ $((sum % 100)) -lt 60 ]; then
+    echo train
+  else
+    echo validation
+  fi
+}
 
 if [ "$#" -ne 1 ]; then
-  echo "usage: split-trigger-set.sh DIR" >&2
+  echo "usage: $(basename "$0") DIR" >&2
   exit 64
 fi
 [ -d "$1" ] || { echo "split-trigger-set: not a directory: $1" >&2; exit 1; }

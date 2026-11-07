@@ -17,6 +17,13 @@ fx_node_project() {
   fx_file package.json "$(printf '{\n  "name": "%s",\n  "version": "1.0.0",\n  "private": true,\n  "scripts": {\n    "test": "node --test"\n  }\n}' "$1")"
 }
 
+# A Claude Code plugin at the workspace root: manifest plus an empty skills/.
+fx_plugin() {
+  [ -n "${1-}" ] || { echo "fx_plugin: plugin name required" >&2; return 1; }
+  mkdir -p skills || return 1
+  fx_file .claude-plugin/plugin.json "$(printf '{\n  "name": "%s",\n  "version": "1.0.0",\n  "description": "%s"\n}' "$1" "${2:-$1}")"
+}
+
 fx_file() {
   local dir
   [ -n "${1-}" ] || { echo "fx_file: path required" >&2; return 1; }

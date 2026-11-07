@@ -5,7 +5,8 @@
 jq() { command jq -b "$@"; }
 
 # od_split_bucket NAME: stable 60/40 assignment by checksum of the case name, so adding or
-# removing cases never moves another case between the splits.
+# removing cases never moves another case between the splits. split-trigger-set.sh carries its
+# own copy (the skill ships it alone); a test keeps the two in agreement.
 od_split_bucket() {
   local sum
   sum=$(printf '%s' "$1" | cksum | awk '{ print $1 }')

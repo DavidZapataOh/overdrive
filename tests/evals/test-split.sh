@@ -78,3 +78,17 @@ test_split_requires_a_directory() {
   assert_exit 64 tool
   assert_exit 1 tool missing
 }
+
+test_split_and_summary_assign_the_same_bucket() {
+  local i name
+  . "$(dirname "$(dirname "$RUNNER")")/tools/evals/lib.sh"
+  for i in $(seq 1 40); do
+    name="acme-trigger-$i"
+    trigger_case set "$name"
+  done
+  tool set > /dev/null
+  for i in $(seq 1 40); do
+    name="acme-trigger-$i"
+    assert_eq "[$(od_split_bucket "$name")]" "$(tags_of set "$name")" "$name"
+  done
+}

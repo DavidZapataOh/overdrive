@@ -9,8 +9,8 @@ recorded=$root/tests/evals/fixtures/aggregate-result.recorded.json
 
 # project: a repository root with a plugin that has eval cases for the tdd skill.
 project() {
-  mkdir -p repo/plugins/overdrive/evals/tdd/trigger repo/plugins/overdrive/evals/tdd/pressure/skip-tests \
-    repo/plugins/overdrive/evals/tdd/pressure/rush-fix fakebin
+  mkdir -p repo/plugins/overdrive/evals/tdd/trigger repo/plugins/overdrive/evals/tdd/pressure/tdd-skip-tests \
+    repo/plugins/overdrive/evals/tdd/pressure/tdd-rush-fix fakebin
   cp "$root/tests/evals/fake-claude" fakebin/claude
   # The recorded document has one run per arm; a full suite asks for three.
   jq '.suite.ablation = "with-without" | .cases[].arms |= map_values(. + . + .)' "$recorded" > full.json
@@ -73,6 +73,12 @@ test_allow_tools_are_passed_last() {
   esac
 }
 
+test_concurrency_is_passed_through() {
+  project
+  suite tdd --tier full --concurrency 4 > /dev/null
+  assert_call_has "--concurrency 4"
+}
+
 test_cost_ceiling_can_be_overridden() {
   project
   suite tdd --tier full --max-cost-usd 4 > /dev/null
@@ -84,8 +90,30 @@ test_pressure_runs_every_scenario_five_times_with_the_plugin() {
   FAKE_KEPT=5 suite tdd --tier pressure > /dev/null
   assert_eq "2" "$(wc -l < "$FAKE_LOG" | tr -d ' ')"
   assert_call_has "--runs 5 --keep-temp"
-  assert_file_contains "$FAKE_LOG" '--case rush-fix '
-  assert_file_contains "$FAKE_LOG" '--case skip-tests '
+  assert_file_contains "$FAKE_LOG" '--case tdd-rush-fix '
+  assert_file_contains "$FAKE_LOG" '--case tdd-skip-tests '
+  [ -d repo/tests/pressure/tdd/rush-fix/runs ] || { echo "runs not under the scenario name" >&2; return 1; }
+}
+
+test_skill_grants_come_from_the_allow_tools_file() {
+  project
+  printf 'Write\n# shell for the test runner\n\nBash(npm test *)\n' > repo/plugins/overdrive/evals/tdd/allow-tools
+  suite tdd --tier full > /dev/null
+  case "$(cat "$FAKE_LOG")" in
+    *'--allow-tools Write Bash(npm test *) '*) ;;
+    *) printf 'grants not read from the file: %s\n' "$(cat "$FAKE_LOG")" >&2; return 1 ;;
+  esac
+}
+
+test_command_line_grants_replace_the_allow_tools_file() {
+  project
+  printf 'Write\n' > repo/plugins/overdrive/evals/tdd/allow-tools
+  suite tdd --tier smoke --allow-tools Edit > /dev/null
+  case "$(cat "$FAKE_LOG")" in
+    *'--allow-tools Edit '*) ;;
+    *) printf 'unexpected grants: %s\n' "$(cat "$FAKE_LOG")" >&2; return 1 ;;
+  esac
+  assert_exit 1 grep -q -- '--allow-tools Write' "$FAKE_LOG"
 }
 
 test_failed_threshold_still_writes_results_and_propagates_the_status() {
@@ -109,6 +137,8 @@ test_usage_errors() {
   assert_exit 64 suite tdd
   assert_exit 64 suite tdd --tier nightly
   assert_exit 64 suite tdd --tier full --model gpt
+  assert_exit 64 suite tdd --tier full --concurrency many
+  assert_exit 64 suite tdd --tier pressure --concurrency 2
   assert_exit 1 suite unknown --tier smoke
   assert_eq "0" "$(wc -l < "$FAKE_LOG" | tr -d ' ')"
 }

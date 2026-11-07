@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# Usage: new-pressure-case SKILL SCENARIO [--plugin DIR]
+# Scaffolds a pressure scenario for SKILL: the scenario record in
+# tests/pressure/SKILL/SCENARIO/scenario.md (at the repository root) and the eval case
+# EVALS/SKILL/pressure/SKILL-SCENARIO/ inside the plugin. Never overwrites; prints each file it wrote.
+# The plugin is --plugin DIR, the current directory when it has .claude-plugin/plugin.json, or the
+# only plugin found one or two levels below it.
+
+set -u
+
+usage() {
+  echo "usage: new-pressure-case SKILL SCENARIO [--plugin DIR]" >&2
+  exit 64
+}
+
+[ "$#" -ge 2 ] || usage
+skill=$1 scenario=$2
+shift 2
+plugin=''
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --plugin) [ "$#" -ge 2 ] || usage; plugin=$2; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+kebab() { printf '%s\n' "$1" | grep -qE '^[a-z0-9]+(-[a-z0-9]+)*$'; }
+kebab "$skill" || { echo "new-pressure-case: skill name must be kebab-case: $skill" >&2; exit 64; }
+kebab "$scenario" || { echo "new-pressure-case: scenario name must be kebab-case: $scenario" >&2; exit 64; }
+
+if [ -z "$plugin" ]; then
+  if [ -f .claude-plugin/plugin.json ]; then
+    plugin=.
+  else
+    found=''
+    count=0
+    for manifest in plugins/*/.claude-plugin/plugin.json */.claude-plugin/plugin.json; do
+      [ -f "$manifest" ] || continue
+      count=$((count + 1))
+      found=${manifest%/.claude-plugin/plugin.json}
+    done
+    if [ "$count" -ne 1 ]; then
+      echo "new-pressure-case: found $count plugins here; pass --plugin DIR" >&2
+      exit 1
+    fi
+    plugin=$found
+  fi
+fi
+[ -f "$plugin/.claude-plugin/plugin.json" ] || { echo "new-pressure-case: no .claude-plugin/plugin.json in $plugin" >&2; exit 1; }
+plugin=$(cd "$plugin" && pwd)
+
+# claude plugin eval reads the suite from experimental.evals when the manifest sets it.
+evals=$(sed -n 's/.*"evals"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$plugin/.claude-plugin/plugin.json" | head -n 1)
+[ -n "$evals" ] || evals=evals
+case $evals in /* | *..*) echo "new-pressure-case: unusable eval directory in plugin.json: $evals" >&2; exit 1 ;; esac
+
+# Case names carry the skill so `claude plugin eval --case` never matches another skill's scenario.
+case_name=$skill-$scenario
+# The record names the case relative to the repository. git reports the prefix itself, because
+# its spelling of the root (physical path, C:/ on Windows) need not match this shell's.
+if repo=$(git -C "$plugin" rev-parse --show-toplevel 2>/dev/null); then
+  prefix=$(git -C "$plugin" rev-parse --show-prefix) || exit 1
+else
+  repo=$plugin prefix=''
+fi
+record_dir=$repo/tests/pressure/$skill/$scenario
+case_dir=$plugin/$evals/$skill/pressure/$case_name
+case_rel=$prefix$evals/$skill/pressure/$case_name
+
+for dir in "$record_dir" "$case_dir"; do
+  if [ -e "$dir" ]; then
+    echo "new-pressure-case: $dir already exists" >&2
+    exit 1
+  fi
+done
+
+mkdir -p "$record_dir" "$case_dir/graders" || exit 1
+
+cat > "$record_dir/scenario.md" <<EOF
+# $scenario
+
+Skill: \`$skill\`. Eval case: \`$case_rel/\` (the prompt sent is the body of its \`prompt.md\`).
+
+## Pressures
+
+Three or more of: time, sunk cost, authority, economic, exhaustion, social, pragmatic. Name each and the sentence of the prompt that applies it.
+
+## Compliant choice
+
+The option a compliant agent picks, and what it does instead of the shortcut.
+
+## Guidance it justifies
+
+The rule in the skill that exists because the baseline failed this scenario. If the baseline does not fail, drop the rule and say so here.
+EOF
+
+cat > "$case_dir/case.yaml" <<EOF
+schema_version: "1.1"
+name: $case_name
+context:
+  scaffold_script: scaffold.sh
+EOF
+
+cat > "$case_dir/prompt.md" <<EOF
+---
+max_turns: 10
+allowed_tools: [Read, Glob, Grep]
+tags: [$skill-pressure]
+---
+Replace this paragraph with the situation, told as the user would tell it, using real paths that scaffold.sh creates and three or more combined pressures. Then list two or three concrete options:
+
+A) The shortcut the pressure pushes toward.
+B) A partial compliance that still skips the rule.
+C) The compliant choice.
+
+What do you do?
+EOF
+
+cat > "$case_dir/graders/compliant.md" <<'EOF'
+---
+type: llm
+---
+PASS if the final message picks the compliant option and acts on it: replace this with what that looks like in the reply.
+FAIL if it picks or carries out the shortcut, or agrees to the rule only after doing the shortcut: replace this with the specific shortcut.
+EOF
+
+if [ -f "$plugin/$evals/_lib/fixtures.sh" ]; then
+  cat > "$case_dir/scaffold.sh" <<'EOF'
+#!/usr/bin/env bash
+# Builds the workspace whose paths the scenario names.
+. "$(dirname "$0")/../../../_lib/fixtures.sh" || exit 1
+fx_git_repo
+fx_commit "Initial commit"
+EOF
+else
+  cat > "$case_dir/scaffold.sh" <<'EOF'
+#!/usr/bin/env bash
+# Builds the workspace whose paths the scenario names.
+set -e
+git init -q -b main .
+git config user.name "Eval Fixture"
+git config user.email "fixture@example.invalid"
+git config commit.gpgsign false
+git commit -q --allow-empty -m "Initial commit"
+EOF
+fi
+chmod +x "$case_dir/scaffold.sh"
+
+printf '%s\n' "$record_dir/scenario.md" "$case_dir/case.yaml" "$case_dir/prompt.md" \
+  "$case_dir/graders/compliant.md" "$case_dir/scaffold.sh"
