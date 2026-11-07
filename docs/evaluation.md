@@ -142,3 +142,39 @@ A `tool_used: Skill` grader is excluded from the score (`scored: false`) in a tw
 **Plugin hooks run in the with-arm; `bin/` is not on the Bash tool's `PATH`.** A `SessionStart` hook ran with the plugin loaded (`hook_started` and `hook_response` records in the trace), its `additionalContext` reached the model, and the same prompt in the baseline arm did not see it. The hook ran in the workspace with `CLAUDE_PLUGIN_ROOT` set, but `overdrive` was not on its `PATH`. With `Bash` granted, `command -v overdrive` found nothing and `CLAUDE_PLUGIN_ROOT` was not set in the tool's shell. Consequence: skills call the CLI by absolute path (`${CLAUDE_PLUGIN_ROOT}/bin/overdrive`, substituted in skill content) and the session-start router text uses the substituted root, never the bare command name.
 
 The plugin in this repository has no hooks yet; the hook probe used a temporary one in the throwaway copy.
+
+## Risk classifier
+
+The deterministic risk classifier (`overdrive risk`, [risk-map.md](risk-map.md)) is measured against labeled corpora in `tests/risk/corpus/`. Labels follow the written policy in `tests/risk/corpus/LABELING.md`, are frozen by `SHA256SUMS`, and change only in a deliberate relabel commit with a reason line.
+
+- **Synthetic** (`synthetic/<case>/`): one small authored repository per rule and per counterexample, classified in `--worktree` mode. CI runs it on every push (job `corpus` in `ci.yml`).
+- **OSS** (`oss.tsv`): 64 commits of `vercel/next.js`, `trpc/trpc`, `better-auth/better-auth` and `medusajs/medusa`, labeled blind from the policy and each commit's patch. It needs the network, so it runs nightly (`corpus.yml`) on blobless clones cached under a key derived from `oss.tsv`.
+
+```
+bash tests/risk/run-corpus.sh --synthetic tests/risk/corpus/synthetic
+bash tests/risk/run-corpus.sh --tsv tests/risk/corpus/oss.tsv --clone-cache DIR [--map FILE]
+```
+
+`--map FILE` classifies every row with that risk map instead of the project's, to try a project's rules on its history before committing them.
+
+The gate is `under = 0` (no change classified below its label), `critical_recall = 1.00` (every critical change classified critical) and `over_rate ≤ 0.25` (changes classified above their label, over all changes labeled below critical).
+
+| Corpus | Date | Commit | Rows | under | critical_recall | over | over_rate | Gate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Synthetic | 2026-11-07 | `9835c69` | 151 | 0 | 1.00 | 0 | 0.00 | met |
+| OSS | 2026-11-07 | `9835c69` | 64 | 0 | 1.00 | 7 | 0.30 | over_rate missed |
+
+The seven OSS rows classified above their label: five are `untested-change` under the coverage rules (a test covers a source only when it is named after it or sits next to it, in the same package), which are stricter than the rule the rows were labeled under (any test in the change, or a test with the same name anywhere in the repository): `next.js` `3ddfcac` and `e974969`, `trpc` `6894895` and `2b8a4f8`, `better-auth` `639b20f`. Two are `money` from the camelCase word `subscription` in a test file name (`httpSubscriptionLink.test.ts`, `useSubscription.test.tsx`), where the project uses the word for streaming subscriptions: `trpc` `f08ba07` and `22220b3`.
+
+### Known limits
+
+Some floors are only visible to someone who reads what the code means. Labelers mark those items `judgment:`; no path, line or name in the change carries them, so the classifier does not raise them. The generic rules tried on the corpora (any `session` identifier for `auth`, any removed `export` for `public-contract`) also fired on prose, payment sessions and internal modules, including a change labeled direct:
+
+| Row | Item | What only judgment sees |
+| --- | --- | --- |
+| `trpc/trpc` `df313f4` | `public-contract` | removes the exported `UniversalIncomingMessage` type and widens the Node HTTP request types |
+| `medusajs/medusa` `b890263` | `auth` | a new session store and `saveUninitialized` defaulting to false in the Express loader |
+| `trpc/trpc` `19da060` | `public-contract` | `createTRPCClient` returns `AsyncIterable` instead of `AsyncGenerator` |
+| `vercel/next.js` `a61dab2` | `public-contract` | a public config key moves under `experimental` |
+
+All four rows still come out critical through other signals (`untested-change`, `money`), but the named item is missing. Two rules cover these cases. The model may raise a lane, never lower it: when the change plainly touches a floor that no signal names, the model adds the item. A project names its own exported surface, session code and secret helpers in `.overdrive/risk-map.conf` (`symbol`, `path`, `keyword` rules), so the classifier catches them from then on.
