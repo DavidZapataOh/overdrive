@@ -1,0 +1,313 @@
+#!/usr/bin/env bash
+# overdrive brief: write the self-contained brief a builder works from.
+
+OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=../lib/common.sh
+. "$OVERDRIVE_HOME/lib/common.sh"
+# shellcheck source=../lib/plan.sh
+. "$OVERDRIVE_HOME/lib/plan.sh"
+# shellcheck source=../lib/text.sh
+. "$OVERDRIVE_HOME/lib/text.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive brief (--plan FILE --task N | --text TEXT) [--lane LANE] [--out FILE] [--repo DIR]
+
+Writes the brief to .overdrive/run/<plan-stem>-<cksum>/task-<N>.md (plan mode) or
+.overdrive/run/briefs/<cksum>.md (text mode), or to --out, and prints its path.
+Without --lane the lane comes from overdrive risk; if that fails the lane is critical.
+USAGE
+}
+
+plan='' task='' text='' has_text='' lane='' out='' repo=''
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --plan | --task | --text | --lane | --out | --repo)
+      [ "$#" -ge 2 ] || { usage >&2; exit 64; }
+      case $1 in
+        --plan) plan=$2 ;;
+        --task) task=$2 ;;
+        --text) text=$2; has_text=1 ;;
+        --lane) lane=$2 ;;
+        --out) out=$2 ;;
+        --repo) repo=$2 ;;
+      esac
+      shift
+      ;;
+    -h | --help) usage; exit 0 ;;
+    *) usage >&2; exit 64 ;;
+  esac
+  shift
+done
+
+if [ -n "$has_text" ]; then
+  [ -z "$plan" ] && [ -z "$task" ] && [ -n "$text" ] || { usage >&2; exit 64; }
+else
+  [ -n "$plan" ] && [ -n "$task" ] || { usage >&2; exit 64; }
+  case $task in -* | *[!0-9A-Za-z._-]*) usage >&2; exit 64 ;; esac
+fi
+case $lane in '' | direct | standard | critical) ;; *) usage >&2; exit 64 ;; esac
+
+[ -n "$has_text" ] || [ -r "$plan" ] || od_die "cannot read plan: $plan" 66
+root=$(od_repo_root "${repo:-$PWD}") || od_die "not inside a git repository" 1
+
+if [ -n "$has_text" ]; then
+  task_text=$text
+  files=
+else
+  rc=0
+  task_text=$(plan_task "$plan" "$task") || rc=$?
+  case $rc in
+    0) ;;
+    3) exit 65 ;;
+    *) od_die "task $task not found in $plan" 65 ;;
+  esac
+  constraints=$(plan_global_constraints "$plan") || constraints=
+  files=$(plan_task_files "$plan" "$task")
+fi
+
+if [ -z "$out" ]; then
+  run=$(od_run_dir "$root") || od_die "cannot create $root/.overdrive/run" 1
+  if [ -n "$has_text" ]; then
+    sum=$(printf '%s' "$text" | cksum)
+    out=$run/briefs/${sum%% *}.md
+  else
+    # Must equal od_plan_dir: <sanitized stem>-<cksum of the absolute plan path>, so
+    # same-named plans in different folders never share a run directory.
+    abs=$plan
+    case $abs in /* | [A-Za-z]:*) ;; *) abs=$PWD/$abs ;; esac
+    _od_normalize_path "$abs"
+    sum=$(printf '%s' "$_OD_PATH" | cksum)
+    stem=${plan##*/}
+    stem=${stem%.md}
+    out=$run/${stem//[!A-Za-z0-9._-]/-}-${sum%% *}/task-$task.md
+  fi
+fi
+case $out in /* | [A-Za-z]:*) ;; *) out=$PWD/$out ;; esac
+
+# Function words in English and Spanish, and the scaffolding every plan task repeats.
+STOPWORDS='about above after again against also always among another been before
+being below between both could does doing done down during each either even every
+from have having here into just like make many more most much must never only other
+over same should since some such than that their them then there these they this
+those through under unless until upon used uses using very want what when where
+whether which while will with within without would your
+ahora antes aquí aunque bien cada como cosa cosas cual cuál cuando debe deben desde
+después donde durante entre esas ese eso esos esta estas este esto estos hace hacer
+hasta luego menos misma mismo mucho muchos nunca otra otras otro otros para pero
+porque puede pueden pues siempre sino sobre solo también tanto tiene tienen todas
+todo todos
+task tasks step steps file files create modify interfaces produces consumes expected'
+
+# _words: print the distinct words of stdin, one per line (rule in docs/decisions.md).
+_words() {
+  OD_STOP=$STOPWORDS LC_ALL=C awk "$OD_FOLD_AWK"'
+    BEGIN { n = split(ENVIRON["OD_STOP"], s, /[ \t\n]+/); for (i = 1; i <= n; i++) stop[fold(s[i])] = 1 }
+    {
+      line = fold($0)
+      gsub(/[[:punct:][:space:][:cntrl:]]+/, " ", line)
+      n = split(line, w, " ")
+      for (i = 1; i <= n; i++)
+        if (length(w[i]) >= 4 && !(w[i] in stop) && !(w[i] in seen)) { seen[w[i]] = 1; print w[i] }
+    }
+  '
+}
+
+# _slugs DIR: print the memory directory names Claude Code may use for DIR.
+_slugs() {
+  local d=${1:-/} s up=ABCDEFGHIJKLMNOPQRSTUVWXYZ low=abcdefghijklmnopqrstuvwxyz pre
+  s=${d//\//-}
+  printf '%s\n' "${s//./-}" "${d//[!A-Za-z0-9]/-}"
+  case $OSTYPE in
+    msys* | cygwin*)
+      case $d in
+        /[a-z] | /[a-z]/*)
+          pre=${low%%"${d:1:1}"*}
+          s=${up:${#pre}:1}:${d:2}
+          printf '%s\n' "${s//[!A-Za-z0-9]/-}"
+          ;;
+      esac
+      ;;
+  esac
+}
+
+# _walk_memory DIR CONFIG: print the first MEMORY.md found from DIR up to /.
+_walk_memory() {
+  local d=$1 slug
+  while :; do
+    while IFS= read -r slug; do
+      if [ -f "$2/projects/$slug/memory/MEMORY.md" ]; then
+        printf '%s\n' "$2/projects/$slug/memory/MEMORY.md"
+        return 0
+      fi
+    done <<< "$(_slugs "$d")"
+    [ -n "$d" ] && [ "$d" != / ] || return 1
+    d=${d%/*}
+  done
+}
+
+memory_index() {
+  local cfg=${CLAUDE_CONFIG_DIR:-$HOME/.claude} common main
+  if [ -n "${CLAUDE_CODE_PROJECT_DIR_NAME:-}" ]; then
+    [ -f "$cfg/projects/$CLAUDE_CODE_PROJECT_DIR_NAME/memory/MEMORY.md" ] || return 1
+    printf '%s\n' "$cfg/projects/$CLAUDE_CODE_PROJECT_DIR_NAME/memory/MEMORY.md"
+    return 0
+  fi
+  _walk_memory "$root" "$cfg" && return 0
+  # Claude Code keys memory by the main worktree, so linked worktrees share it.
+  common=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  _od_posix_path "$common"
+  common=$_OD_PATH
+  [ "${common##*/}" = .git ] || return 1
+  main=${common%/*}
+  [ "$main" != "$root" ] || return 1
+  _walk_memory "$main" "$cfg"
+}
+
+_seen_rules=$'\n'
+
+# _rule FILE: print FILE once, if it exists.
+_rule() {
+  [ -f "$1" ] || return 0
+  case $_seen_rules in *$'\n'"$1"$'\n'*) return 0 ;; esac
+  _seen_rules=$_seen_rules$1$'\n'
+  printf '%s\n' "$1"
+}
+
+_rule_dir() { _rule "$1/CLAUDE.md"; _rule "$1/.claude/CLAUDE.md"; _rule "$1/CLAUDE.local.md"; }
+
+# rule_files: print every instruction file that exists, in the order Claude Code reads them.
+rule_files() {
+  local d rest p
+  local -a dirs=()
+  _rule "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md"
+  d=$root
+  while [ -n "$d" ] && [ "$d" != / ]; do
+    dirs=("$d" "${dirs[@]}")
+    d=${d%/*}
+  done
+  _rule_dir ''
+  for d in "${dirs[@]}"; do _rule_dir "$d"; done
+  # Subdirectory files load only when Claude reads the task's files, so name them up front.
+  while IFS= read -r p; do
+    case $p in '' | /* | ../* | */../*) continue ;; esac
+    d=$root
+    rest=$p
+    while :; do
+      case $rest in */*) ;; *) break ;; esac
+      d=$d/${rest%%/*}
+      rest=${rest#*/}
+      _rule_dir "$d"
+    done
+  done <<< "$files"
+  _rule "$root/.overdrive/decisions.md"
+}
+
+# lane_section: the classifier output, or a fail-closed critical lane with the reason.
+lane_section() {
+  local exe=$OVERDRIVE_HOME/libexec/overdrive-risk res rc=0 err errf reason
+  local -a args=()
+  if [ -n "$lane" ]; then
+    printf 'lane %s\nnote lane set by the caller\n' "$lane"
+    return 0
+  fi
+  if [ ! -f "$exe" ]; then
+    reason='overdrive risk is not installed'
+  else
+    args=(--repo "$root" --intent "$task_text")
+    if [ -n "$files" ]; then
+      args[${#args[@]}]=--paths
+      while IFS= read -r f; do args[${#args[@]}]=$f; done <<< "$files"
+    fi
+    errf=$(mktemp "${TMPDIR:-/tmp}/od-risk.XXXXXX") || errf=/dev/null
+    res=$("$BASH" "$exe" "${args[@]}" 2>"$errf") || rc=$?
+    err=
+    [ "$errf" = /dev/null ] || { IFS= read -r err < "$errf" || true; rm -f "$errf"; }
+    case $rc:$res in
+      [03]:'lane direct'$'\n'* | [03]:'lane standard'$'\n'* | [03]:'lane critical'$'\n'* | \
+        [03]:'lane direct' | [03]:'lane standard' | [03]:'lane critical')
+        printf '%s\n' "$res"
+        return 0
+        ;;
+    esac
+    case $rc in
+      0 | 3) reason='overdrive risk printed no lane' ;;
+      *) reason="overdrive risk exited $rc${err:+: $err}" ;;
+    esac
+  fi
+  printf 'lane critical\nnote classification unavailable: %s\nRisk: critical — classification-failed\n' "$reason"
+}
+
+rules_section() {
+  local index words lines hits fence
+  printf 'Read and follow these files before you start:\n'
+  rule_files | sed 's/^/- /'
+  words=$(printf '%s\n' "$task_text" | _words)
+  printf '\n'
+  if index=$(memory_index); then
+    printf 'Memory index: %s\n' "$index"
+    lines=$(OD_WORDS=$words LC_ALL=C awk "$OD_FOLD_AWK"'
+      BEGIN { n = split(ENVIRON["OD_WORDS"], w, "\n"); for (i = 1; i <= n; i++) want[w[i]] = 1 }
+      /^[ \t]*(#|$)/ { next }
+      {
+        line = fold($0)
+        gsub(/[[:punct:][:space:][:cntrl:]]+/, " ", line)
+        n = split(line, w, " ")
+        for (i = 1; i <= n; i++) if (w[i] in want) { print; next }
+      }
+    ' "$index")
+    if [ -n "$lines" ]; then
+      printf '\nMemory index lines that share words with this task:\n%s\n' "$lines"
+    else
+      printf 'No memory index line shares words with this task.\n'
+    fi
+  else
+    printf 'Memory index: none found\n'
+  fi
+  hits=
+  if [ -n "$words" ]; then
+    # shellcheck disable=SC2086
+    hits=$(IFS=$'\n'; set -f; "$BASH" "$OVERDRIVE_HOME/libexec/overdrive-recall" --repo "$root" --any $words) || hits=
+    case $hits in 'recall: no match for '*) hits= ;; esac
+  fi
+  if [ -n "$hits" ]; then
+    # A fence longer than any backtick run inside keeps the entries from closing it.
+    fence=$(printf '%s\n' "$hits" | LC_ALL=C awk '
+      match($0, /^[ \t]*`+/) { t = $0; sub(/^[ \t]*/, "", t); k = match(t, /[^`]|$/) - 1; if (k > m) m = k }
+      END { if (m < 3) m = 3; for (i = 0; i <= m; i++) printf "`"; print "" }
+    ')
+    printf '\nDecisions and learnings that mention this task'"'"'s words (overdrive recall):\n%s\n%s\n%s\n' "$fence" "$hits" "$fence"
+  else
+    printf '\nNo decision or learning mentions this task'"'"'s words.\n'
+  fi
+}
+
+report_section() {
+  cat <<'REPORT'
+Reply in at most 15 lines:
+- Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+- Commits: short sha and subject of each.
+- Evidence: the paths of the evidence files.
+- Rulings: one line each, as `Ruling: <what> — <why> — <cost if wrong>`.
+- Scope cuts: report every cut; never make one on your own.
+- Blockers: the exact command the user must run.
+REPORT
+}
+
+mkdir -p "${out%/*}" || od_die "cannot create ${out%/*}" 1
+tmp=$out.tmp.$$
+{
+  printf '# Brief\n\n## Task\n\n%s\n\n' "$task_text"
+  if [ -z "$has_text" ]; then
+    printf '## Global Constraints\n\n%s\n\n' "${constraints:-The plan has no Global Constraints section.}"
+  fi
+  printf '## Lane\n\n'
+  lane_section
+  printf '\n## Rules\n\n'
+  rules_section
+  printf '\n## Report\n\n'
+  report_section
+} > "$tmp" || { rm -f "$tmp"; od_die "cannot write $out" 1; }
+# A rename is atomic, so a reader or a parallel writer never sees half a brief.
+mv -f "$tmp" "$out" || { rm -f "$tmp"; od_die "cannot write $out" 1; }
+printf '%s\n' "$out"

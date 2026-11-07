@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# overdrive overlap: report which plan tasks touch the same files.
+
+OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=../lib/common.sh
+. "$OVERDRIVE_HOME/lib/common.sh"
+# shellcheck source=../lib/plan.sh
+. "$OVERDRIVE_HOME/lib/plan.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive overlap --plan FILE --tasks N,N[,N...]
+
+Prints "conflict <a> <b> <path>" for every path two tasks both create, modify or
+test (a directory path ending in / conflicts with the paths under it), then
+"independent <tasks>" listing the tasks that share nothing ("none" when empty).
+A task that lists no files is never independent and gets a note line instead.
+Exits 0 whatever the overlap; 65 when a task is not in the plan.
+USAGE
+}
+
+plan=
+tasks=
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --plan) [ "$#" -ge 2 ] || { usage >&2; exit 64; }; plan=$2; shift ;;
+    --tasks) [ "$#" -ge 2 ] || { usage >&2; exit 64; }; tasks=$2; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) usage >&2; exit 64 ;;
+  esac
+  shift
+done
+[ -n "$plan" ] && [ -n "$tasks" ] || { usage >&2; exit 64; }
+case $tasks in *[!0-9A-Za-z,._-]* | ,* | *, | *,,*) usage >&2; exit 64 ;; esac
+[ -r "$plan" ] || od_die "cannot read plan: $plan" 66
+
+list=
+oldifs=$IFS
+IFS=,
+for n in $tasks; do
+  IFS=$oldifs
+  rc=0
+  files=$(plan_task_files "$plan" "$n") || rc=$?
+  case $rc in
+    0) ;;
+    3) exit 65 ;;
+    *) od_die "task $n not found in $plan" 65 ;;
+  esac
+  if [ -z "$files" ]; then
+    list=$list"$n"$'\t\n'
+  else
+    while IFS= read -r f; do list=$list"$n"$'\t'"$f"$'\n'; done <<< "$files"
+  fi
+done
+IFS=$oldifs
+
+printf '%s' "$list" | LC_ALL=C awk -F '\t' '
+  # Same path, or one is a directory (trailing slash) that holds the other.
+  function clash(p, q) {
+    if (p == q) return p
+    if (substr(p, length(p)) == "/" && substr(q, 1, length(p)) == p) return p
+    if (substr(q, length(q)) == "/" && substr(p, 1, length(q)) == q) return q
+    return ""
+  }
+  !($1 in idx) { idx[$1] = ++nt; name[nt] = $1; cnt[nt] = 0 }
+  $2 != "" { t = idx[$1]; f[t, ++cnt[t]] = $2 }
+  END {
+    for (a = 1; a <= nt; a++) {
+      if (cnt[a] == 0) { print "note task " name[a] " lists no files"; bad[a] = 1 }
+      for (b = a + 1; b <= nt; b++)
+        for (i = 1; i <= cnt[a]; i++)
+          for (j = 1; j <= cnt[b]; j++) {
+            p = clash(f[a, i], f[b, j])
+            if (p == "" || ((a, b, p) in said)) continue
+            said[a, b, p] = 1
+            print "conflict " name[a] " " name[b] " " p
+            bad[a] = 1; bad[b] = 1
+          }
+    }
+    out = ""
+    for (a = 1; a <= nt; a++) if (!(a in bad)) out = out (out == "" ? "" : ",") name[a]
+    print "independent " (out == "" ? "none" : out)
+  }
+'
