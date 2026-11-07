@@ -128,7 +128,7 @@ test_library_failure_fails_closed() {
 # Each external command the classifier runs is made to fail in turn; every one of
 # those failures must end in the fail-closed classification, never in a lower lane.
 test_every_failing_command_fails_closed() {
-  local repo n=0 calls tool real args
+  local repo n=0 calls tool real args clean
   args='--diff HEAD~1..HEAD --diff HEAD~1...HEAD --staged --worktree --intent cobro'
   repo=$(make_repo)
   write_file "$repo" .overdrive/risk-map.conf 'keyword cobro money'
@@ -148,7 +148,7 @@ test_every_failing_command_fails_closed() {
       printf '#!/usr/bin/env bash\nset -C\nn=1\n'
       printf 'while ! true 2>/dev/null > "%s/calls/$n"; do n=$((n + 1)); done\n' "$PWD"
       printf 'read -r fail < "%s/calls/fail"\n' "$PWD"
-      printf 'if [ "$n" = "$fail" ]; then echo "injected failure in %s" >&2; exit 2; fi\n' "$tool"
+      printf 'if [ "$n" = "$fail" ]; then echo %s > "%s/calls/injected"; echo "injected failure in %s" >&2; exit 2; fi\n' "$tool" "$PWD" "$tool"
       printf 'exec "%s" "$@"\n' "$real"
     } > "fake/$tool"
     chmod +x "fake/$tool"
@@ -158,6 +158,7 @@ test_every_failing_command_fails_closed() {
   out=$(PATH=$PWD/fake:$PATH overdrive risk --repo "$repo" $args 2>err) || rc=$?
   assert_eq 0 "$rc" "clean run: $(cat err)"
   assert_line "$out" 'item money critical map keyword "cobro"'
+  clean=$out
   calls=0
   while [ -e "calls/$((calls + 1))" ]; do calls=$((calls + 1)); done
   [ "$calls" -gt 10 ]
@@ -169,6 +170,12 @@ test_every_failing_command_fails_closed() {
     # shellcheck disable=SC2086
     out=$(PATH=$PWD/fake:$PATH overdrive risk --repo "$repo" $args 2>err) || rc=$?
     echo "failure injected at call $n of $calls: $(cat err)" >&2
+    # A work directory that cannot be made in TMPDIR is made in the repository instead;
+    # the run must then classify exactly as the clean one did.
+    if [ "$(cat calls/injected)" = mktemp ] && [ "$rc" -eq 0 ]; then
+      assert_eq "$clean" "$out"
+      continue
+    fi
     assert_failed_closed
   done
 }
@@ -189,4 +196,32 @@ test_merge_in_progress_staged() {
   risk "$repo" --staged
   assert_failed_closed
   assert_line "$out" "$(printf '%s\n' "$out" | grep '^item classification-failed critical failure .*unmerged paths')"
+}
+
+# Sandboxed shells can hand out a TMPDIR nobody may write to, and sometimes no writable
+# /tmp either. The classifier then works inside the repository's self-ignoring run
+# directory instead of failing every change.
+test_unwritable_tmp_uses_the_repository_run_dir() {
+  local repo left real fake=$PWD/fake missing=$PWD/missing
+  repo=$(make_repo)
+  write_file "$repo" README.md 'receive'
+  # mktemp refuses every template outside the repository.
+  mkdir fake
+  real=$(command -v mktemp)
+  printf '#!/usr/bin/env bash
+case "$*" in *"%s"/*) exec "%s" "$@" ;; esac
+exit 1
+' "$repo" "$real" > fake/mktemp
+  chmod +x fake/mktemp
+  rc=0
+  out=$(cd "$repo" && PATH=$fake:$PATH TMPDIR=$missing overdrive risk --worktree 2>err) || rc=$?
+  assert_eq 0 "$rc" "exit code"
+  assert_eq "Risk: direct — none" "$(risk_line)"
+  left=$(cd "$repo/.overdrive/run" && ls -A)
+  assert_eq ".gitignore" "$left"
+  # Before work too, with the repository named instead of found from the directory.
+  rc=0
+  out=$(PATH=$fake:$PATH TMPDIR=$missing overdrive risk --repo "$repo" --intent 'fix a typo' --paths README.md 2>err) || rc=$?
+  assert_eq 0 "$rc" "exit code"
+  assert_eq "Risk: direct — none" "$(risk_line)"
 }

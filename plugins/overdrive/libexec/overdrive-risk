@@ -136,7 +136,13 @@ lib=${OVERDRIVE_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib
 # shellcheck source=../lib/signals.sh
 . "$lib/signals.sh" || fail_closed "cannot load the library"
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive-risk.XXXXXX") || fail_closed "cannot create a work directory"
+# A sandboxed shell can hand out a TMPDIR nobody may write to. /tmp comes next, then
+# the repository's self-ignoring run directory, writable wherever the change can be made.
+work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive-risk.XXXXXX" 2>/dev/null) ||
+  work=$(mktemp -d /tmp/overdrive-risk.XXXXXX 2>/dev/null) ||
+  work=$(top=$(od_repo_root "${repo:-$PWD}") && run=$(od_run_dir "$top") &&
+    mktemp -d "$run/risk.XXXXXX") ||
+  fail_closed "cannot create a work directory"
 trap 'rm -rf "$work"' EXIT
 
 # git_error: the first line git wrote on stderr, for the failure reason.
