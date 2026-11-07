@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# overdrive recall: print the decisions and learnings that mention the given terms.
+
+OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=../lib/common.sh
+. "$OVERDRIVE_HOME/lib/common.sh"
+# shellcheck source=../lib/text.sh
+. "$OVERDRIVE_HOME/lib/text.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive recall [--all] [--any] [--repo DIR] TERM...
+
+Prints whole entries of .overdrive/decisions.md and whole .overdrive/learnings/*.md
+notes that contain every TERM (any TERM with --any), ignoring ASCII case. Superseded
+decisions are skipped unless --all is given.
+USAGE
+}
+
+all=0
+any=0
+repo=
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --all) all=1 ;;
+    --any) any=1 ;;
+    --repo) [ "$#" -ge 2 ] || { usage >&2; exit 64; }; repo=$2; shift ;;
+    -h | --help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) usage >&2; exit 64 ;;
+    *) break ;;
+  esac
+  shift
+done
+[ "$#" -gt 0 ] || { usage >&2; exit 64; }
+
+root=$(od_repo_root "${repo:-$PWD}") || od_die "not inside a git repository" 1
+cd "$root" || exit 1
+
+files=()
+[ -f .overdrive/decisions.md ] && files[${#files[@]}]=.overdrive/decisions.md
+shopt -s nullglob
+for f in .overdrive/learnings/*.md; do files[${#files[@]}]=$f; done
+shopt -u nullglob
+
+terms=$(printf '%s\n' "$@")
+rc=1
+if [ "${#files[@]}" -gt 0 ]; then
+  rc=0
+  out=$(OD_TERMS=$terms OD_ANY=$any OD_ALL=$all LC_ALL=C awk "$OD_FENCE_AWK$OD_FOLD_AWK"'
+    # An unclosed fence would hide every later decision, so it is an error, not a miss.
+    function fencecheck() {
+      if (!islog || !infence) return
+      printf "overdrive: %s:%d: unclosed code fence opened at line %d\n", src, fline, fline > "/dev/stderr"
+      failed = 1
+      exit 3
+    }
+    function emit(   i, hit, last) {
+      if (n == 0) return
+      if (active) {
+        hit = !any
+        for (i = 1; i <= nt; i++) {
+          if (index(low, term[i])) { if (any) { hit = 1; break } }
+          else if (!any) { hit = 0; break }
+        }
+        if (hit) {
+          for (last = n; last > 1 && rec[last] ~ /^[ \t\r]*$/; last--) ;
+          if (shown++) print ""
+          print "==> " src " <=="
+          for (i = 1; i <= last; i++) print rec[i]
+        }
+      }
+      n = 0; low = ""
+    }
+    BEGIN {
+      nt = split(ENVIRON["OD_TERMS"], raw, "\n")
+      for (i = 1; i <= nt; i++) term[i] = fold(raw[i])
+      any = ENVIRON["OD_ANY"] == 1
+      keepall = ENVIRON["OD_ALL"] == 1
+    }
+    FNR == 1 {
+      fencecheck()
+      emit(); infence = 0
+      src = FILENAME
+      islog = (FILENAME == ".overdrive/decisions.md")
+      active = !islog
+    }
+    islog {
+      if (fence($0) || infence) { if (n) { rec[++n] = $0; low = low "\n" fold($0) } ; next }
+      if (/^## /) {
+        emit()
+        if ($0 !~ /^## D-/) next
+        active = 1
+      }
+      if (n == 0 && !/^## D-/) next
+      if (!keepall && /^- Status:[ \t]*superseded/) active = 0
+    }
+    { rec[++n] = $0; low = low "\n" fold($0) }
+    END { if (failed) exit 3; fencecheck(); emit(); if (!shown) exit 1 }
+  ' "${files[@]}") || rc=$?
+  case $rc in
+    0 | 1) ;;
+    3) exit 1 ;;
+    *) od_die "cannot read the decisions or learnings files" 1 ;;
+  esac
+  [ -n "$out" ] || rc=1
+fi
+
+if [ "$rc" -le 0 ]; then
+  printf '%s\n' "$out"
+else
+  printf 'recall: no match for %s\n' "$*"
+fi
