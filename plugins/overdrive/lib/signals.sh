@@ -47,7 +47,8 @@ _signals_escape() {
 # images and fonts. Anything else there (a docs site's code and configuration) is code.
 # Test files follow the naming conventions of the test runners: *.test.* *.spec.*
 # *_test.* *_spec.rb test_*.py test_*.rb *Test(s).java|kt|swift|cs, anything under a
-# __tests__/ directory, JVM sources under src/test/ and Rust files under tests/.
+# __tests__/ directory (*Test(s) classes only inside a test directory), JVM sources under
+# src/test/ and Rust files under tests/.
 # shellcheck disable=SC2016
 _OD_SIGNALS_LIB_AWK='
 # gsub replacements treat backslashes differently across awks, so escape by hand.
@@ -113,7 +114,10 @@ function is_test(p,    base) {
   base = p
   sub(/.*\//, "", base)
   if (base ~ /\.(test|spec)\./ || base ~ /_test\./ || base ~ /_spec\.rb$/ || base ~ /^test_.*\.(py|rb)$/) return 1
-  if (base ~ /Tests?\.(java|kt|swift|cs)$/ || p ~ /(^|\/)__tests__\//) return 1
+  if (p ~ /(^|\/)__tests__\//) return 1
+  # A *Test class is a test only inside a test directory (src/test/, androidTest/,
+  # Tests/AppTests/, Api.Tests/): a LoadTest.java among the sources is product code.
+  if (base ~ /Tests?\.(java|kt|swift|cs)$/ && p ~ /(^|\/)([Tt]ests?|[^\/]*Tests?)\//) return 1
   return p ~ /(^|\/)src\/test\/.*\.(java|kts?|scala|groovy)$/ || p ~ /(^|\/)tests\/.*\.rs$/
 }
 
@@ -366,13 +370,14 @@ function cover_listed(p,    s, d, top, rel) {
   }
 }
 
-# covered(p): source p has a test in the change (same name, or same directory) or one in
-# the repository next to it or mirroring it from its package test directory. A source
-# root (src/, lib/, the first directory, src/main/<lang>/) is not mirrored.
+# covered(p): source p has a test in the change (same name in its package, or same
+# directory) or one in the repository next to it or mirroring it from its package test
+# directory. A source root (src/, lib/, the first directory, src/main/<lang>/) is not mirrored.
 function covered(p,    s, d, top, rel) {
   s = stem_of(p); d = dirname(p)
-  if ((s in diff_stem) || (d in diff_dir) || (("D" SUBSEP d SUBSEP s) in covers)) return 1
-  top = package_of(d); rel = below(d, top)
+  top = package_of(d)
+  if (((top SUBSEP s) in diff_stem) || (d in diff_dir) || (("D" SUBSEP d SUBSEP s) in covers)) return 1
+  rel = below(d, top)
   if (("M" SUBSEP top SUBSEP rel SUBSEP s) in covers) return 1
   if (rel == "") return 0
   if (!sub(/^src\/main\/[^\/]+(\/|$)/, "", rel) && !sub(/^[^\/]+(\/|$)/, "", rel)) return 0
@@ -411,8 +416,9 @@ FILENAME == ARGV[2] {
   # A test renamed to a non-test name is a test removed; only new paths carry tests.
   if ($1 == "R" && $5 != "" && is_test(unescape($5)) && !is_test(raw[i]))
     hit(index_of[$5], "test-removed", "critical", "computed")
-  # A test the change carries covers the sources named after it and those beside it.
-  if ($1 != "D" && is_test(raw[i])) { diff_stem[test_stem(raw[i])] = 1; diff_dir[test_dir(raw[i])] = 1 }
+  # Tests and manifests the change adds count as well; packages are resolved at the end.
+  if ($1 != "D" && is_test(raw[i])) carried[++ncarried] = raw[i]
+  if ($1 != "D" && is_manifest(raw[i])) pkg[dirname(raw[i])] = 1
   if ($1 == "D") {
     hit(i, is_test(raw[i]) ? "test-removed" : "deletion", is_test(raw[i]) ? "critical" : "standard", "computed")
     next
@@ -436,6 +442,12 @@ END {
         if (index(raw[i], path_lit[r]) && raw[i] ~ path_re[r]) hit(i, path_item[r], path_lane[r], path_src[r])
     }
   if (nsource) for (k = 1; k <= nlisted; k++) cover_listed(listed[k])
+  # A test the change carries covers the sources named after it in its package, and
+  # every source beside it.
+  for (k = 1; k <= ncarried; k++) {
+    diff_stem[package_of(dirname(carried[k])) SUBSEP test_stem(carried[k])] = 1
+    diff_dir[test_dir(carried[k])] = 1
+  }
   for (k = 1; k <= nsource; k++) {
     i = source[k]
     if (!(shown[i] in link) && !covered(raw[i])) hit(i, "untested-change", "critical", "computed")
@@ -477,7 +489,7 @@ function start_file() {
 
 function set_file() {
   file = (newp != "") ? newp : oldp
-  shown = esc(file); doc = is_doc(file); test = is_test(file)
+  shown = esc(file); doc = is_doc(file); test = is_test(file); manifest = file ~ /(^|\/)package\.json$/
 }
 
 function hunk(s,    f, a, n) {
@@ -596,7 +608,13 @@ function added(t, n,    r, l, d) {
     printf "L\t000000\t000000\t%s\t%s\t\n", esc(t), shown >> records
     return
   }
-  if (test && (d = test_case(t))) count(file, d)
+  if (test && (d = test_case(t))) count(file, d > 0 ? "case+" : "skip+")
+  # A package manifest that defines a deploy or release script changes how code ships.
+  if (manifest && !(("delivery" SUBSEP file) in done_file) &&
+      t ~ /^[[:space:]]*"(vercel-build|deploy|release|predeploy|postdeploy)"[[:space:]]*:/) {
+    done_file["delivery" SUBSEP file] = 1
+    hit("delivery", "critical", "computed", "line " shown ":" n)
+  }
   if (doc) {
     if (secret_any != "" && t ~ secret_any)
       for (r = 1; r <= n_content; r++)
@@ -615,17 +633,20 @@ function added(t, n,    r, l, d) {
 
 function removed(t, n,    d) {
   if (is_link) return
-  if (test && (d = test_case(t))) count(file, -d)
+  if (test && (d = test_case(t))) count(file, d == -1 ? "skip-" : "case-")
   if (!doc && n_symbol && t ~ symbol_any) symbols(t, n)
 }
 
-# test_case(t): 1 when line t of a test file declares a test case, -1 when it skips or
-# focuses one (a focused case skips the others), 0 otherwise; comments count for nothing.
-# Rust attributes (#[test]) start with # but are not comments.
+# test_case(t): 1 when line t of a test file declares a test case, -2 when it declares a
+# focused case (it runs, every other case is skipped), -1 when it skips cases or focuses a
+# suite, 0 otherwise.
+# Comments count for nothing; Rust attributes (#[test]) start with # but are not comments.
 function test_case(t) {
   if (t ~ /^[[:space:]]*(\/\/|\/\*|\*|<!--|#([^[]|$))/) return 0
+  if (t ~ /(^|[^A-Za-z0-9_$])(it|test)(\.[A-Za-z]+)*\.only[.(]/ || t ~ /(^|[^A-Za-z0-9_$.])fit[(]/)
+    return -2
   if (t ~ /(^|[^A-Za-z0-9_$])(it|test|describe|context|suite)(\.[A-Za-z]+)*\.(skip|only|skipIf)[.(]/ ||
-      t ~ /(^|[^A-Za-z0-9_$.])(xit|xtest|xdescribe|xcontext|fit|fdescribe|fcontext)[(]/ ||
+      t ~ /(^|[^A-Za-z0-9_$.])(xit|xtest|xdescribe|xcontext|fdescribe|fcontext)[(]/ ||
       t ~ /@pytest\.mark\.skip|@unittest\.skip|(^|[^A-Za-z0-9_.])pytest\.skip[(]|(^|[^A-Za-z0-9_])t\.Skip(Now|f)?[(]/ ||
       t ~ /@(Disabled|Ignore)([^A-Za-z0-9_]|$)|#\[ignore|[(,][[:space:]]*Skip[[:space:]]*=/)
     return -1
@@ -636,10 +657,13 @@ function test_case(t) {
   return 0
 }
 
-# count(f, d): test cases added (d = 1) or removed (d = -1) in test file f.
-function count(f, d) {
+# count(f, kind): tally a case line ("case+" added, "case-" removed) or a skip or focus line
+# ("skip+", "skip-") of test file f. A removed case or focused case is a case gone; an added
+# skip or focus stops cases, unless it replaces one removed (a skipped case renamed); a
+# removed skip gives no credit, since that case was not running.
+function count(f, kind) {
   if (!(f in cases)) { cases[f] = 0; case_file[++n_case_file] = f }
-  if (d > 0) cases_added[f]++; else cases_removed[f]++
+  tally[f, kind]++
 }
 
 # normalize(p): p with . and .. segments and repeated slashes resolved lexically.
@@ -712,7 +736,8 @@ END {
   }
   for (k = 1; k <= n_case_file; k++) {
     f = case_file[k]
-    if (cases_removed[f] + 0 > cases_added[f] + 0) hit("test-removed", "critical", "computed", "path " esc(f))
+    gone = tally[f, "case-"] + (tally[f, "skip+"] > tally[f, "skip-"] ? tally[f, "skip+"] - tally[f, "skip-"] : 0)
+    if (gone > tally[f, "case+"] + 0) hit("test-removed", "critical", "computed", "path " esc(f))
   }
 }
 '

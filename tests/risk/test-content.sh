@@ -473,3 +473,42 @@ test_auth_and_tenant_symbols_fire_on_removal() {
   risk "$repo" --worktree
   assert_line "$out" "lane direct"
 }
+
+test_quoted_secrets_keep_literal_values() {
+  local repo v
+  repo=$(content_repo)
+  v="supersecret$(printf 'value')"
+  printf 'const a = { password: "{noop}%s" };\n' "$v" >> "$repo/src/app.ts"
+  write_file "$repo" src/b.ts "const b = { secret: \"\$ecretP4ssw0rd99xx\" };"
+  write_file "$repo" src/b.test.ts 'test("b", () => {});'
+  write_file "$repo" src/c.ts 'const PASSWORD = "$2b$10$abcdefghijklmnopqrstuv";'
+  write_file "$repo" src/c.test.ts 'test("c", () => {});'
+  risk "$repo" --worktree
+  assert_line "$out" "item secrets critical floor line src/app.ts:2"
+  assert_line "$out" "item secrets critical floor line src/b.ts:1"
+  assert_line "$out" "item secrets critical floor line src/c.ts:1"
+}
+
+test_package_json_deploy_script_is_delivery() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" apps/web/package.json '{
+  "scripts": {
+    "build": "next build"
+  }
+}'
+  commit_all "$repo" base
+  write_file "$repo" apps/web/package.json '{
+  "scripts": {
+    "build": "next build",
+    "vercel-build": "node scripts/vercel-build.mjs"
+  }
+}'
+  risk "$repo" --worktree
+  assert_line "$out" "item delivery critical computed line apps/web/package.json:4"
+  # The same key outside a package manifest is not a deploy script.
+  git -C "$repo" checkout -q -- apps/web/package.json
+  write_file "$repo" src/flags.json '{ "release": "2026-11" }'
+  risk "$repo" --worktree
+  assert_no_line "$out" "delivery"
+}

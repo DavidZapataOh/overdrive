@@ -95,17 +95,13 @@ test_test_files_of_other_languages() {
 test_test_naming_names_the_stem() {
   local repo
   repo=$(make_repo)
-  write_file "$repo" Sources/App/Router.swift 'struct Router {}'
-  write_file "$repo" Sources/App/RouterTests.swift 'final class RouterTests {}'
-  write_file "$repo" Web/Users.cs 'class Users {}'
-  write_file "$repo" Web/UsersTests.cs 'class UsersTests {}'
   write_file "$repo" lib/user.rb 'class User; end'
   write_file "$repo" spec/user_spec.rb 'describe User do; end'
   write_file "$repo" lib/order.rb 'class Order; end'
   write_file "$repo" test/test_order.rb 'class TestOrder; end'
   commit_all "$repo" base
-  for f in Sources/App/Router.swift Web/Users.cs lib/user.rb lib/order.rb; do
-    printf '// more\n' >> "$repo/$f"
+  for f in lib/user.rb lib/order.rb; do
+    printf '# more\n' >> "$repo/$f"
   done
   risk "$repo" --worktree
   assert_eq 0 "$rc" "exit code: $(cat err)"
@@ -176,4 +172,65 @@ test_skip_and_only_wrappers_remove_test_cases() {
   for f in tests/test_a.py pkg/a_test.go src/test/java/ATest.java crates/x/tests/a.rs; do
     assert_line "$out" "item test-removed critical computed path $f"
   done
+}
+
+test_removing_skipped_or_focused_cases_gives_no_credit() {
+  local repo wrapper
+  repo=$(make_repo)
+  write_file "$repo" src/math.ts 'export const add = 1;'
+  for wrapper in 'it.skip' 'it.only' 'xit'; do
+    printf 'it("live", () => {});\n%s("sk", () => {});\nit("c", () => {});\n' "$wrapper" > "$repo/src/math.test.ts"
+    commit_all "$repo" "base $wrapper"
+    # Deleting a live case and a skipped (or focused) one removes at least one live case.
+    printf 'it("c", () => {});\n' > "$repo/src/math.test.ts"
+    risk "$repo" --worktree
+    assert_line "$out" "item test-removed critical computed path src/math.test.ts"
+  done
+  # Dropping only a skipped case removes no live case, and adds none either.
+  printf 'it("a", () => {});\nit.skip("b", () => {});\n' > "$repo/src/math.test.ts"
+  commit_all "$repo" skipped
+  printf 'it("a", () => {});\n' > "$repo/src/math.test.ts"
+  risk "$repo" --worktree
+  assert_no_line "$out" "test-removed"
+  # Renaming a skipped case skips nothing new.
+  printf 'it("a", () => {});\nit.skip("b renamed", () => {});\n' > "$repo/src/math.test.ts"
+  risk "$repo" --worktree
+  assert_no_line "$out" "test-removed"
+  # Unfocusing a suite runs more cases, not fewer.
+  printf 'describe.only("m", () => {\n  it("a", () => {});\n});\n' > "$repo/src/math.test.ts"
+  commit_all "$repo" focused
+  printf 'describe("m", () => {\n  it("a", () => {});\n});\n' > "$repo/src/math.test.ts"
+  risk "$repo" --worktree
+  assert_no_line "$out" "test-removed"
+}
+
+test_changed_test_covers_same_stem_only_in_its_package() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" packages/a/package.json '{}'
+  write_file "$repo" packages/b/package.json '{}'
+  write_file "$repo" packages/a/src/format.ts 'export const f = 1;'
+  commit_all "$repo" base
+  printf '// more\n' >> "$repo/packages/a/src/format.ts"
+  write_file "$repo" packages/b/test/format.test.ts 'test("f", () => {});'
+  risk "$repo" --worktree
+  assert_line "$out" "item untested-change critical computed path packages/a/src/format.ts"
+  write_file "$repo" packages/a/e2e/format.spec.ts 'test("f", () => {});'
+  risk "$repo" --worktree
+  assert_no_line "$out" "untested-change"
+}
+
+test_test_suffix_counts_only_under_a_test_directory() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" src/main/java/com/acme/LoadTest.java 'class LoadTest {}'
+  write_file "$repo" app/src/androidTest/java/com/acme/CartTest.kt 'class CartTest'
+  write_file "$repo" Tests/AppTests/RouterTests.swift 'final class RouterTests {}'
+  commit_all "$repo" base
+  git -C "$repo" rm -q app/src/androidTest/java/com/acme/CartTest.kt Tests/AppTests/RouterTests.swift
+  printf '// more\n' >> "$repo/src/main/java/com/acme/LoadTest.java"
+  risk "$repo" --worktree
+  assert_line "$out" "item untested-change critical computed path src/main/java/com/acme/LoadTest.java"
+  assert_line "$out" "item test-removed critical computed path app/src/androidTest/java/com/acme/CartTest.kt"
+  assert_line "$out" "item test-removed critical computed path Tests/AppTests/RouterTests.swift"
 }

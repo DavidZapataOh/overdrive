@@ -497,15 +497,3 @@ test_secret_scanner_allowlists_are_secrets() {
   assert_line "$out" "item secrets critical floor path .gitleaksignore"
   assert_line "$out" "item secrets critical floor path tools/.secrets.baseline"
 }
-
-test_vercel_build_script_is_delivery() {
-  local repo
-  repo=$(make_repo)
-  # Vercel runs the vercel-build script, not build, when deploying.
-  write_file "$repo" apps/web/scripts/vercel-build.mjs 'x'
-  write_file "$repo" apps/web/scripts/vercel-build.test.mjs 'test("b", () => {});'
-  write_file "$repo" scripts/build.sh 'x'
-  risk "$repo" --worktree
-  assert_line "$out" "item delivery critical floor path apps/web/scripts/vercel-build.mjs"
-  assert_no_line "$out" "delivery critical floor path scripts/build.sh"
-}
