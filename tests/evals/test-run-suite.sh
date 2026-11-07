@@ -14,6 +14,7 @@ project() {
   cp "$root/tests/evals/fake-claude" fakebin/claude
   # The recorded document has one run per arm; a full suite asks for three.
   jq '.suite.ablation = "with-without" | .cases[].arms |= map_values(. + . + .)' "$recorded" > full.json
+  export XDG_CACHE_HOME=$PWD/cache FAKE_ENV=$PWD/env.log
   export FAKE_LOG=$PWD/calls.log FAKE_SNAPSHOT=$PWD/snapshot.log FAKE_RESULT=$PWD/full.json
   : > "$FAKE_LOG"
   PATH=$PWD/fakebin:$PATH
@@ -171,4 +172,43 @@ test_unrecorded_runs_fail_the_suite() {
   project
   # The recorded document holds one run per arm; a full suite asks for three.
   FAKE_RESULT=$recorded assert_exit 1 suite tdd --tier full
+}
+
+test_temp_tree_moves_out_of_tmp_on_linux() {
+  [ "$(uname -s)" = Linux ] || return 0
+  project
+  TMPDIR=/tmp suite tdd --tier smoke > /dev/null
+  assert_file_contains "$FAKE_ENV" "^TMPDIR=$XDG_CACHE_HOME/overdrive-evals/tmp\$"
+  [ -d "$XDG_CACHE_HOME/overdrive-evals/tmp" ]
+}
+
+test_temp_tree_override_wins() {
+  project
+  OVERDRIVE_EVAL_TMPDIR=$PWD/custom suite tdd --tier smoke > /dev/null
+  assert_file_contains "$FAKE_ENV" "^TMPDIR=$PWD/custom\$"
+  [ -d custom ]
+}
+
+test_temp_tree_outside_tmp_is_kept() {
+  [ "$(uname -s)" = Linux ] || return 0
+  project
+  elsewhere=$(mktemp -d "$HOME/od-test.XXXXXX") || return 1
+  TMPDIR=$elsewhere suite tdd --tier smoke > /dev/null
+  rc=0
+  assert_file_contains "$FAKE_ENV" "^TMPDIR=$elsewhere\$" || rc=1
+  rm -rf "$elsewhere"
+  return "$rc"
+}
+
+test_path_drops_entries_that_are_not_readable_directories() {
+  project
+  mkdir -p locked ok
+  chmod 000 locked
+  PATH=$PATH:$PWD/locked:$PWD/missing:$PWD/ok suite tdd --tier smoke > /dev/null
+  chmod 700 locked
+  path=$(sed -n 's/^PATH=//p' "$FAKE_ENV")
+  case ":$path:" in *":$PWD/missing:"*) echo "kept a missing entry" >&2; return 1 ;; esac
+  case ":$path:" in *":$PWD/ok:"*) ;; *) echo "dropped a readable entry" >&2; return 1 ;; esac
+  case ":$path:" in *":$PWD/fakebin:"*) ;; *) echo "dropped fakebin" >&2; return 1 ;; esac
+  [ "$(id -u)" = 0 ] || case ":$path:" in *":$PWD/locked:"*) echo "kept an unreadable entry" >&2; return 1 ;; esac
 }

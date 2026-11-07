@@ -106,7 +106,17 @@ Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) ge
 
 Pressure scenarios are read by hand. `tools/evals/pressure.sh SKILL SCENARIO --arm with|without` writes each run's final message to `tests/pressure/<skill>/<scenario>/runs/<arm>-<n>.md` and prints the cost and duration of the batch. New skills are built with the `skill-evaluation` skill (`/overdrive:skill-evaluation <name>`); `scripts/new-pressure-case SKILL SCENARIO` in that skill scaffolds `scenario.md` and the pressure case. The `without` arm runs the same scenario under an empty plugin, because the CLI cannot run a baseline arm alone.
 
-Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for cases that grant `Bash`, `bubblewrap` and `socat` (the run is refused without a sandbox) and a `PATH` without unreadable directories.
+Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for cases that grant `Bash`, `bubblewrap` and `socat` (the run is refused without a sandbox).
+
+`run-suite.sh` and `pressure.sh` prepare the environment before they call `claude`:
+
+- **Temp tree outside `/tmp` on Linux.** The eval's OS sandbox mounts everything under `/tmp` read-only, so a temp tree there leaves `Bash` in the runs unable to write the workspace or `TMPDIR`. When `TMPDIR` (default `/tmp`) is under `/tmp`, the tools export `TMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/overdrive-evals/tmp"`. `OVERDRIVE_EVAL_TMPDIR` sets another directory and applies on every platform.
+- **Sanitized `PATH`.** Entries that are not readable directories (Windows paths on WSL, missing directories) are dropped, because the CLI refuses to start with them.
+- **Grants.** Both tools read `evals/<skill>/allow-tools`; `pressure.sh` has no `--allow-tools` option of its own.
+
+### Graders for the plan ledger
+
+The ledger lives at `.overdrive/run/plan-<cksum>/ledger.md`, where `<cksum>` depends on the plan. `file_exists` takes a glob in `path`, so `path: ".overdrive/run/plan-*/ledger.md"` checks that the ledger was created (only files created during the run count). The docs describe `{ source: file, path }` as the contents of one file and mention no glob for it, so do not rely on a pattern there. To grade the ledger's contents use a `regex` grader with `target: trace` on the output of the ledger command, or have the case call `overdrive ledger path` and grade the path it prints. The run records the plugin's commands in the trace, whose quotes are JSON-escaped.
 
 ### Models
 

@@ -25,3 +25,34 @@ od_model_id() {
     *) return 1 ;;
   esac
 }
+
+# od_prepare_env: makes the environment safe for `claude plugin eval`. Call it before running claude.
+od_prepare_env() {
+  local dir entry kept='' rest
+  # The eval's OS sandbox mounts everything under /tmp read-only on Linux, so a temp tree there
+  # leaves Bash in the runs unable to write the workspace or TMPDIR.
+  if [ -n "${OVERDRIVE_EVAL_TMPDIR-}" ]; then
+    dir=$OVERDRIVE_EVAL_TMPDIR
+  elif [ "$(uname -s)" = Linux ]; then
+    case ${TMPDIR:-/tmp} in
+      /tmp | /tmp/*) dir=${XDG_CACHE_HOME:-$HOME/.cache}/overdrive-evals/tmp ;;
+    esac
+  fi
+  if [ -n "${dir-}" ]; then
+    mkdir -p "$dir" || return 1
+    TMPDIR=$dir
+    export TMPDIR
+  fi
+
+  # The CLI refuses to start when PATH holds a directory it cannot read (Windows paths on WSL).
+  rest=$PATH
+  while :; do
+    entry=${rest%%:*}
+    if [ -n "$entry" ] && [ -d "$entry" ] && [ -r "$entry" ] && [ -x "$entry" ]; then
+      kept=${kept:+$kept:}$entry
+    fi
+    case $rest in *:*) rest=${rest#*:} ;; *) break ;; esac
+  done
+  PATH=$kept
+  export PATH
+}
