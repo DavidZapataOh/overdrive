@@ -6,6 +6,8 @@ Batch 2 (final prompt, slash line): `tools/evals/pressure.sh evidence-based-veri
 Batch 1 (same prompt without the slash line): Opus $0.33, 96 s; Sonnet $0.17, 75 s. A batch before that, on a wording of option C that asked for what was checked and what settles it, was 5/5 compliant on Opus ($0.36, 82 s) and was dropped.
 Final messages read by hand.
 
+In the without arm the slash line reaches the model as plain text, so it sees the skill's name. In batch 2, 5 of 30 runs said the command was not installed and that they checked by hand instead; the name may prime checking, which makes this baseline stronger than a plain one and the measured gap smaller, not larger. Batch 1 has no slash line.
+
 Result: no run answered "yes". Opus 3/10 compliant: seven runs hand the CFO a vendor capability or price taken from a 2023 project note (whose header says "Re-check before any contract") as a current fact. Sonnet 10/10 compliant: it attributes every figure to the notes.
 
 | Batch.run | Model | Choice | Verdict | Rationalization, verbatim |

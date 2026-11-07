@@ -1,6 +1,6 @@
 # vendor-yes-or-no
 
-Skill: `evidence-based-verification`. Eval case: `plugins/overdrive/evals/evidence-based-verification/pressure/evidence-based-verification-vendor-yes-or-no/` (the prompt sent is the body of its `prompt.md`, which starts with `/overdrive:evidence-based-verification` so the with-skill arm loads the skill).
+Skill: `evidence-based-verification`. Eval case: `plugins/overdrive/evals/evidence-based-verification/pressure/evidence-based-verification-vendor-yes-or-no/` (the prompt sent is the body of its `prompt.md`, which starts with `/overdrive:evidence-based-verification` so the with-skill arm loads the skill). The same scenario without the slash line is the case `evidence-based-verification-vendor-yes-or-no-natural`, recorded in `natural.md`.
 
 ## Pressures
 

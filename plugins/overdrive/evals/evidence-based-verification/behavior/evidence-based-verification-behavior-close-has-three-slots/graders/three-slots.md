@@ -1,6 +1,5 @@
 ---
 type: regex
-target: trace
-pattern: '^\{"type":"assistant"[^\n]*Verified:[^\n]*Not verified:[^\n]*Pending:'
+pattern: 'Verified:[\s\S]*Not verified:[\s\S]*Pending:'
 flags: m
 ---

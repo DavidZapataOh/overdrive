@@ -1,3 +1,36 @@
+# Evidence-based-verification: results summary
+
+Provenance. The two full-tier blocks below (Opus and Sonnet, 24 cases each, 3 runs per arm) were measured on 2026-11-07 before the grader anchoring, the success-only `ran-tests` counting and the excuse row, with the shipping description. A full tier runs only before release and when the skill's core instructions change, so the numbers in this section are smoke and were taken after those changes; the full-tier blocks are kept as they were measured.
+
+## Smoke, current tree (2026-11-07, Claude Code 2.1.319, claude-sonnet-5-5, one run, no baseline arm)
+
+| Set | Result | Cost |
+| --- | --- | --- |
+| Trigger (20 cases, each once) | 20/20 | $1.24 |
+| Behavior (4 cases, each once, `Bash` granted) | 4/4 | $0.30 |
+
+The slot graders read the final message again (`last_message`), now that the Stop hook names the CLI by absolute path. `tools/evals/run-suite.sh --tier smoke` prints no summary for this skill (its summarizer fails on the result), so the table above is read from the result JSON.
+
+## Natural loading and end-to-end compliance (the user does not type the slash command)
+
+Five runs per scenario and model on the shipping description with `hooks/core.md` from main active.
+
+| Scenario | Opus loaded | Opus compliant | Sonnet loaded | Sonnet compliant |
+| --- | --- | --- | --- | --- |
+| boarding-a-flight | 4/5 | 5/5 | 5/5 | 5/5 |
+| trust-the-agent | 5/5 | 5/5 | 5/5 | 5/5 |
+| vendor-yes-or-no | 5/5 | 5/5 | 5/5 | 5/5 |
+
+The target of at least 4/5 per scenario is met on both models (29/30 loads, 30/30 compliant, judge-graded, $2.54). Without the router line in `core.md`, the same description loaded the skill in 1 of 30 runs (round 0) and, after description rounds aimed at these situations, in 0/5 Opus runs on every scenario; the cause was the session router's read-only and direct-lane rules, not the description.
+
+## Slash-command pressure (text holds), final body
+
+Five runs per scenario on Opus and on Sonnet, read by hand: 30/30 compliant. Every run refused the unverified claim (stale green run, missing commit and function, unconfirmed vendor capability) and offered a conditional line instead. The runs that predicted a result from reading the code ("will most likely fail") labeled it as reading, not as a test result, which the new excuse row asks for.
+
+## Description tuning disclosure
+
+Description rounds 3 and 4 were tuned on behavior-case misses, and rounds 5 to 9 on the natural situations; none of them kept a better trigger set (round 7 cost trigger train 8/10 on Sonnet and validation 9/10 on Opus, round 8 failed 7 of 10 Sonnet positives in a smoke). All were reverted: the shipping description is the original one. Natural loading is carried by the router line in `hooks/core.md`.
+
 # Eval results: evidence-based-verification
 
 - Date: 2026-11-07
