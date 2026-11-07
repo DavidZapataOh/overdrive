@@ -398,3 +398,26 @@ test_lock_on_a_directory_fails_at_once() {
   [ $((SECONDS - start)) -le 2 ]
   case $err in *directory*) ;; *) echo "no clear error: $err" >&2; return 1 ;; esac
 }
+
+test_plan_dir_rule() {
+  load_common
+  local repo phys sum
+  repo=$(make_repo)
+  mkdir -p "$repo/docs/my plans" "$repo/src"
+  : > "$repo/docs/my plans/cart plan.md"
+  phys=$(cd "$repo" && pwd -P)
+  sum=$(printf '%s' "$phys/docs/my plans/cart plan.md" | cksum | cut -d' ' -f1)
+  # Relative to the physical cwd, with . and .. collapsed; only .md is stripped.
+  assert_eq "$(sq "$repo")/.overdrive/run/cart-plan-$sum" \
+    "$(cd "$repo/src" && od_plan_dir "./../docs//my plans/cart plan.md")"
+  assert_eq "$(sq "$repo")/.overdrive/run/cart-plan-$sum" \
+    "$(od_plan_dir "$phys/docs/my plans/cart plan.md" "$(sq "$repo")/.overdrive/run")"
+  sum=$(printf '%s' "/x/v1.2 (draft).txt" | cksum | cut -d' ' -f1)
+  assert_eq "/r/v1.2--draft-.txt-$sum" "$(od_plan_dir '/x/v1.2 (draft).txt' /r)"
+  # Bytes outside the set are replaced one by one, whatever the locale.
+  sum=$(printf '%s' "/x/páginas.md" | cksum | cut -d' ' -f1)
+  assert_eq "/r/p--ginas-$sum" "$(LC_ALL=C.UTF-8 od_plan_dir '/x/páginas.md' /r 2>/dev/null)"
+  assert_eq "/r/p--ginas-$sum" "$(LC_ALL=C od_plan_dir '/x/páginas.md' /r)"
+  # Computing the name creates nothing.
+  [ ! -e "$repo/.overdrive" ]
+}

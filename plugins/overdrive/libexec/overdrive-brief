@@ -72,15 +72,7 @@ if [ -z "$out" ]; then
     sum=$(printf '%s' "$text" | cksum)
     out=$run/briefs/${sum%% *}.md
   else
-    # Must equal od_plan_dir: <sanitized stem>-<cksum of the absolute plan path>, so
-    # same-named plans in different folders never share a run directory.
-    abs=$plan
-    case $abs in /* | [A-Za-z]:*) ;; *) abs=$PWD/$abs ;; esac
-    _od_normalize_path "$abs"
-    sum=$(printf '%s' "$_OD_PATH" | cksum)
-    stem=${plan##*/}
-    stem=${stem%.md}
-    out=$run/${stem//[!A-Za-z0-9._-]/-}-${sum%% *}/task-$task.md
+    out=$(od_plan_dir "$plan" "$run")/task-$task.md
   fi
 fi
 case $out in /* | [A-Za-z]:*) ;; *) out=$PWD/$out ;; esac

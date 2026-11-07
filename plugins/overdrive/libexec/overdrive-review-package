@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# overdrive review-package: write the file a reviewer reads for one commit range.
+
+OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=../lib/common.sh
+. "$OVERDRIVE_HOME/lib/common.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive review-package --base SHA --head SHA [--brief FILE] [--lane LANE]
+
+Writes .overdrive/run/reviews/<base7>-<head7>.md with the range, the brief path, the
+risk classification of the diff, the commits, the diff stat and the diff with ten
+lines of context, and prints its path. LANE (direct, standard, critical) can only
+raise the lane the classifier gives. Exit 65 when base is not an ancestor of head or
+the range is empty.
+USAGE
+}
+
+base='' head='' brief='' lane=''
+while [ $# -gt 0 ]; do
+  case $1 in
+    --base | --head | --brief | --lane)
+      [ $# -ge 2 ] || { usage >&2; exit 64; }
+      case $1 in
+        --base) base=$2 ;;
+        --head) head=$2 ;;
+        --brief) brief=$2 ;;
+        --lane) lane=$2 ;;
+      esac
+      shift 2
+      ;;
+    -h | --help) usage; exit 0 ;;
+    *) usage >&2; exit 64 ;;
+  esac
+done
+[ -n "$base" ] && [ -n "$head" ] || { usage >&2; exit 64; }
+case $lane in '' | direct | standard | critical) ;; *) od_die "unknown lane: $lane" 64 ;; esac
+
+lane_rank() {
+  case $1 in direct) echo 0 ;; standard) echo 1 ;; *) echo 2 ;; esac
+}
+
+if [ -n "$brief" ]; then
+  [ -f "$brief" ] || od_die "brief not found: $brief" 66
+  brief=$(cd -P "$(dirname "$brief")" && pwd)/${brief##*/}
+fi
+
+root=$(od_repo_root) || od_die "not inside a git repository"
+g() { git -C "$root" -c core.quotePath=false "$@"; }
+
+base_sha=$(g rev-parse --verify --quiet "$base^{commit}") || od_die "unknown revision: $base" 65
+head_sha=$(g rev-parse --verify --quiet "$head^{commit}") || od_die "unknown revision: $head" 65
+g merge-base --is-ancestor "$base_sha" "$head_sha" 2>/dev/null ||
+  od_die "base $base is not an ancestor of head $head" 65
+[ "$base_sha" != "$head_sha" ] || od_die "empty range: $base..$head" 65
+
+run=$(od_run_dir "$root") || od_die "cannot create $root/.overdrive/run"
+mkdir -p "$run/reviews" || od_die "cannot create $run/reviews"
+dest=$run/reviews/${base_sha:0:7}-${head_sha:0:7}.md
+tmp=$dest.$$.tmp
+work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive.XXXXXX") || od_die "cannot create a temporary directory"
+trap 'rm -rf "$work"; rm -f "$tmp"' EXIT
+
+# The classifier fails closed by contract (exit 3, lane critical). Anything else that
+# is not a well-formed classification also means critical: never review under-laned.
+reason=''
+if [ ! -f "$OVERDRIVE_HOME/libexec/overdrive-risk" ]; then
+  reason='overdrive risk is not installed'
+else
+  rc=0
+  (cd "$root" && "$BASH" "$OVERDRIVE_HOME/bin/overdrive" risk --diff "$base_sha..$head_sha") \
+    > "$work/risk" 2> "$work/risk.err" < /dev/null || rc=$?
+  first=$(sed -n 1p "$work/risk")
+  last=$(sed -n '$p' "$work/risk")
+  risk_lane=${first#lane }
+  case $rc in
+    0 | 3)
+      case $first in
+        'lane direct' | 'lane standard' | 'lane critical')
+          case $last in "Risk: $risk_lane — "?*) ;; *) reason=contract ;; esac
+          [ "$rc" -eq 0 ] || [ "$risk_lane" = critical ] || reason=contract
+          ;;
+        *) reason=contract ;;
+      esac
+      [ "$reason" != contract ] || reason='overdrive risk output does not match its contract'
+      ;;
+    *)
+      err=$(sed -n '/[^[:space:]]/{p;q;}' "$work/risk.err")
+      reason="overdrive risk exited $rc${err:+: $err}"
+      ;;
+  esac
+fi
+if [ -n "$reason" ]; then
+  risk_lane=critical
+  printf 'lane critical\nnote classification unavailable: %s\nRisk: critical — classification-failed\n' \
+    "$reason" > "$work/risk"
+fi
+effective=$risk_lane
+if [ -n "$lane" ] && [ "$(lane_rank "$lane")" -gt "$(lane_rank "$risk_lane")" ]; then
+  effective=$lane
+  # Notes precede next and the Risk line in the classifier's output contract.
+  NOTE="note lane raised by caller: $risk_lane → $lane" awk '
+    !done && (/^next / || /^Risk: /) { print ENVIRON["NOTE"]; done = 1 }
+    { print }
+    END { if (!done) print ENVIRON["NOTE"] }
+  ' "$work/risk" > "$work/risk.raised" && mv -f "$work/risk.raised" "$work/risk"
+fi
+
+{
+  printf '# Review package\n\n'
+  printf 'Range: %s..%s\n' "$base_sha" "$head_sha"
+  printf 'Brief: %s\n' "${brief:-none}"
+  printf 'Lane: %s\n\n' "$effective"
+  printf '## Risk\n\n'
+  cat "$work/risk"
+  printf '\n## Commits\n\n'
+  g log --oneline --no-decorate --no-color "$base_sha..$head_sha"
+  printf '\n## Diff stat\n\n'
+  g diff --stat=1000 --no-color --no-ext-diff "$base_sha" "$head_sha"
+  printf '\n## Diff\n\n'
+  g diff -U10 --no-color --no-ext-diff --no-textconv "$base_sha" "$head_sha"
+} > "$tmp" || od_die "cannot write $dest"
+mv -f "$tmp" "$dest" || od_die "cannot write $dest"
+printf '%s\n' "$dest"

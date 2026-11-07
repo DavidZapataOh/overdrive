@@ -208,3 +208,55 @@ od_unlock() {
     sleep 0.05 2>/dev/null || sleep 1
   done
 }
+
+# od_append FILE LINE: append LINE to FILE under FILE.lock, so concurrent writers never
+# interleave or lose lines (O_APPEND alone is not atomic on every supported platform).
+od_append() {
+  local rc=0
+  od_lock "$1.lock" || { printf 'overdrive: cannot lock %s\n' "$1" >&2; return 1; }
+  printf '%s\n' "$2" >> "$1" || rc=1
+  od_unlock "$1.lock"
+  return "$rc"
+}
+
+# od_active_ledger RUN: print the active ledger, the file named (relative to RUN) in
+# RUN/active-ledger, which `overdrive ledger init` rewrites. Returns 1 when there is no
+# pointer, it escapes RUN, or the ledger it names does not exist.
+od_active_ledger() {
+  local rel=''
+  [ -r "$1/active-ledger" ] || return 1
+  { IFS= read -r rel || [ -n "$rel" ]; } < "$1/active-ledger" || return 1
+  case /$rel/ in //* | */../* | */./*) return 1 ;; esac
+  [ -f "$1/$rel" ] || return 1
+  printf '%s\n' "$1/$rel"
+}
+
+# od_abs_path PATH: print PATH made absolute the way od_repo_root sees paths: Windows
+# spellings in /c/x form, relative paths prefixed with the physical cwd, and ., .. and
+# repeated slashes collapsed lexically.
+od_abs_path() {
+  _od_posix_path "$1"
+  case $_OD_PATH in /* | [A-Za-z]:*) ;; *) _OD_PATH=$(pwd -P)/$_OD_PATH ;; esac
+  _od_normalize_path "$_OD_PATH"
+  printf '%s\n' "$_OD_PATH"
+}
+
+# od_plan_dir PLAN [RUN]: print RUN/<stem>-<cksum>, the run directory of plan PLAN.
+# stem is PLAN's file name without a trailing .md, every byte outside [A-Za-z0-9._-]
+# turned into "-" (bytes, so the name does not depend on the locale); cksum is the
+# decimal first field of cksum over od_abs_path PLAN. The checksum keeps same-named
+# plans apart and plan directories clear of the run directory's own files. RUN
+# defaults to <repo around $PWD>/.overdrive/run. Creates nothing.
+od_plan_dir() {
+  local run=${2-} abs stem sum root LC_ALL=C
+  abs=$(od_abs_path "$1")
+  stem=${abs##*/}
+  stem=${stem%.md}
+  stem=${stem//[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]/-}
+  sum=$(printf '%s' "$abs" | cksum) || return 1
+  if [ -z "$run" ]; then
+    root=$(od_repo_root) || return 1
+    run=$root/.overdrive/run
+  fi
+  printf '%s/%s-%s\n' "$run" "$stem" "${sum%% *}"
+}
