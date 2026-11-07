@@ -128,7 +128,8 @@ test_guard_fast_path_without_pins() {
 
 test_marker_records_start_and_session_roots() {
   local repo head data m
-  repo=$(main_repo)
+  # Spelled as the hook spells it (TMPDIR may end in a slash).
+  repo=$(cd "$(main_repo)" && pwd)
   commit_file "$repo" src/a.ts 'a'
   head=$(git -C "$repo" rev-parse HEAD)
   data=$PWD/data

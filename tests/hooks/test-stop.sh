@@ -216,7 +216,8 @@ Risk: standard — dependencies' "$repo")"
 
 test_allows_user_lowering_with_active_decision() {
   local repo
-  repo=$(main_repo)
+  # Spelled as the hook spells it (TMPDIR may end in a slash).
+  repo=$(cd "$(main_repo)" && pwd)
   decisions "$repo"
   git -C "$repo" add -A
   git -C "$repo" commit -q -m decisions
