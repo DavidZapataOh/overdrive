@@ -47,21 +47,15 @@ jobs:
       - name: Tests
         run: ${{ matrix.bash }} tests/run.sh
 
+  # The synthetic corpus takes about 20 s on Linux and over 3 minutes on Windows (one git
+  # repository per case); the classifier itself is tested on every OS by the shell job.
   corpus:
-    name: corpus (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON((github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && '[{"os":"ubuntu-latest","shell":"bash","bash":"bash"},{"os":"macos-latest","shell":"/bin/bash {0}","bash":"/bin/bash"},{"os":"windows-latest","shell":"bash","bash":"bash"}]' || '[{"os":"ubuntu-latest","shell":"bash","bash":"bash"}]') }}
-    defaults:
-      run:
-        shell: ${{ matrix.shell }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Synthetic risk corpus
-        run: ${{ matrix.bash }} tests/risk/run-corpus.sh --synthetic tests/risk/corpus/synthetic
+        run: bash tests/risk/run-corpus.sh --synthetic tests/risk/corpus/synthetic
 
   skills:
     runs-on: ubuntu-latest

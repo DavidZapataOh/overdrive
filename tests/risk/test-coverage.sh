@@ -75,7 +75,7 @@ test_test_files_of_other_languages() {
   local repo f files
   repo=$(make_repo)
   files='src/test/java/com/acme/OrderTest.java src/test/kotlin/com/acme/LedgerTests.kt
-    src/test/java/com/acme/Fixtures.java Tests/AppTests.swift Api.Tests/UserTests.cs
+    src/test/java/com/acme/Fixtures.java AppTests/AppTests.swift Api.Tests/UserTests.cs
     spec/models/user_spec.rb test/test_user.rb test/user_test.rb tests/integration.rs'
   for f in $files; do write_file "$repo" "$f" 'x'; done
   write_file "$repo" packages/core/src/test/utils.ts 'export const u = 1;'
