@@ -129,3 +129,21 @@ test_root_commit_against_the_empty_tree() {
   assert_line "$out" "item ranking critical map path src/ranking/score.ts"
   assert_line "$out" "item risk-map critical floor path .overdrive/risk-map.conf"
 }
+
+test_uncommitted_map_edit_cannot_lower_pre_work_lane() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" .overdrive/risk-map.conf 'keyword cobro money
+pathtoken ledger money'
+  commit_all "$repo" map
+  : > "$repo/.overdrive/risk-map.conf"
+  risk "$repo" --intent "ajusta el cobro" --paths src/ledger/x.ts
+  assert_line "$out" 'item money critical map keyword "cobro"'
+  assert_line "$out" "item money critical map path src/ledger/x.ts"
+  # A rule only staged counts as well.
+  printf 'pathtoken wallet money\n' > "$repo/.overdrive/risk-map.conf"
+  git -C "$repo" add .overdrive/risk-map.conf
+  : > "$repo/.overdrive/risk-map.conf"
+  risk "$repo" --paths src/wallet/x.ts
+  assert_line "$out" "item money critical map path src/wallet/x.ts"
+}

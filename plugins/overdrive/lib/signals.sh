@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Risk signals: the changes a classification looks at and the items their paths, lines
-# and request text raise. Sourced, never executed; needs glob.sh and riskmap.sh. Callers
+# and request text raise. Sourced, never executed; needs glob.sh, riskmap.sh and text.sh. Callers
 # export LC_ALL=C so that bytes, not characters, are compared everywhere.
 #
 # A change record is one line: status<TAB>oldmode<TAB>newmode<TAB>path<TAB>oldpath<TAB>newsha.
@@ -43,7 +43,8 @@ _signals_escape() {
 
 # Functions shared by the awk programs below.
 # Documentation files are prose about a subject, not the subject itself: names ending in
-# .md .mdx .rst .adoc (any case), and every file under a docs/ or doc/ directory.
+# .md .mdx .rst .adoc (any case), and every file under a docs/ or doc/ directory that
+# does not have a source extension (a docs site's code is code).
 # Test files follow the naming conventions of the test runners: *.test.* *.spec.*
 # *_test.* test_*.py and anything under a __tests__/ directory.
 # shellcheck disable=SC2016
@@ -99,7 +100,11 @@ function unescape(s,    out, i, n, c) {
 
 function is_doc(p,    l) {
   l = tolower(p)
-  return l ~ /\.(md|mdx|rst|adoc)$/ || l ~ /(^|\/)docs?\//
+  return l ~ /\.(md|mdx|rst|adoc)$/ || (l ~ /(^|\/)docs?\// && !has_source_ext(p))
+}
+
+function has_source_ext(p) {
+  return p ~ /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|rb|java|kt|swift|cs|php)$/
 }
 
 function is_test(p,    base) {
@@ -115,9 +120,11 @@ function is_test(p,    base) {
 # is lossless and needs no NUL handling (NUL cannot pass through every awk).
 # shellcheck disable=SC2016
 _OD_SIGNALS_PARSE_AWK='
+# An unmerged path has no single content to judge: the classification fails.
 function header(s) {
   if (substr(s, 1, 1) != ":" || split(substr(s, 2), h, " ") != 5) { bad = 1; exit }
   om = h[1]; nm = h[2]; sha = h[4]; st = substr(h[5], 1, 1)
+  if (st == "U") { printf "unmerged paths\n" > errors; bad = 1; exit }
 }
 
 # Untracked files are also written as C-quoted pathspecs (git reads that quoting back),
@@ -148,7 +155,7 @@ _signals_git() {
   local kind=$1 status=$2 dir=$3 work=$4 sub=$5
   shift 5
   git --no-pager -c core.quotePath=true -C "$dir" "$sub" "$@" > "$work/git.out" 2> "$work/git.err" || return
-  awk -v mode="$kind" -v status="$status" -v pathspecs="$work/untracked" \
+  awk -v mode="$kind" -v status="$status" -v pathspecs="$work/untracked" -v errors="$work/git.err" \
     "$_OD_SIGNALS_LIB_AWK$_OD_SIGNALS_PARSE_AWK" < "$work/git.out"
 }
 
@@ -291,8 +298,7 @@ function basename(p) {
 # tool configuration and the tests themselves.
 function is_source(p,    base) {
   base = basename(p)
-  return base ~ /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|rb|java|kt|swift|cs|php)$/ &&
-    base !~ /\.d\.ts$/ && base !~ /\.config\./ && !is_test(p)
+  return has_source_ext(base) && base !~ /\.d\.ts$/ && base !~ /\.config\./ && !is_test(p)
 }
 
 # test_stems(p): register the names a test file is named after (stem.test.*,
@@ -330,7 +336,10 @@ FILENAME == ARGV[2] {
   if ($1 == "R" && $5 != "") add($5)
   if ($1 == "L") { link[$5] = 1; next }
   if ($1 == "P") next
-  if (is_test(raw[i]) || ($5 != "" && is_test(unescape($5)))) tests_changed = 1
+  # A test renamed to a non-test name is a test removed; only new paths carry tests.
+  if ($1 == "R" && $5 != "" && is_test(unescape($5)) && !is_test(raw[i]))
+    hit(index_of[$5], "test-removed", "critical", "computed")
+  if ($1 != "D" && is_test(raw[i])) tests_changed = 1
   if ($1 == "D") {
     hit(i, is_test(raw[i]) ? "test-removed" : "deletion", is_test(raw[i]) ? "critical" : "standard", "computed")
     next
@@ -438,10 +447,50 @@ function has_symbol(s, w,    p, len) {
   return 0
 }
 
+# words_of(s): s folded for keyword matching: decomposed accents composed (or dropped),
+# then fold() from text.sh: lowercase, accents of Latin-1 letters removed, ñ kept.
 function words_of(s) {
-  s = tolower(s)
+  if (index(s, "\314")) {
+    gsub("n\314\203", "\303\261", s); gsub("N\314\203", "\303\221", s)
+    gsub("\314\200", "", s); gsub("\314\201", "", s); gsub("\314\202", "", s)
+    gsub("\314\203", "", s); gsub("\314\210", "", s)
+  }
+  s = fold(s)
   if (kw_space) gsub(/[[:space:]]+/, " ", s)
   return s
+}
+
+# binary(s): a "Binary files A and B differ" line. A file git takes as binary shows no
+# lines, so unless its name says it is a binary format, its content went unread.
+function binary(s,    i, n, c, b) {
+  s = substr(s, 14, length(s) - 20)
+  if (s ~ / and \/dev\/null$/) return
+  if (substr(s, 1, 14) == "/dev/null and ") b = substr(s, 15)
+  else if (substr(s, 1, 1) == "\"") {
+    # A quoted old side ends at the first quote that is not escaped.
+    n = length(s)
+    for (i = 2; i <= n; i++) {
+      c = substr(s, i, 1)
+      if (c == "\\") i++
+      else if (c == "\"") break
+    }
+    b = substr(s, i + 6)
+  } else if (substr(s, length(s)) == "\"") b = substr(s, last(s, " and \"b/") + 5)
+  else {
+    # Both sides unquoted: same name on both sides unless the file was renamed.
+    n = (length(s) - 9) / 2
+    if (n == int(n) && substr(s, 3, n) == substr(s, n + 10)) b = substr(s, n + 8)
+    else b = substr(s, index(s, " and b/") + 5)
+  }
+  b = substr(unquote(b), 3)
+  if (tolower(b) !~ /\.(png|jpe?g|gif|webp|avif|bmp|ico|icns|tiff?|heic|psd|woff2?|ttf|otf|eot|zip|gz|tgz|bz2|xz|zst|7z|rar|tar|jar|war|mp3|mp4|m4a|wav|ogg|oga|flac|webm|mov|avi|mkv|pdf|wasm|o|a|so|dylib|dll|exe|class|pyc|bin|dat|db|sqlite|lockb|docx|xlsx|pptx|odt|ods)$/)
+    hit("unscanned-content", "critical", "computed", "path " esc(b))
+}
+
+function last(s, t,    p, q) {
+  q = 0
+  while ((p = index(substr(s, q + 1), t)) > 0) q += p
+  return q
 }
 
 function symbols(t, n,    r) {
@@ -465,8 +514,7 @@ function added(t, n,    r, l) {
   if (content_any != "" && t ~ content_any)
     for (r = 1; r <= n_content; r++)
       if (!((r_item["content", r] SUBSEP file) in done_file) && t ~ r_pat["content", r]) line_hit(r, "content", n)
-  if (n_keyword && t ~ keyword_any) {
-    l = words_of(t)
+  if (n_keyword && (l = words_of(t)) ~ keyword_any) {
     for (r = 1; r <= n_keyword; r++)
       if (!((r_item["keyword", r] SUBSEP file) in done_file) && has_word(l, r_pat["keyword", r])) line_hit(r, "keyword", n)
   }
@@ -477,19 +525,6 @@ function removed(t, n) {
   if (is_link) return
   if (test && t ~ /(^|[^A-Za-z0-9_$.])(it|test)[(]|(^|[^A-Za-z0-9_])(def test_|func Test)/) count(file, -1)
   if (!doc && n_symbol && t ~ symbol_any) symbols(t, n)
-}
-
-# any_case(w): an expression for keyword w in any ASCII case, its spaces matching any
-# run of whitespace; a line that does not match it cannot hold the keyword.
-function any_case(w,    out, i, c) {
-  out = ""
-  for (i = 1; i <= length(w); i++) {
-    c = substr(w, i, 1)
-    if (c ~ /[a-z]/) c = "[" c toupper(c) "]"
-    else if (c == " ") c = "[[:space:]]+"
-    out = out c
-  }
-  return out
 }
 
 # count(f, d): test cases added (d = 1) or removed (d = -1) in test file f.
@@ -526,7 +561,11 @@ FILENAME == ARGV[1] {
       if ($3 == "secrets") secret_any = secret_any (secret_any == "" ? "" : "|") "(" $2 ")"
     }
     if ($1 == "keyword") {
-      keyword_any = keyword_any (keyword_any == "" ? "" : "|") any_case($2)
+      r_shown[r] = $2
+      r_pat[$1, r] = words_of($2)
+      p = r_pat[$1, r]
+      gsub(/ /, "[[:space:]]+", p)
+      keyword_any = keyword_any (keyword_any == "" ? "" : "|") p
       if (index($2, " ")) kw_space = 1
     }
     # Identifiers hold only letters, digits, _ and $, and $ is the one to bracket.
@@ -545,6 +584,7 @@ orem > 0 || nrem > 0 {
   next
 }
 /^diff --git / { start_file(); next }
+/^Binary files .* differ$/ { binary($0); next }
 /^@@ / { hunk($0); next }
 /^--- / { oldp = path_of(substr($0, 5)); next }
 /^\+\+\+ / { newp = path_of(substr($0, 5)); set_file(); next }
@@ -558,7 +598,7 @@ END {
     l = words_of(l)
     for (r = 1; r <= n_keyword; r++)
       if (has_word(l, r_pat["keyword", r]))
-        hit(r_item["keyword", r], r_lane["keyword", r], r_src["keyword", r], "keyword \"" r_pat["keyword", r] "\"")
+        hit(r_item["keyword", r], r_lane["keyword", r], r_src["keyword", r], "keyword \"" r_shown[r] "\"")
   }
   for (k = 1; k <= n_case_file; k++) {
     f = case_file[k]
@@ -602,7 +642,7 @@ signals_patch() {
 # RULES, for test files that lose test cases (test-removed), and for keywords in the
 # request text INTENT. Symlink targets are appended to RECORDS as "L" records.
 signals_content() {
-  OD_RECORDS=$2 OD_INTENT=${3:-} awk "$_OD_SIGNALS_LIB_AWK$_OD_SIGNALS_CONTENT_AWK" "$1" -
+  OD_RECORDS=$2 OD_INTENT=${3:-} awk "$_OD_SIGNALS_LIB_AWK$OD_FOLD_AWK$_OD_SIGNALS_CONTENT_AWK" "$1" -
 }
 
 # signals_listing GIT_DIR MODE [RANGE]: print the repository's file names, C-quoted, as

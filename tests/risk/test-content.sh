@@ -270,3 +270,99 @@ test_untracked_files_are_scanned_but_ignored_ones_are_not() {
   assert_eq "" "$(git -C "$repo" diff --cached --name-only)"
   assert_eq "" "$(git -C "$repo" ls-files -- 'src/new dir')"
 }
+
+test_text_marked_binary_is_unscanned_content() {
+  local repo bare
+  repo=$(content_repo)
+  # Git prints no lines for a file it takes as binary, so its content cannot be judged.
+  printf '*.ts -diff\n' > "$repo/.gitattributes"
+  commit_all "$repo" attributes
+  printf 'const m = new Mutex();\n' >> "$repo/src/app.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "item unscanned-content critical computed path src/app.ts"
+  assert_eq "Risk: critical — unscanned-content" "$(risk_line)"
+  git -C "$repo" commit -q -am mutex
+  bare=$PWD/bare.git
+  git clone -q --bare "$repo" "$bare"
+  risk "$bare" --diff HEAD~1..HEAD
+  assert_line "$out" "item unscanned-content critical computed path src/app.ts"
+
+  # Attributes from .git/info/attributes hide content the same way.
+  git -C "$repo" rm -q .gitattributes
+  git -C "$repo" commit -q -m no-attributes
+  printf '* -diff\n' > "$repo/.git/info/attributes"
+  printf 'DROP TABLE users;\n' >> "$repo/src/app.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "item unscanned-content critical computed path src/app.ts"
+  rm "$repo/.git/info/attributes"
+
+  # So does a single NUL byte in a source file.
+  git -C "$repo" checkout -q -- src/app.ts
+  printf 'const k = 1;\000\n' >> "$repo/src/app.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "item unscanned-content critical computed path src/app.ts"
+
+  # Known binary formats are not content to read.
+  git -C "$repo" checkout -q -- src/app.ts
+  printf '\211PNG\000\001' > "$repo/src/logo.png"
+  printf '\000\001' > "$repo/src/font.woff2"
+  risk "$repo" --worktree
+  assert_line "$out" "lane direct"
+}
+
+test_gitattributes_change_is_delivery() {
+  local repo
+  repo=$(content_repo)
+  printf '*.ts -diff\n' > "$repo/.gitattributes"
+  write_file "$repo" packages/web/.gitattributes '*.sql binary'
+  risk "$repo" --worktree
+  assert_line "$out" "item delivery critical floor path .gitattributes"
+  assert_line "$out" "item delivery critical floor path packages/web/.gitattributes"
+}
+
+test_rename_of_a_test_to_a_non_test_removes_it() {
+  local repo
+  repo=$(make_repo)
+  source_with_test "$repo" src/a.ts
+  commit_all "$repo" base
+  git -C "$repo" mv src/a.test.ts src/a.fixture.ts
+  printf 'export const y = 2;\n' >> "$repo/src/a.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "item test-removed critical computed path src/a.test.ts"
+  # The old test path no longer counts as a test the change carries.
+  assert_line "$out" "item untested-change critical computed path src/a.ts"
+}
+
+test_accented_keyword_matches_any_case_and_form() {
+  local repo nfd
+  repo=$(make_repo)
+  write_file "$repo" .overdrive/risk-map.conf 'keyword facturación billing'
+  commit_all "$repo" map
+  for text in "ajusta la FACTURACIÓN" "Facturación mensual" "sin acento: facturacion"; do
+    risk "$repo" --intent "$text"
+    assert_line "$out" 'item billing critical map keyword "facturación"'
+  done
+  # Decomposed form (o followed by a combining acute accent), as macOS file names use.
+  nfd=$(printf 'FACTURACIO\314\201N')
+  risk "$repo" --intent "$nfd"
+  assert_line "$out" 'item billing critical map keyword "facturación"'
+  risk "$repo" --intent "facturaciones"
+  assert_no_line "$out" "^item billing"
+  source_with_test "$repo" src/fees.ts
+  commit_all "$repo" fees
+  printf '// FACTURACIÓN mensual\n' >> "$repo/src/fees.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "item billing critical map line src/fees.ts:2"
+}
+
+test_source_under_a_docs_directory_is_code() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" apps/docs/src/billing/pay.ts 'const m = new Mutex();'
+  write_file "$repo" apps/docs/src/billing/pay.test.ts 'test("p", () => {});'
+  write_file "$repo" apps/docs/billing/guide.mdx 'FOR UPDATE'
+  risk "$repo" --worktree
+  assert_line "$out" "item concurrency critical floor line apps/docs/src/billing/pay.ts:1"
+  assert_line "$out" "item money critical floor path apps/docs/src/billing/pay.ts"
+  assert_no_line "$out" "guide.mdx"
+}

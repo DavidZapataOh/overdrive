@@ -131,6 +131,8 @@ lib=${OVERDRIVE_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib
 . "$lib/glob.sh" || fail_closed "cannot load the library"
 # shellcheck source=../lib/riskmap.sh
 . "$lib/riskmap.sh" || fail_closed "cannot load the library"
+# shellcheck source=../lib/text.sh
+. "$lib/text.sh" || fail_closed "cannot load the library"
 # shellcheck source=../lib/signals.sh
 . "$lib/signals.sh" || fail_closed "cannot load the library"
 
@@ -207,36 +209,33 @@ else
   wanted=''
   [ -z "$top" ] || [ ! -e "$top/.overdrive/risk-map.conf" ] || maps=("$top/.overdrive/risk-map.conf")
   if [ "${#ranges[@]}" -gt 0 ]; then
-    # Every resolved side but HEAD (the first), which only staged and worktree compare.
+    # Every resolved side but HEAD, which is added below.
     wanted=${resolved#*"$_OD_NL"}
     wanted=${wanted//$_OD_NL/:.overdrive/risk-map.conf$_OD_NL}:.overdrive/risk-map.conf$_OD_NL
   fi
-  if [ -n "$staged" ] || [ -n "$worktree" ] || { [ -z "$top" ] && [ "${#ranges[@]}" -eq 0 ]; }; then
-    wanted=$wanted${resolved%%"$_OD_NL"*}:.overdrive/risk-map.conf$_OD_NL
-  fi
-  # A conflicted map has stages 2 and 3 instead of 0.
-  [ -z "$staged" ] || wanted=$wanted:0:.overdrive/risk-map.conf$_OD_NL:2:.overdrive/risk-map.conf$_OD_NL:3:.overdrive/risk-map.conf$_OD_NL
-  if [ -n "$wanted" ]; then
-    printf '%s' "$wanted" > "$work/wanted"
-    git -C "$gitdir" cat-file --batch-check='%(objectname) %(objecttype)' < "$work/wanted" > "$work/found" 2>"$work/git.err" ||
-      fail_closed "cannot look up the risk map: $(git_error)"
-    current=''
-    [ "${#maps[@]}" -eq 0 ] || IFS= read -r -d '' current < "${maps[0]}" || :
-    seen=' '
-    while read -r blob kind; do
-      [ "$kind" = blob ] || continue
-      case $seen in *" $blob "*) continue ;; esac
-      seen="$seen$blob "
-      git -C "$gitdir" cat-file blob "$blob" > "$work/map.$blob" 2>"$work/git.err" ||
-        fail_closed "cannot read the risk map $blob: $(git_error)"
-      # The committed map usually equals the working tree's; one copy of its rules is enough.
-      if [ -n "$current" ]; then
-        IFS= read -r -d '' content < "$work/map.$blob" || :
-        [ "$content" != "$current" ] || continue
-      fi
-      maps+=("$work/map.$blob")
-    done < "$work/found"
-  fi
+  # The committed and staged maps always count, so an uncommitted edit of the map cannot
+  # lower a classification, before work or after. A conflicted map has stages 2 and 3.
+  wanted=$wanted${resolved%%"$_OD_NL"*}:.overdrive/risk-map.conf$_OD_NL
+  [ -z "$top" ] || wanted=$wanted:0:.overdrive/risk-map.conf$_OD_NL:2:.overdrive/risk-map.conf$_OD_NL:3:.overdrive/risk-map.conf$_OD_NL
+  printf '%s' "$wanted" > "$work/wanted"
+  git -C "$gitdir" cat-file --batch-check='%(objectname) %(objecttype)' < "$work/wanted" > "$work/found" 2>"$work/git.err" ||
+    fail_closed "cannot look up the risk map: $(git_error)"
+  current=''
+  [ "${#maps[@]}" -eq 0 ] || IFS= read -r -d '' current < "${maps[0]}" || :
+  seen=' '
+  while read -r blob kind; do
+    [ "$kind" = blob ] || continue
+    case $seen in *" $blob "*) continue ;; esac
+    seen="$seen$blob "
+    git -C "$gitdir" cat-file blob "$blob" > "$work/map.$blob" 2>"$work/git.err" ||
+      fail_closed "cannot read the risk map $blob: $(git_error)"
+    # The committed map usually equals the working tree's; one copy of its rules is enough.
+    if [ -n "$current" ]; then
+      IFS= read -r -d '' content < "$work/map.$blob" || :
+      [ "$content" != "$current" ] || continue
+    fi
+    maps+=("$work/map.$blob")
+  done < "$work/found"
   [ "${#maps[@]}" -gt 0 ] || add_note 'risk-map missing'
 fi
 

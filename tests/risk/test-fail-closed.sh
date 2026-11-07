@@ -31,8 +31,9 @@ test_fail_closed_on_invalid_map() {
   write_file "$repo" .overdrive/risk-map.conf 'pathtoken fine fine'
   risk "$repo" --worktree
   assert_failed_closed "invalid risk map"
+  # Before work too: the committed map counts even when the working tree's is valid.
   risk "$repo" --intent "x"
-  assert_eq 0 "$rc" "the working tree map alone is valid"
+  assert_failed_closed "invalid risk map"
 }
 
 test_fail_closed_on_unborn_head() {
@@ -128,7 +129,7 @@ test_library_failure_fails_closed() {
 # those failures must end in the fail-closed classification, never in a lower lane.
 test_every_failing_command_fails_closed() {
   local repo n=0 calls tool real args
-  args='--diff HEAD~1..HEAD --staged --worktree --intent cobro'
+  args='--diff HEAD~1..HEAD --diff HEAD~1...HEAD --staged --worktree --intent cobro'
   repo=$(make_repo)
   write_file "$repo" .overdrive/risk-map.conf 'keyword cobro money'
   write_file "$repo" src/a.ts 'x'
@@ -170,4 +171,22 @@ test_every_failing_command_fails_closed() {
     echo "failure injected at call $n of $calls: $(cat err)" >&2
     assert_failed_closed
   done
+}
+
+test_merge_in_progress_staged() {
+  local repo base
+  repo=$(make_repo)
+  source_with_test "$repo" src/a.ts
+  commit_all "$repo" base
+  base=$(git -C "$repo" symbolic-ref --short HEAD)
+  git -C "$repo" checkout -q -b topic
+  printf 'export const b = 1;\n' > "$repo/src/a.ts"
+  git -C "$repo" commit -q -am topic
+  git -C "$repo" checkout -q "$base"
+  printf 'export const c = 1;\n' > "$repo/src/a.ts"
+  git -C "$repo" commit -q -am main
+  git -C "$repo" merge -q topic >/dev/null 2>&1 || true
+  risk "$repo" --staged
+  assert_failed_closed
+  assert_line "$out" "$(printf '%s\n' "$out" | grep '^item classification-failed critical failure .*unmerged paths')"
 }
