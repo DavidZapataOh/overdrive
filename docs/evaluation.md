@@ -147,6 +147,8 @@ A `tool_used: Skill` grader is excluded from the score (`scored: false`) in a tw
 
 The plugin in this repository has no hooks yet; the hook probe used a temporary one in the throwaway copy.
 
+**Shell commands in a Bash-granted run cannot write to the workspace or to `TMPDIR`.** A probe on 2026-11-07 (Linux, WSL2) found the run's working directory, its home and the `TMPDIR` it sets read-only to Bash, while `/tmp` was writable; the Edit and Write tools still write the workspace. `overdrive risk` therefore falls back from `TMPDIR` to `/tmp` (and then to the repository's run directory) before it gives up and reports critical.
+
 ## Risk classifier
 
 The deterministic risk classifier (`overdrive risk`, [risk-map.md](risk-map.md)) is measured against labeled corpora in `tests/risk/corpus/`. Labels follow the written policy in `tests/risk/corpus/LABELING.md`, are frozen by `SHA256SUMS`, and change only in a deliberate relabel commit with a reason line.
