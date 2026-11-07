@@ -105,8 +105,10 @@ test_shipped_split_trigger_set_runs_on_its_own() {
 test_scenario_record_names_the_case_relative_to_the_repository() {
   repo=$(make_repo)
   plugin_at "$repo/plugins/acme"
-  ln -s "$repo" link
-  (cd link && new_case commit-messages rushed-release > /dev/null)
+  # Git Bash copies instead of linking unless symlinks are enabled; then the plain path is used.
+  start=$repo
+  if ln -s "$repo" link 2> /dev/null && [ -L link ]; then start=$PWD/link; fi
+  (cd "$start" && new_case commit-messages rushed-release > /dev/null)
   assert_file_contains "$repo/tests/pressure/commit-messages/rushed-release/scenario.md" \
     '^Skill: `commit-messages`\. Eval case: `plugins/acme/evals/commit-messages/pressure/commit-messages-rushed-release/`'
   (cd "$repo/plugins/acme" && new_case lint-fix friday-deploy > /dev/null)
