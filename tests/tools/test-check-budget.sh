@@ -102,3 +102,13 @@ test_budget_hook_failure_fails() {
   chmod +x p/hooks/session-start
   assert_exit 1 tool p
 }
+
+test_budget_measures_shipped_session_start() {
+  local out tokens
+  out=$(tool "$(dirname "$(dirname "$RUNNER")")/plugins/overdrive")
+  tokens=$(printf '%s\n' "$out" | sed -n 's/^injection_tokens=\([0-9]*\) .*/\1/p')
+  [ -n "$tokens" ] && [ "$tokens" -gt 0 ] && [ "$tokens" -le 1000 ] || {
+    printf 'unexpected injection: %s\n' "$out" >&2
+    return 1
+  }
+}

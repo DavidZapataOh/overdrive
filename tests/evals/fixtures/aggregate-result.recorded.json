@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.319",
+  "startedAt": "2026-11-07T02:18:56.787Z",
+  "durationSeconds": 27,
+  "costUsd": 0.008387720000000001,
+  "partial": false,
+  "suite": {
+    "root": "/work/plugin",
+    "ablation": "with-without",
+    "modelOverride": "claude-haiku-5-5",
+    "threshold": 1,
+    "concurrency": 1,
+    "plugins": [
+      {
+        "name": "overdrive",
+        "version": "0.0.1",
+        "path": "/work/plugin"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "spike-probe",
+      "dir": "evals/spike/behavior/probe",
+      "source": "mixed",
+      "promptMarkdown": "Read notes.txt and reply with its first word. If your context contains a SPIKE_HOOK_TOKEN value, add it on a second line as \"token=<value>\", otherwise write \"token=NONE\".",
+      "runsPerCase": 3,
+      "timeoutSeconds": 120,
+      "maxTurns": 5,
+      "graders": [
+        {
+          "name": "read",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Read"
+          }
+        },
+        {
+          "name": "token",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": "last_message",
+            "pattern": "token=7391",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "word",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": "last_message",
+            "pattern": "alpha",
+            "flags": "",
+            "match": "contains"
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 2,
+            "costUsd": 0.0016806000000000002,
+            "judgeCostUsd": 0,
+            "durationSeconds": 5,
+            "startedAt": "2026-11-07T02:18:56.867Z",
+            "error": null,
+            "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "read",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Read called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "token",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched token=7391",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "word",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched alpha",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ],
+        "without": [
+          {
+            "score": 0.6666666666666666,
+            "passed": false,
+            "turns": 3,
+            "costUsd": 0.0015173200000000004,
+            "judgeCostUsd": 0,
+            "durationSeconds": 4,
+            "startedAt": "2026-11-07T02:19:02.111Z",
+            "error": null,
+            "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "read",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Read called 1x (expected 1..∞)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "token",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in last_message",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "word",
+                "passed": true,
+                "weight": 1,
+                "explanation": "matched alpha",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1,
+        "scoreWithout": 0.6666666666666666,
+        "passRateWithout": 0,
+        "delta": 0.33333333333333337
+      }
+    },
+    {
+      "name": "neg",
+      "dir": "evals/spike/trigger/neg",
+      "source": "prose",
+      "promptMarkdown": "Reply with the single word: ok.",
+      "runsPerCase": 3,
+      "timeoutSeconds": 120,
+      "maxTurns": 3,
+      "graders": [
+        {
+          "name": "not-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "input_match": "\"skill\"\\s*:\\s*\"(?:[\\w-]+:)?nothing\"",
+            "min": 0,
+            "max": 0,
+            "arm": "both"
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 1,
+            "costUsd": 0.0013394000000000001,
+            "judgeCostUsd": 0,
+            "durationSeconds": 6,
+            "startedAt": "2026-11-07T02:22:37.184Z",
+            "error": null,
+            "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 0x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 1,
+            "costUsd": 0.0013976000000000001,
+            "judgeCostUsd": 0,
+            "durationSeconds": 5,
+            "startedAt": "2026-11-07T02:22:42.840Z",
+            "error": null,
+            "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 0x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ],
+        "without": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 1,
+            "costUsd": 0.0012258000000000002,
+            "judgeCostUsd": 0,
+            "durationSeconds": 3,
+            "startedAt": "2026-11-07T02:22:47.569Z",
+            "error": null,
+            "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 0x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 1,
+            "costUsd": 0.0012270000000000002,
+            "judgeCostUsd": 0,
+            "durationSeconds": 3,
+            "startedAt": "2026-11-07T02:22:50.937Z",
+            "error": null,
+            "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 0x (expected 0..0)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1,
+        "scoreWithout": 1,
+        "passRateWithout": 1,
+        "delta": 0
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 1,
+    "casesPassed": 1,
+    "overallScore": 1,
+    "overallPassRate": 1,
+    "meanDelta": 0.33333333333333337
+  }
+}

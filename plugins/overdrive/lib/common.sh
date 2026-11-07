@@ -4,79 +4,15 @@
 if [ -n "${_OD_COMMON_LOADED:-}" ]; then return 0; fi
 _OD_COMMON_LOADED=1
 
+case ${BASH_SOURCE[0]} in
+  */*) . "${BASH_SOURCE[0]%/*}/path.sh" ;;
+  *) . ./path.sh ;;
+esac
+
 # od_die MESSAGE [CODE]: report on stderr and exit the calling shell.
 od_die() {
   printf 'overdrive: %s\n' "$1" >&2
   exit "${2:-1}"
-}
-
-# _od_normalize_path PATH: set _OD_PATH with . and .. segments and repeated
-# slashes resolved lexically (no symlink resolution, no forks).
-_od_normalize_path() {
-  local rest=$1 seg out="" lead=""
-  case $rest in /*) lead=/ ;; esac
-  while [ -n "$rest" ]; do
-    case $rest in
-      */*) seg=${rest%%/*}; rest=${rest#*/} ;;
-      *) seg=$rest; rest= ;;
-    esac
-    case $seg in
-      '' | .) ;;
-      ..)
-        case $out in
-          '' | .. | */..) out=${out:+$out/}.. ;;
-          */*) out=${out%/*} ;;
-          *) out= ;;
-        esac
-        ;;
-      *) out=${out:+$out/}$seg ;;
-    esac
-  done
-  _OD_PATH=$lead$out
-}
-
-# _od_posix_path PATH: set _OD_PATH with backslashes turned into slashes and, under
-# Git Bash or Cygwin, a drive prefix (C:/x) rewritten to the /c/x form that $PWD uses,
-# so every spelling of one location compares equal.
-_od_posix_path() {
-  local d=${1//\\//} drive upper=ABCDEFGHIJKLMNOPQRSTUVWXYZ lower=abcdefghijklmnopqrstuvwxyz pre
-  case $OSTYPE in
-    msys* | cygwin*)
-      case $d in
-        [A-Za-z]:/* | [A-Za-z]:)
-          drive=${d:0:1}
-          case $drive in
-            [A-Z]) pre=${upper%%"$drive"*}; drive=${lower:${#pre}:1} ;;
-          esac
-          d=/$drive${d:2}
-          ;;
-      esac
-      ;;
-  esac
-  _OD_PATH=$d
-}
-
-# od_repo_root [DIR]: print the nearest ancestor of DIR (default $PWD) that holds a
-# .git entry, file or directory, so linked worktrees count. Builtins only. The
-# environment's project dir is deliberately ignored: sessions often start in a
-# folder above the repository, and the tool's own cwd or file path is the truth.
-od_repo_root() {
-  local d=${1:-$PWD} p
-  _od_posix_path "$d"
-  d=$_OD_PATH
-  case $d in /* | [A-Za-z]:*) ;; *) d=$PWD/$d ;; esac
-  case $d/ in */./* | */../* | *//*) _od_normalize_path "$d"; d=$_OD_PATH ;; esac
-  while [ "${d%/}" != "$d" ]; do d=${d%/}; done
-  while :; do
-    if [ -e "$d/.git" ]; then
-      printf '%s\n' "${d:-/}"
-      return 0
-    fi
-    [ -n "$d" ] || return 1
-    p=${d%/*}
-    [ "$p" != "$d" ] || return 1
-    d=$p
-  done
 }
 
 # od_run_dir ROOT: ensure ROOT/.overdrive/run exists and ignores itself; print it.
@@ -207,4 +143,46 @@ od_unlock() {
     [ "$n" -lt 20 ] || return 1
     sleep 0.05 2>/dev/null || sleep 1
   done
+}
+
+# od_append FILE LINE: append LINE to FILE under FILE.lock, so concurrent writers never
+# interleave or lose lines (O_APPEND alone is not atomic on every supported platform).
+od_append() {
+  local rc=0
+  od_lock "$1.lock" || { printf 'overdrive: cannot lock %s\n' "$1" >&2; return 1; }
+  printf '%s\n' "$2" >> "$1" || rc=1
+  od_unlock "$1.lock"
+  return "$rc"
+}
+
+# od_active_ledger RUN: print the active ledger, the file named (relative to RUN) in
+# RUN/active-ledger, which `overdrive ledger init` rewrites. Returns 1 when there is no
+# pointer, it escapes RUN, or the ledger it names does not exist.
+od_active_ledger() {
+  local rel=''
+  [ -r "$1/active-ledger" ] || return 1
+  { IFS= read -r rel || [ -n "$rel" ]; } < "$1/active-ledger" || return 1
+  case /$rel/ in //* | */../* | */./*) return 1 ;; esac
+  [ -f "$1/$rel" ] || return 1
+  printf '%s\n' "$1/$rel"
+}
+
+# od_plan_dir PLAN [RUN]: print RUN/<stem>-<cksum>, the run directory of plan PLAN.
+# stem is PLAN's file name without a trailing .md, every byte outside [A-Za-z0-9._-]
+# turned into "-" (bytes, so the name does not depend on the locale); cksum is the
+# decimal first field of cksum over od_abs_path PLAN. The checksum keeps same-named
+# plans apart and plan directories clear of the run directory's own files. RUN
+# defaults to <repo around $PWD>/.overdrive/run. Creates nothing.
+od_plan_dir() {
+  local run=${2-} abs stem sum root LC_ALL=C
+  abs=$(od_abs_path "$1")
+  stem=${abs##*/}
+  stem=${stem%.md}
+  stem=${stem//[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]/-}
+  sum=$(printf '%s' "$abs" | cksum) || return 1
+  if [ -z "$run" ]; then
+    root=$(od_repo_root) || return 1
+    run=$root/.overdrive/run
+  fi
+  printf '%s/%s-%s\n' "$run" "$stem" "${sum%% *}"
 }
