@@ -153,7 +153,21 @@ test_runner_counts_classifier_crash_as_under() {
   local out rc=0
   out=$(OVERDRIVE_BIN="$PWD/stub" bash "$(corpus_runner)" --synthetic corpus/synthetic 2>&1) || rc=$?
   assert_eq 1 "$rc" "exit code"
-  assert_line "$out" "UNDER docs direct:none error:none"
+  assert_line "$out" "UNDER docs direct:none error:none # exit 1: boom"
+}
+
+test_runner_never_runs_contributor_hooks_in_fixtures() {
+  mkdir corpus hooks
+  add_case corpus docs 'printf "b\n" >> README.md' direct none
+  freeze corpus
+  printf '#!/bin/sh\nexit 1\n' > hooks/pre-commit
+  chmod +x hooks/pre-commit
+  printf '[core]\n\thooksPath = %s\n' "$PWD/hooks" > global.gitconfig
+  stub_classifier "$PWD/stub" direct
+  local out
+  out=$(GIT_CONFIG_GLOBAL="$PWD/global.gitconfig" OVERDRIVE_BIN="$PWD/stub" \
+    bash "$(corpus_runner)" --synthetic corpus/synthetic)
+  assert_line "$out" "PASS docs direct:none direct:none"
 }
 
 # Upstream repo with a root commit, a plain commit and a merge commit.
@@ -222,7 +236,10 @@ test_runner_fetches_missing_commit_into_cache() {
   freeze corpus
   git -C cache/widget.git remote set-url origin "$PWD/$up"
   stub_classifier "$PWD/stub" direct
-  OVERDRIVE_BIN="$PWD/stub" bash "$(corpus_runner)" --tsv corpus/units.tsv --clone-cache cache >/dev/null 2>&1
+  local out rc=0
+  out=$(OVERDRIVE_BIN="$PWD/stub" bash "$(corpus_runner)" --tsv corpus/units.tsv --clone-cache cache 2>&1) || rc=$?
+  assert_eq 0 "$rc" "exit code"
+  assert_line "$out" "PASS acme/widget@${sha:0:12} direct:none direct:none"
   git -C cache/widget.git cat-file -e "$sha^{commit}"
 }
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Usage: tests/risk/run-corpus.sh --synthetic DIR
-#        tests/risk/run-corpus.sh --tsv FILE --clone-cache DIR
+# Usage: bash tests/risk/run-corpus.sh --synthetic DIR
+#        bash tests/risk/run-corpus.sh --tsv FILE --clone-cache DIR
 #
 # Runs the risk classifier ($OVERDRIVE_BIN, default plugins/overdrive/bin/overdrive) over a
 # labeled corpus and compares lanes and items with the frozen labels.
-# Per case: PASS|UNDER|OVER|ITEMS <name> <expected lane:items> <got lane:items>.
+# Per case: PASS|UNDER|OVER|ITEMS <name> <expected lane:items> <got lane:items>; a classifier
+# crash shows as lane "error" followed by "# " and the last line of its stderr.
 # Summary: under=N over=N critical_recall=P over_rate=P item_precision.<item>=P item_recall.<item>=P
 # Exit: 0 gate met; 1 under > 0, critical_recall < 1.00 or over_rate > 0.25; 2 usage, corpus or
 # environment error (including labels that differ from SHA256SUMS).
@@ -61,6 +62,8 @@ fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/corpus.XXXXXX") || die "cannot create a work directory"
 trap 'rm -rf "$work"' EXIT
+# Contributor hooks must never run inside fixture repositories.
+mkdir "$work/no-hooks" || die "cannot create a work directory"
 
 if command -v sha256sum >/dev/null 2>&1; then
   hasher="sha256sum"
@@ -96,14 +99,14 @@ verify_frozen() {
   fi
 }
 
-# classify DIR ARGS... prints "lane<TAB>items" from the classifier output; lane "error" when the
-# classifier crashes or breaks its output contract.
+# classify LOG DIR ARGS... prints "lane<TAB>items<TAB>detail" from the classifier output, keeping
+# its stderr in LOG; lane "error" when the classifier crashes or breaks its output contract.
 classify() {
-  local dir=$1 out rc=0
-  shift
-  out=$(cd "$work" && "$bin" risk --repo "$dir" "$@" 2>/dev/null) || rc=$?
+  local log=$1 dir=$2 out rc=0
+  shift 2
+  out=$(cd "$work" && "$bin" risk --repo "$dir" "$@" 2>"$log") || rc=$?
   if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
-    printf 'error\tnone\n'
+    printf 'error\tnone\texit %s: %s\n' "$rc" "$(tail -n 1 "$log" | tr -d '\r\t')"
     return
   fi
   printf '%s\n' "$out" | LC_ALL=C awk '
@@ -117,7 +120,7 @@ classify() {
         for (j = i; j > 1 && list[j - 1] > list[j]; j--) { t = list[j]; list[j] = list[j - 1]; list[j - 1] = t }
       s = ""
       for (i = 1; i <= n; i++) s = s (i > 1 ? "," : "") list[i]
-      printf "%s\t%s\n", lane, (n ? s : "none")
+      printf "%s\t%s\t%s\n", lane, (n ? s : "none"), (lane == "error" ? "no lane line in output" : "")
     }'
 }
 
@@ -165,13 +168,14 @@ run_synthetic() {
         git config user.email corpus@example.com &&
         git config commit.gpgsign false &&
         git config core.autocrlf false &&
+        git config core.hooksPath "$work/no-hooks" &&
         bash "$case/setup.sh" || exit 1
       if [ -f "$case/risk-map.conf" ]; then
         mkdir -p .overdrive && cp "$case/risk-map.conf" .overdrive/risk-map.conf || exit 1
       fi
       git add -A && git commit -q --allow-empty -m baseline && bash "$case/change.sh"
     ) >"$work/case.log" 2>&1 || die "case $name failed to build: $(tail -n 3 "$work/case.log")"
-    got=$(classify "$repo" --worktree)
+    got=$(classify "$work/case$n.err" "$repo" --worktree)
     printf '%s\t%s\t%s\t%s\n' "$name" "$lane" "$(normalize_items "$items")" "$got" >> "$results"
     rm -rf "$repo"
   done
@@ -207,17 +211,18 @@ run_tsv() {
         die "cannot clone $remote/$repo.git"
     fi
     ensure_commit "$gitdir" "$repo" "$sha"
-    parents=$(git -C "$gitdir" rev-list --parents -n 1 "$sha" | awk '{ print NF - 1 }')
-    case $parents in
+    parents=$(git -C "$gitdir" rev-list --parents -n 1 "$sha") || die "cannot read parents of $sha in $repo"
+    case $(printf '%s\n' "$parents" | awk 'NF && !d { print NF - 1; d = 1 } END { if (!d) print -1 }') in
       0)
         empty=$(git -C "$gitdir" hash-object -t tree --stdin </dev/null) || die "cannot hash the empty tree"
         range="$empty..$sha"
         ;;
       1) range="$sha^..$sha" ;;
+      -1) die "cannot read parents of $sha in $repo" ;;
       *) range="$sha^1..$sha" ;;
     esac
     n=$((n + 1))
-    got=$(classify "$gitdir" --diff "$range")
+    got=$(classify "$work/row$n.err" "$gitdir" --diff "$range")
     printf '%s\t%s\t%s\t%s\n' "$repo@$(printf '%s' "$sha" | cut -c1-12)" "$lane" \
       "$(normalize_items "$items")" "$got" >> "$results"
   done < "$work/rows"
@@ -234,12 +239,12 @@ LC_ALL=C awk -F '\t' '
   function rank(l) { return l == "critical" ? 2 : l == "standard" ? 1 : l == "direct" ? 0 : -1 }
   function pct(a, b) { return b ? sprintf("%.2f", a / b) : "n/a" }
   {
-    name = $1; el = $2; ei = $3; gl = $4; gi = $5
+    name = $1; el = $2; ei = $3; gl = $4; gi = $5; detail = $6
     if (rank(gl) < rank(el)) { status = "UNDER"; under++ }
     else if (rank(gl) > rank(el)) { status = "OVER"; over++ }
     else if (ei != gi) status = "ITEMS"
     else status = "PASS"
-    printf "%s %s %s:%s %s:%s\n", status, name, el, ei, gl, gi
+    printf "%s %s %s:%s %s:%s%s\n", status, name, el, ei, gl, gi, (gl == "error" ? " # " detail : "")
     if (el == "critical") { crit++; if (gl == "critical") crit_hit++ }
     else below++
     for (i in e) delete e[i]

@@ -39,6 +39,8 @@ These labels are the ground truth for the deterministic risk classifier. They ar
 
 Path tokens match whole segments split on `/ . _ -` (case-insensitive). No items → `direct`. Lane = highest item.
 
+Content case rules: the SQL and concurrency phrases (`DROP TABLE`, `DROP COLUMN`, `ALTER TABLE`, `TRUNCATE`, `DELETE FROM`, `FOR UPDATE`, `SKIP LOCKED`, `SERIALIZABLE`, `isolation level`, `ROW LEVEL SECURITY`, `CREATE POLICY`) match case-insensitively, because SQL keywords are case-insensitive. Identifiers (`bcrypt`, `argon2`, `verifyToken`, `getServerSession`, `tenant_id`, `tenantId`, `advisory_lock`, `pg_advisory`, `Mutex`, `Semaphore`, `Atomics.`) match case-sensitively, as written. Secret patterns are regular expressions and match exactly as written.
+
 Clarification: a change that only edits documentation is `direct` even when a documentation path contains a token (`docs/payments.md`); path tokens are not evaluated on documentation files (`*.md`, `*.mdx`, `*.rst`, `*.adoc`). Path globs and content signals still apply to them.
 
 ## How to label
@@ -70,8 +72,8 @@ The classifier runs in `--worktree` mode (tracked changes against `HEAD` plus un
 ## Running
 
 ```
-tests/risk/run-corpus.sh --synthetic tests/risk/corpus/synthetic
-tests/risk/run-corpus.sh --tsv tests/risk/corpus/oss.tsv --clone-cache DIR
+bash tests/risk/run-corpus.sh --synthetic tests/risk/corpus/synthetic
+bash tests/risk/run-corpus.sh --tsv tests/risk/corpus/oss.tsv --clone-cache DIR
 ```
 
 `OVERDRIVE_BIN` selects the classifier (default `plugins/overdrive/bin/overdrive`). The clone cache may start empty; missing repositories and commits are fetched.
@@ -86,4 +88,11 @@ cd tests/risk/corpus && find synthetic oss.tsv -type f | LC_ALL=C sort | xargs s
 
 ### Relabel log
 
-None.
+- `lowercase-prose-is-not-concurrency` replaced by `update-form-prose-is-not-concurrency`, and `lowercase-for-update-is-concurrency` and `truncate-lowercase-is-data-migration` added: SQL and concurrency phrases match case-insensitively, so lowercase `for update` in prose is no longer a valid negative.
+
+### Pending conflicts
+
+These `oss.tsv` rows are critical only through a path token in a documentation file, which contradicts the documentation clarification above. They will be relabeled deliberately during calibration:
+
+- `better-auth/better-auth` `3f574ec70bb15c155a78673d42c5e25f7376ced3` (`auth` from `session-management.mdx`).
+- `trpc/trpc` `19da060cb0e05c75682ec813c606b51c6c52ee19` (`money` from `subscriptions.md`; `public-contract` is a judgment item).
