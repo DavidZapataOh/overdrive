@@ -587,6 +587,14 @@ test_repo_containing_the_plugin_is_still_marked() {
   printf '%s' "$(bash_event "cd $p/skills && npm run x" "$p")" |
     CLAUDE_PLUGIN_ROOT=$p CLAUDE_PROJECT_DIR=/nonexistent "$p/hooks/pre-tool-use" >/dev/null
   [ ! -e "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "plugin's own files marked" >&2; return 1; }
+  # Leaving the plugin with a trailing `..` lands in the project, which must be marked.
+  local outside
+  outside=$(mktemp -d)
+  printf '%s' "$(bash_event "cd $p && cd .. && rm x" "$outside")" |
+    CLAUDE_PLUGIN_ROOT=$p CLAUDE_PROJECT_DIR=/nonexistent "$p/hooks/pre-tool-use" >/dev/null
+  rm -rf "$outside"
+  [ -f "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "cd .. out of the plugin not marked" >&2; return 1; }
+  rm -rf "$repo/.overdrive/run/markers"
   # On Windows, Claude Code spells both the plugin root and the file path the Windows way.
   case $OSTYPE in
     msys* | cygwin*)
