@@ -17,3 +17,7 @@ Shape note, not a compliance failure: the Risk line each run promises for after 
 ## Fix round 1 (router classifies alone; skill loads only above direct)
 
 Rerun on the final text of that round, 5 runs, `claude-opus-5-5`, 2026-11-07: 5/5 compliant, read by hand. An intermediate text was also run (5/5). No new excuse.
+
+## Fix round 1, continued (R64 router line, map note in the next step)
+
+Rerun on the final SKILL.md and router, 5 runs, `claude-opus-5-5`, 2026-11-07: 5/5 compliant, read by hand (every quick-auth and migration run asks exactly one question and edits nothing; every checkout run explains and changes nothing).

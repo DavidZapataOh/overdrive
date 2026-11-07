@@ -36,6 +36,7 @@ fx_file lib/paginate.js 'module.exports = function paginate(items, page, size) {
 fx_file apps/web/src/components/PayButton.tsx 'export const PayButton = () => <button style={{ background: "#1F6FEB" }}>Pay</button>;'
 fx_file config/queue.yml 'retries: 3
 backoff_ms: 500'
+fx_file config/theme.json '{ "primary": "#1F6FEB", "radius": 6 }'
 fx_file .eslintrc.json '{ "rules": { "no-unused-vars": "warn" } }'
 fx_file db/migrations/0001_init.sql 'CREATE TABLE projects (id serial PRIMARY KEY, name text NOT NULL);
 CREATE TABLE users (id serial PRIMARY KEY, email text NOT NULL, legacy_email text);'
