@@ -43,8 +43,8 @@ _signals_escape() {
 
 # Functions shared by the awk programs below.
 # Documentation files are prose about a subject, not the subject itself: names ending in
-# .md .mdx .rst .adoc (any case), and every file under a docs/ or doc/ directory that
-# does not have a source extension (a docs site's code is code).
+# .md .mdx .rst .adoc (any case), and under a docs/ or doc/ directory also plain text,
+# images and fonts. Anything else there (a docs site's code and configuration) is code.
 # Test files follow the naming conventions of the test runners: *.test.* *.spec.*
 # *_test.* test_*.py and anything under a __tests__/ directory.
 # shellcheck disable=SC2016
@@ -100,7 +100,8 @@ function unescape(s,    out, i, n, c) {
 
 function is_doc(p,    l) {
   l = tolower(p)
-  return l ~ /\.(md|mdx|rst|adoc)$/ || (l ~ /(^|\/)docs?\// && !has_source_ext(p))
+  if (l ~ /\.(md|mdx|rst|adoc)$/) return 1
+  return l ~ /(^|\/)docs?\// && l ~ /\.(txt|png|jpe?g|gif|webp|avif|bmp|ico|svg|woff2?|ttf|otf|eot)$/
 }
 
 function has_source_ext(p) {
@@ -460,6 +461,22 @@ function words_of(s) {
   return s
 }
 
+# raw_form(w): an expression every unfolded spelling of folded keyword w matches: any
+# case, a letter may carry a combining accent or be a two-byte Latin-1 letter, and ñ may
+# be decomposed. Lines that miss it are never folded, which is the costly step.
+function raw_form(w,    out, i, c, u) {
+  out = ""
+  for (i = 1; i <= length(w); i++) {
+    c = substr(w, i, 1)
+    if (c == "\303") { out = out "(\303.|[nN]\314.)"; i++; continue }
+    u = toupper(c)
+    if (c == " ") c = "[[:space:]]+"
+    else if (u != c) c = "([" c u "](\314.)?|\303.)"
+    out = out c
+  }
+  return out
+}
+
 # binary(s): a "Binary files A and B differ" line. A file git takes as binary shows no
 # lines, so unless its name says it is a binary format, its content went unread.
 function binary(s,    i, n, c, b) {
@@ -514,7 +531,7 @@ function added(t, n,    r, l) {
   if (content_any != "" && t ~ content_any)
     for (r = 1; r <= n_content; r++)
       if (!((r_item["content", r] SUBSEP file) in done_file) && t ~ r_pat["content", r]) line_hit(r, "content", n)
-  if (n_keyword && (l = words_of(t)) ~ keyword_any) {
+  if (n_keyword && t ~ keyword_raw && (l = words_of(t)) ~ keyword_any) {
     for (r = 1; r <= n_keyword; r++)
       if (!((r_item["keyword", r] SUBSEP file) in done_file) && has_word(l, r_pat["keyword", r])) line_hit(r, "keyword", n)
   }
@@ -564,6 +581,7 @@ FILENAME == ARGV[1] {
       r_shown[r] = $2
       r_pat[$1, r] = words_of($2)
       p = r_pat[$1, r]
+      keyword_raw = keyword_raw (keyword_raw == "" ? "" : "|") raw_form(p)
       gsub(/ /, "[[:space:]]+", p)
       keyword_any = keyword_any (keyword_any == "" ? "" : "|") p
       if (index($2, " ")) kw_space = 1

@@ -376,3 +376,16 @@ test_source_under_a_docs_directory_is_code() {
   assert_line "$out" "item money critical floor path apps/docs/src/billing/pay.ts"
   assert_no_line "$out" "guide.mdx"
 }
+
+test_any_code_under_a_docs_directory_is_code() {
+  local repo f
+  repo=$(make_repo)
+  for f in apps/docs/src/billing/pay.mts docs/.vitepress/config.mts docs/run.sh docs/conf.vue; do
+    write_file "$repo" "$f" 'const m = new Mutex();'
+  done
+  risk "$repo" --worktree
+  for f in apps/docs/src/billing/pay.mts docs/.vitepress/config.mts docs/run.sh docs/conf.vue; do
+    assert_line "$out" "item concurrency critical floor line $f:1"
+  done
+  assert_line "$out" "item money critical floor path apps/docs/src/billing/pay.mts"
+}

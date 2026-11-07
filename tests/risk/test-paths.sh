@@ -49,7 +49,7 @@ test_path_tokens_skip_documentation_files() {
   write_file "$repo" notes/session.rst 'x'
   write_file "$repo" notes/checkout.adoc 'x'
   write_file "$repo" docs/tenants/diagram.svg '<svg/>'
-  write_file "$repo" packages/docs/billing/fee.json '{}'
+  write_file "$repo" packages/docs/billing/fee.png 'x'
   write_file "$repo" doc/session/notes.txt 'x'
   risk "$repo" --worktree
   assert_line "$out" "lane direct"
@@ -61,7 +61,12 @@ test_path_tokens_skip_documentation_files() {
   risk "$repo" --worktree
   assert_line "$out" "item delivery critical floor path .github/workflows/README.md"
   assert_line "$out" "item auth critical floor path lists/passwords.txt"
-  assert_no_line "$out" "path (docs/payments.md|src/auth/README.MD|packages/docs/billing/fee.json)$"
+  assert_no_line "$out" "path (docs/payments.md|src/auth/README.MD|packages/docs/billing/fee.png)$"
+  # Under docs/, only prose, images and fonts are documentation: a docs site's
+  # configuration is code.
+  write_file "$repo" packages/docs/billing/nav.json '{}'
+  risk "$repo" --worktree
+  assert_line "$out" "item money critical floor path packages/docs/billing/nav.json"
 }
 
 test_rename_out_of_auth_counts_old_path() {
