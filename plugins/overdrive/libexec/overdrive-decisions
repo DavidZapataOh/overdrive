@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# overdrive decisions: allocate, validate and show entries of the decisions log.
+
+OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=../lib/common.sh
+. "$OVERDRIVE_HOME/lib/common.sh"
+# shellcheck source=../lib/text.sh
+. "$OVERDRIVE_HOME/lib/text.sh"
+
+# Unclosed fences hide every later entry, so each reader refuses them.
+# shellcheck disable=SC2016
+FENCE_FAIL_AWK='
+function fencefail() {
+  printf "overdrive: %s:%d: unclosed code fence opened at line %d\n", ENVIRON["SHOWN"], fline, fline > "/dev/stderr"
+  exit 3
+}
+'
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive decisions next-id [FILE]
+       overdrive decisions check [FILE]
+       overdrive decisions show D-NNNN [FILE]
+
+FILE defaults to .overdrive/decisions.md at the root of the current repository.
+USAGE
+}
+
+# resolve_file [FILE]: set FILE and SHOWN (the name used in messages).
+resolve_file() {
+  local root
+  if [ -n "${1-}" ]; then
+    FILE=$1
+    SHOWN=$1
+    return 0
+  fi
+  root=$(od_repo_root) || od_die "not inside a git repository; pass the decisions file" 1
+  FILE=$root/.overdrive/decisions.md
+  SHOWN=.overdrive/decisions.md
+}
+
+next_id() {
+  resolve_file "${1-}"
+  if [ ! -f "$FILE" ]; then
+    printf 'D-0001\n'
+    return 0
+  fi
+  # Quoted examples count too: a gap in the numbering is harmless, a reused id is not.
+  LC_ALL=C awk '
+    { sub(/\r$/, "") }
+    /^## D-[0-9]+([ \t]|$)/ { n = substr($2, 3) + 0; if (n > max) max = n }
+    END { printf "D-%04d\n", max + 1 }
+  ' "$FILE"
+}
+
+check() {
+  resolve_file "${1-}"
+  [ -f "$FILE" ] || od_die "no such file: $SHOWN" 66
+  SHOWN=$SHOWN LC_ALL=C awk "$OD_FENCE_AWK"'
+    function err(line, msg) { printf "%s:%d: %s\n", ENVIRON["SHOWN"], line, msg; nerr++ }
+    function flush(   i) {
+      if (id == "") return
+      for (i = 1; i <= nreq; i++)
+        if (!(req[i] in seen)) err(hline, id ": missing field: " req[i])
+      for (i in seen) delete seen[i]
+      id = ""
+    }
+    BEGIN {
+      nreq = split("Date|Scope|Decision|Source|Why|Cost if wrong|Status", req, "|")
+      for (i = 1; i <= nreq; i++) isreq[req[i]] = 1
+    }
+    { sub(/\r$/, "") }
+    fence($0) || infence { next }
+    /^## / {
+      flush()
+      if ($0 !~ /^## D-/) next
+      if ($0 !~ /^## D-[0-9][0-9][0-9][0-9]+ — [^ ]/) { err(NR, "malformed heading, expected ## D-NNNN — <title>"); next }
+      id = $2; hline = NR; entries++
+      if (id in first) err(NR, id ": duplicate id (first at line " first[id] ")")
+      else first[id] = NR
+      next
+    }
+    id != "" && /^- [A-Za-z ]+:/ {
+      name = substr($0, 3, index($0, ":") - 3)
+      if (!(name in isreq)) next
+      value = substr($0, index($0, ":") + 1); sub(/^[ \t]+/, "", value); sub(/[ \t]+$/, "", value)
+      if (name in seen) err(NR, id ": duplicate field: " name)
+      seen[name] = 1
+      if (value == "") { err(NR, id ": empty field: " name); next }
+      if (name == "Date" && value !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/)
+        err(NR, id ": Date is not YYYY-MM-DD")
+      if (name == "Source") {
+        if (substr(value, 1, 1) == "\"") {
+          rest = substr(value, 2)
+            # The quote may hold quotes itself; it ends at the last one followed by the attribution.
+          closed = 0; ok = 0
+          for (i = length(rest); i > 0; i--)
+            if (substr(rest, i, 1) == "\"") { closed = 1; if (substr(rest, i + 1) ~ /^ — [^ ]/) { ok = 1; break } }
+          if (!closed) err(NR, id ": Source quote is not closed")
+          else if (!ok) err(NR, id ": Source quote must be followed by — <who>, <date>")
+        } else if (value !~ /^Ruling — [^ ]/)
+          err(NR, id ": Source must be a \"quote\" — <who>, <date> or Ruling — <agent>, <date>")
+      }
+      if (name == "Status") {
+        if (value == "active") next
+        if (value ~ /^superseded by D-[0-9][0-9][0-9][0-9]+$/) {
+          target = substr(value, 15)
+          if (target == id) err(NR, id ": superseded by itself")
+          else { np++; pline[np] = NR; pid[np] = id; ptarget[np] = target }
+        } else err(NR, id ": Status must be active or superseded by D-NNNN")
+      }
+    }
+    END {
+      flush()
+      if (infence) err(fline, "unclosed code fence opened at line " fline)
+      for (i = 1; i <= np; i++)
+        if (!(ptarget[i] in first)) err(pline[i], pid[i] ": superseded by missing id " ptarget[i])
+      if (nerr) exit 1
+      printf "decisions: %d entries, no problems\n", entries
+    }
+  ' "$FILE"
+}
+
+show() {
+  case ${1-} in
+    D-[0-9][0-9][0-9][0-9]*) ;;
+    *) usage >&2; exit 64 ;;
+  esac
+  case ${1#D-} in *[!0-9]*) usage >&2; exit 64 ;; esac
+  local want=$1
+  resolve_file "${2-}"
+  [ -f "$FILE" ] || od_die "no such file: $SHOWN" 66
+  local rc=0
+  SHOWN=$SHOWN WANT=$want LC_ALL=C awk "$OD_FENCE_AWK$FENCE_FAIL_AWK"'
+    fence($0) || infence { if (on) out[++n] = $0; next }
+    /^## / {
+      if (on) { on = 0; done = 1 }
+      else if (!done && $2 == ENVIRON["WANT"]) on = found = 1
+    }
+    on { out[++n] = $0 }
+    END {
+      if (infence) fencefail()
+      if (!found) exit 1
+      for (; n > 0 && out[n] ~ /^[ \t\r]*$/; n--) ;
+      for (i = 1; i <= n; i++) print out[i]
+    }
+  ' "$FILE" || rc=$?
+  case $rc in
+    0) ;;
+    1) od_die "$want not found in $SHOWN" 1 ;;
+    *) exit 1 ;;
+  esac
+}
+
+sub=${1-}
+[ "$#" -eq 0 ] || shift
+case $sub in
+  next-id) [ "$#" -le 1 ] || { usage >&2; exit 64; }; next_id "$@" ;;
+  check) [ "$#" -le 1 ] || { usage >&2; exit 64; }; check "$@" ;;
+  show) [ "$#" -ge 1 ] && [ "$#" -le 2 ] || { usage >&2; exit 64; }; show "$@" ;;
+  help | -h | --help) usage ;;
+  *) usage >&2; exit 64 ;;
+esac
