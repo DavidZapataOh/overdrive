@@ -43,57 +43,79 @@ function tokenize(s,    n, i, len, c, d, t, closed) {
   return n
 }
 
-# bracket_end(s, i): index of the "]" closing the bracket expression opened at i, or 0.
-function bracket_end(s, i,    len, c, k) {
+# bracket_end(s, i): index of the "]" closing the bracket expression opened at i,
+# or 0 with eerr set. POSIX brackets have no escapes, and awks disagree on "\"
+# there; unknown classes and reversed ranges are errors in some awks only.
+function bracket_end(s, i,    len, c, e, k, body) {
   len = length(s); i++
   if (substr(s, i, 1) == "^") i++
   if (substr(s, i, 1) == "]") i++
   while (i <= len) {
     c = substr(s, i, 1)
+    if (c == "\\") { eerr = "backslash inside a bracket expression"; return 0 }
     if (c == "]") return i
     if (c == "[" && index(":=.", substr(s, i + 1, 1)) > 0) {
       k = index(substr(s, i + 2), substr(s, i + 1, 1) "]")
-      if (k == 0) return 0
+      if (k == 0) break
+      body = substr(s, i + 2, k - 1)
+      if (index(body, "\\") > 0) { eerr = "backslash inside a bracket expression"; return 0 }
+      if (substr(s, i + 1, 1) == ":" && index(" alnum alpha blank cntrl digit graph lower print punct space upper xdigit ", " " body " ") == 0) {
+        eerr = "unknown character class \047" body "\047"; return 0
+      }
       i += k + 3
+      continue
+    }
+    if (substr(s, i + 1, 1) == "-" && i + 2 <= len && (e = substr(s, i + 2, 1)) != "]" && e != "[" && e != "\\") {
+      if (c > e) { eerr = "invalid range \047" c "-" e "\047"; return 0 }
+      i += 3
       continue
     }
     i++
   }
+  eerr = "unterminated bracket expression"
   return 0
 }
 
 # portable_ere(s): s with interval expressions expanded and literal braces
 # bracketed, because older mawk and BSD awk lack intervals; "" with eerr on error.
-function portable_ere(s,    out, len, i, c, d, j, depth, atom, lo, hi, iv, k, rep) {
-  out = ""; len = length(s); i = 1; depth = 0; atom = 0
+# Constructs that only some awks accept (empty alternatives or groups, dangling
+# repetitions) are rejected so that a map loads everywhere or nowhere.
+function portable_ere(s,    out, len, i, c, d, j, depth, atom, empty, lo, hi, iv, k, rep, n) {
+  out = ""; len = length(s); i = 1; depth = 0; atom = 0; empty = 1
   while (i <= len) {
     c = substr(s, i, 1)
     if (c == "\\") {
       if (i == len) { eerr = "trailing backslash"; return "" }
       d = substr(s, i + 1, 1)
-      if (d ~ /[A-Za-z0-9]/) { eerr = "non-portable escape \047\\" d "\047"; return "" }
-      atom = length(out) + 1
+      if (d ~ /[A-Za-z0-9<>`]/ || d == "\047") { eerr = "non-portable escape \047\\" d "\047"; return "" }
+      atom = length(out) + 1; empty = 0
       out = out ((d == "{" || d == "}") ? "[" d "]" : c d)
       i += 2
       continue
     }
     if (c == "[") {
       j = bracket_end(s, i)
-      if (j == 0) { eerr = "unterminated bracket expression"; return "" }
-      atom = length(out) + 1
+      if (j == 0) return ""
+      atom = length(out) + 1; empty = 0
       out = out substr(s, i, j - i + 1)
       i = j + 1
       continue
     }
     if (c == "(") {
       stack[++depth] = length(out) + 1
-      out = out c; atom = 0; i++
+      out = out c; atom = 0; empty = 1; i++
       continue
     }
     if (c == ")") {
       if (depth == 0) { eerr = "unbalanced parenthesis"; return "" }
+      if (empty) { eerr = (substr(out, length(out)) == "(") ? "empty group" : "empty alternative"; return "" }
       atom = stack[depth--]
       out = out c; i++
+      continue
+    }
+    if (c == "|") {
+      if (empty || i == len) { eerr = "empty alternative"; return "" }
+      out = out c; atom = 0; empty = 1; i++
       continue
     }
     if (c == "{" && match(substr(s, i), /^\{[0-9]+(,[0-9]*)?\}/)) {
@@ -103,20 +125,30 @@ function portable_ere(s,    out, len, i, c, d, j, depth, atom, lo, hi, iv, k, re
       lo = (k ? substr(iv, 1, k - 1) : iv) + 0
       hi = k ? (k == length(iv) ? -1 : substr(iv, k + 1) + 0) : lo
       if (lo > 255 || hi > 255 || (hi >= 0 && hi < lo)) { eerr = "invalid repetition bounds"; return "" }
-      rep = substr(out, atom); out = substr(out, 1, atom - 1)
+      rep = substr(out, atom)
+      n = (hi < 0) ? lo + 1 : hi
+      if (atom - 1 + length(rep) * n + n - lo > 4096) { eerr = "invalid repetition bounds"; return "" }
+      out = substr(out, 1, atom - 1)
       for (k = 0; k < lo; k++) out = out rep
       if (hi < 0) out = out rep "*"
       else for (k = lo; k < hi; k++) out = out rep "?"
       atom = 0
       continue
     }
+    if (c == "{" && match(substr(s, i), /^\{[0-9,]*\}/)) { eerr = "invalid repetition bounds"; return "" }
+    if (c == "*" || c == "+" || c == "?") {
+      if (!atom) { eerr = "repetition without an operand"; return "" }
+      out = out c; atom = 0; i++
+      continue
+    }
     if (c == "{" || c == "}") {
-      atom = length(out) + 1
+      atom = length(out) + 1; empty = 0
       out = out "[" c "]"; i++
       continue
     }
-    if (c == "|" || c == "^" || c == "$" || c == "*" || c == "+" || c == "?") atom = 0
+    if (c == "^" || c == "$") atom = 0
     else atom = length(out) + 1
+    empty = 0
     out = out c; i++
   }
   if (depth > 0) { eerr = "unbalanced parenthesis"; return "" }
@@ -183,10 +215,27 @@ END {
 # riskmap_load FILE: print FILE as normalized records
 # kind<TAB>pattern<TAB>item<TAB>lane<TAB>FILE:line; exit 65 on any invalid rule.
 riskmap_load() {
+  local records tab kind pat rest
   if [ ! -f "$1" ] || [ ! -r "$1" ]; then
     printf 'cannot read risk map: %s\n' "$1" >&2
     return 66
   fi
   # C locale: byte semantics and ASCII case folding behave the same in every awk.
-  OD_RISKMAP_SOURCE=$1 LC_ALL=C awk "$_OD_RISKMAP_AWK" < "$1"
+  records=$(OD_RISKMAP_SOURCE=$1 LC_ALL=C awk "$_OD_RISKMAP_AWK" < "$1") || return
+  tab=$(printf '\t')
+  case $records in
+    *"content$tab"*)
+      # The platform awk is the one that will match these patterns, so it has the
+      # last word; one run checks them all and only a failure pays for locating it.
+      if ! printf '%s\n' "$records" | LC_ALL=C awk -F '\t' '$1 == "content" && "" ~ $2 { n++ }' 2>/dev/null; then
+        printf '%s\n' "$records" | while IFS=$tab read -r kind pat rest; do
+          [ "$kind" = content ] || continue
+          P=$pat LC_ALL=C awk 'BEGIN { if ("" ~ ENVIRON["P"]) n++ }' 2>/dev/null ||
+            printf 'invalid rule at %s: invalid regular expression: rejected by awk\n' "${rest##*"$tab"}" >&2
+        done
+        return 65
+      fi
+      ;;
+  esac
+  if [ -n "$records" ]; then printf '%s\n' "$records"; fi
 }

@@ -73,7 +73,7 @@ symbol organization_id   tenant-isolation
 
 ### content
 
-Content rules are POSIX extended regular expressions matched against added lines, case-sensitively. To accept several spellings, write them as alternatives: `DROP[[:space:]]+TABLE|drop[[:space:]]+table`.
+Content rules are POSIX extended regular expressions matched against added lines, case-sensitively. To ignore case, bracket each letter: `[Dd][Rr][Oo][Pp][[:space:]]+[Tt][Aa][Bb][Ll][Ee]`.
 
 ```
 content stripe\.charges\.create     money
@@ -82,10 +82,12 @@ content "-----BEGIN [A-Z ]*PRIVATE KEY-----"  secrets
 
 Expressions must behave the same in every awk Overdrive runs under (GNU awk, mawk, the BSD awk on macOS, the awk in Git for Windows), so the parser normalizes them:
 
-- Interval expressions are expanded: `[0-9]{3}` becomes `[0-9][0-9][0-9]`, `x{2,}` becomes `xxx*`, `x{1,3}` becomes `xx?x?`. Bounds go up to 255. Older awks do not support intervals, and the expansion makes the rule portable without losing precision.
+- Interval expressions are expanded: `[0-9]{3}` becomes `[0-9][0-9][0-9]`, `x{2,}` becomes `xxx*`, `x{1,3}` becomes `xx?x?`. Older awks do not support intervals, and the expansion makes the rule portable without losing precision. Bounds go up to 255 and an expanded pattern up to 4,096 bytes; `{,n}` and other malformed bounds are rejected.
 - A brace that does not start an interval is a literal brace and is rewritten as `[{]` or `[}]`.
-- Escapes that some awks treat as classes and others as literals (`\d`, `\w`, `\s`, `\b`, `\<` style letters and digits after a backslash) are rejected. Use bracket expressions (`[0-9]`, `[[:space:]]`) and explicit boundaries (`(^|[^A-Za-z0-9_])word([^A-Za-z0-9_]|$)`) instead.
-- Unbalanced parentheses, unterminated bracket expressions and a repetition with nothing to repeat are rejected.
+- Escapes that some awks treat as classes and others as literals (`\d`, `\w`, `\s`, `\b`, `\<`, `\>`: a letter, digit, `<`, `>`, backquote or single quote after a backslash) are rejected. Use bracket expressions (`[0-9]`, `[[:space:]]`) and explicit boundaries (`(^|[^A-Za-z0-9_])word([^A-Za-z0-9_]|$)`) instead.
+- Bracket expressions have no escapes in POSIX, and awks disagree on a backslash inside one, so a backslash there is rejected. Put `]` first to match it (`[]a]`, `[^]a]`) and `-` last (`[a-]`). Unknown classes such as `[[:word:]]` and reversed ranges such as `[z-a]` are rejected.
+- Unbalanced parentheses, unterminated bracket expressions, empty groups `()`, empty alternatives (`|a`, `a|`, `a||b`, `(|a)`) and a repetition with nothing to repeat (`*a`, `(+a)`, `a|*b`, `a**`) are rejected; some awks accept them and others refuse.
+- Finally, every content pattern is compiled once by the awk on the machine. A pattern that awk refuses fails the load like any other invalid rule.
 
 Consumers must use the normalized pattern as data (read from the record stream or the environment), never through `awk -v`, which would process its backslashes a second time.
 

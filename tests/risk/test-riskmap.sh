@@ -141,6 +141,7 @@ test_content_intervals_are_expanded() {
 test_content_invalid_expressions() {
   rejects 'content \d+ x' "invalid regular expression: non-portable escape '\\d'"
   rejects 'content a\b x' "invalid regular expression: non-portable escape '\\b'"
+  rejects 'content \<a x' "invalid regular expression: non-portable escape '\\<'"
   rejects 'content (ab x' "invalid regular expression: unbalanced parenthesis"
   rejects 'content ab) x' "invalid regular expression: unbalanced parenthesis"
   rejects 'content [ab x' "invalid regular expression: unterminated bracket expression"
@@ -148,13 +149,65 @@ test_content_invalid_expressions() {
   rejects 'content a{3,1} x' "invalid regular expression: invalid repetition bounds"
   rejects 'content a{256} x' "invalid regular expression: invalid repetition bounds"
   rejects 'content ab\ x' "invalid regular expression: trailing backslash"
+  rejects 'content [\] x' "invalid regular expression: backslash inside a bracket expression"
+  rejects 'content [\]]{2} x' "invalid regular expression: backslash inside a bracket expression"
+  rejects 'content [\d] x' "invalid regular expression: backslash inside a bracket expression"
+  rejects 'content [[:alpha\:]] x' "invalid regular expression: backslash inside a bracket expression"
+  rejects 'content [[:foo:]] x' "invalid regular expression: unknown character class 'foo'"
+  rejects 'content [b-a] x' "invalid regular expression: invalid range 'b-a'"
+  rejects 'content a|*b x' "invalid regular expression: repetition without an operand"
+  rejects 'content *a x' "invalid regular expression: repetition without an operand"
+  rejects 'content (+a) x' "invalid regular expression: repetition without an operand"
+  rejects 'content a**b x' "invalid regular expression: repetition without an operand"
+  rejects 'content ^*a x' "invalid regular expression: repetition without an operand"
+  rejects 'content (|a) x' "invalid regular expression: empty alternative"
+  rejects 'content (a|) x' "invalid regular expression: empty alternative"
+  rejects 'content |a x' "invalid regular expression: empty alternative"
+  rejects 'content a| x' "invalid regular expression: empty alternative"
+  rejects 'content a||b x' "invalid regular expression: empty alternative"
+  rejects 'content () x' "invalid regular expression: empty group"
+  rejects 'content a(|)b x' "invalid regular expression: empty alternative"
+  rejects 'content a{,3} x' "invalid regular expression: invalid repetition bounds"
+  rejects 'content a{1,2,3} x' "invalid regular expression: invalid repetition bounds"
+  rejects 'content ((ab){255}){20} x' "invalid regular expression: invalid repetition bounds"
+}
+
+# A pattern this OS's awk refuses fails the load like any other invalid rule.
+test_pattern_rejected_by_awk_fails_load() {
+  # shellcheck disable=SC2329 # invoked by riskmap_load through the name awk
+  awk() {
+    case $1 in
+      -F)
+        input=$(cat)
+        case $input in *rejectme*) return 2 ;; esac
+        printf '%s\n' "$input" | command awk "$@"
+        ;;
+      *)
+        case ${P-} in *rejectme*) return 2 ;; esac
+        command awk "$@"
+        ;;
+    esac
+  }
+  printf 'content ok x\ncontent rejectme y\ncontent fine z\n' > map.conf
+  rc=0
+  load map.conf > out 2> err || rc=$?
+  assert_eq 65 "$rc"
+  assert_eq "invalid rule at map.conf:2: invalid regular expression: rejected by awk" "$(cat err)"
+  assert_eq "" "$(cat out)"
+}
+
+test_expansion_stays_under_the_cap() {
+  printf 'content (ab){255}c x\n' > map.conf
+  out=$(load map.conf)
+  assert_eq 1021 "$(printf '%s\n' "$out" | cut -f 2 | awk '{ print length($0) }')"
 }
 
 test_bracket_expression_edge_cases() {
-  printf '%s\n' 'content []a[:digit:]]{2} x' 'content [^]x]{1} y' > map.conf
+  printf '%s\n' 'content []a[:digit:]]{2} x' 'content [^]x]{1} y' 'content [a-]z w' > map.conf
   out=$(load map.conf)
   assert_line "$out" "$(rec content '[]a[:digit:]][]a[:digit:]]' x critical 1)"
   assert_line "$out" "$(rec content '[^]x]' y critical 2)"
+  assert_line "$out" "$(rec content '[a-]z' w critical 3)"
 }
 
 test_every_invalid_line_is_reported() {
@@ -246,6 +299,21 @@ test_floor_content_patterns_match_in_awk() {
   assert_eq 1 "$(floor_hits data-migration 'alter   table users add column x int;')"
   assert_eq 1 "$(floor_hits data-migration 'TRUNCATE users;')"
   assert_eq 0 "$(floor_hits data-migration 'const s = truncate(title, MAX_TRUNCATE_LEN)')"
+  assert_eq 1 "$(floor_hits data-migration 'truncate users;')"
+  assert_eq 1 "$(floor_hits data-migration 'Truncate Table "users" cascade;')"
+  assert_eq 1 "$(floor_hits data-migration 'Drop Table users;')"
+  assert_eq 1 "$(floor_hits data-migration 'alter table x Drop Column y;')"
+  assert_eq 1 "$(floor_hits data-migration 'await db.query("Delete From sessions")')"
+  assert_eq 0 "$(floor_hits data-migration 'dropTables(); deleteFromCache(); alterTableName()')"
+  assert_eq 1 "$(floor_hits tenant-isolation 'alter table t enable row level security;')"
+  assert_eq 1 "$(floor_hits tenant-isolation 'Create Policy tenant_read ON t')"
+  assert_eq 1 "$(floor_hits concurrency 'select id from jobs for update skip locked')"
+  assert_eq 1 "$(floor_hits concurrency 'Select id From jobs For Update')"
+  assert_eq 0 "$(floor_hits concurrency '// waiting for updates')"
+  assert_eq 1 "$(floor_hits concurrency 'set transaction isolation level serializable;')"
+  assert_eq 1 "$(floor_hits concurrency 'conn.set_session(isolation_level="SERIALIZABLE")')"
+  assert_eq 1 "$(floor_hits concurrency 'BEGIN TRANSACTION SERIALIZABLE')"
+  assert_eq 1 "$(floor_hits concurrency 'db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})')"
   assert_eq 1 "$(floor_hits tenant-isolation 'ALTER TABLE t ENABLE ROW LEVEL SECURITY;')"
   assert_eq 1 "$(floor_hits concurrency 'SELECT * FROM jobs FOR UPDATE SKIP LOCKED')"
   assert_eq 1 "$(floor_hits concurrency 'Atomics.wait(view, 0, 0)')"
