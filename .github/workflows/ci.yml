@@ -48,6 +48,16 @@ jobs:
       - name: Tests
         run: ${{ matrix.bash }} tests/run.sh
 
+  # The synthetic corpus takes about 20 s on Linux and over 3 minutes on Windows (one git
+  # repository per case); the classifier itself is tested on every OS by the shell job.
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Synthetic risk corpus
+        run: bash tests/risk/run-corpus.sh --synthetic tests/risk/corpus/synthetic
+
   skills:
     runs-on: ubuntu-latest
     timeout-minutes: 5

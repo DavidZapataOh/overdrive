@@ -133,8 +133,12 @@ test_untested_source_change_is_critical() {
   assert_line "$out" "item untested-change critical computed path lib/slug.py"
   assert_no_line "$out" "untested-change .* (src/types.d.ts|vite.config.ts|src/old.py)$"
 
-  # Any changed test file in the diff means the change carries its tests.
+  # A test the change carries covers the sources beside it or named after it, no others.
   write_file "$repo" src/other.test.ts 'test("o", () => {});'
+  risk "$repo" --worktree
+  assert_no_line "$out" "untested-change .* src/format.ts$"
+  assert_line "$out" "item untested-change critical computed path lib/slug.py"
+  write_file "$repo" tests/slug_test.py 'def test_s(): pass'
   risk "$repo" --worktree
   assert_no_line "$out" "untested-change"
 }
@@ -388,4 +392,123 @@ test_any_code_under_a_docs_directory_is_code() {
     assert_line "$out" "item concurrency critical floor line $f:1"
   done
   assert_line "$out" "item money critical floor path apps/docs/src/billing/pay.mts"
+}
+
+test_drop_schema_and_database_are_data_migration() {
+  local repo
+  repo=$(content_repo)
+  printf 'await db.execute("DROP SCHEMA tenant_a CASCADE");\n' >> "$repo/src/app.ts"
+  write_file "$repo" src/reset.ts 'await sql`drop database if exists scratch`;'
+  write_file "$repo" src/reset.test.ts 'test("r", () => {});'
+  risk "$repo" --worktree
+  assert_line "$out" "item data-migration critical floor line src/app.ts:2"
+  assert_line "$out" "item data-migration critical floor line src/reset.ts:1"
+  # Identifiers that only contain the words are not SQL.
+  git -C "$repo" checkout -q -- src/app.ts
+  rm "$repo/src/reset.ts" "$repo/src/reset.test.ts"
+  printf 'export const dropSchemaCache = dropDatabaseName;\n' >> "$repo/src/app.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "lane direct"
+}
+
+test_lowercase_truncate_before_quoted_names() {
+  local repo
+  repo=$(content_repo)
+  printf 'await db.raw("truncate `users`");\n' >> "$repo/src/app.ts"
+  write_file "$repo" src/wipe.ts 'await db.raw("truncate [dbo].[users]");'
+  write_file "$repo" src/wipe.test.ts 'test("w", () => {});'
+  risk "$repo" --worktree
+  assert_line "$out" "item data-migration critical floor line src/app.ts:2"
+  assert_line "$out" "item data-migration critical floor line src/wipe.ts:1"
+  git -C "$repo" checkout -q -- src/app.ts
+  rm "$repo/src/wipe.ts" "$repo/src/wipe.test.ts"
+  printf 'export const s = truncate(text, 10);\n' >> "$repo/src/app.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "lane direct"
+}
+
+test_uppercase_secret_assignment() {
+  local repo value
+  repo=$(content_repo)
+  value="Zq$(printf 'x9%.0s' 1 2 3 4 5 6 7)"
+  printf 'const API_KEY = "%s";\n' "$value" >> "$repo/src/app.ts"
+  write_file "$repo" deploy.sh "export STRIPE_SECRET_KEY=$value"
+  risk "$repo" --worktree
+  assert_line "$out" "item secrets critical floor line src/app.ts:2"
+  assert_line "$out" "item secrets critical floor line deploy.sh:1"
+  # A reference to the variable is not a value.
+  git -C "$repo" checkout -q -- src/app.ts
+  rm "$repo/deploy.sh"
+  printf 'const API_KEY = process.env.API_KEY;\nAPI_KEY=$(cat /run/secrets/key)\n' >> "$repo/src/app.ts"
+  write_file "$repo" run.sh 'export STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:?}'
+  write_file "$repo" ci/build.yml '      - env: { GH_TOKEN: "${{ github.token }}" }'
+  risk "$repo" --worktree
+  assert_no_line "$out" "secrets"
+}
+
+test_lowercase_mutex_is_concurrency() {
+  local repo
+  repo=$(content_repo)
+  write_file "$repo" src/cache.cpp 'std::mutex guard;'
+  write_file "$repo" src/pool.c 'pthread_mutex_lock(&lock);'
+  write_file "$repo" src/lock.ts 'import { Mutex } from "async-mutex";'
+  risk "$repo" --worktree
+  assert_line "$out" "item concurrency critical floor line src/cache.cpp:1"
+  assert_line "$out" "item concurrency critical floor line src/pool.c:1"
+  assert_line "$out" "item concurrency critical floor line src/lock.ts:1"
+}
+
+test_auth_and_tenant_symbols_fire_on_removal() {
+  local repo
+  repo=$(content_repo)
+  printf 'const s = await getServerSession(req);\nverifyToken(t);\nwhere({ tenantId });\nwhere({ tenant_id });\n' >> "$repo/src/app.ts"
+  commit_all "$repo" guards
+  printf 'export const x = 1;\n' > "$repo/src/app.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "item auth critical floor line src/app.ts:2"
+  assert_line "$out" "item tenant-isolation critical floor line src/app.ts:4"
+  # Symbols match whole identifiers only.
+  git -C "$repo" checkout -q -- src/app.ts
+  printf 'verifyTokenShape(t);\nconst tenantIdLabel = "x";\n' >> "$repo/src/app.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "lane direct"
+}
+
+test_quoted_secrets_keep_literal_values() {
+  local repo v
+  repo=$(content_repo)
+  v="supersecret$(printf 'value')"
+  printf 'const a = { password: "{noop}%s" };\n' "$v" >> "$repo/src/app.ts"
+  write_file "$repo" src/b.ts "const b = { secret: \"\$ecretP4ssw0rd99xx\" };"
+  write_file "$repo" src/b.test.ts 'test("b", () => {});'
+  write_file "$repo" src/c.ts 'const PASSWORD = "$2b$10$abcdefghijklmnopqrstuv";'
+  write_file "$repo" src/c.test.ts 'test("c", () => {});'
+  risk "$repo" --worktree
+  assert_line "$out" "item secrets critical floor line src/app.ts:2"
+  assert_line "$out" "item secrets critical floor line src/b.ts:1"
+  assert_line "$out" "item secrets critical floor line src/c.ts:1"
+}
+
+test_package_json_deploy_script_is_delivery() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" apps/web/package.json '{
+  "scripts": {
+    "build": "next build"
+  }
+}'
+  commit_all "$repo" base
+  write_file "$repo" apps/web/package.json '{
+  "scripts": {
+    "build": "next build",
+    "vercel-build": "node scripts/vercel-build.mjs"
+  }
+}'
+  risk "$repo" --worktree
+  assert_line "$out" "item delivery critical computed line apps/web/package.json:4"
+  # The same key outside a package manifest is not a deploy script.
+  git -C "$repo" checkout -q -- apps/web/package.json
+  write_file "$repo" src/flags.json '{ "release": "2026-11" }'
+  risk "$repo" --worktree
+  assert_no_line "$out" "delivery"
 }

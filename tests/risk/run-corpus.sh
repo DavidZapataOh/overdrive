@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: bash tests/risk/run-corpus.sh --synthetic DIR
-#        bash tests/risk/run-corpus.sh --tsv FILE --clone-cache DIR
+#        bash tests/risk/run-corpus.sh --tsv FILE --clone-cache DIR [--map FILE]
 #
 # Runs the risk classifier ($OVERDRIVE_BIN, default plugins/overdrive/bin/overdrive) over a
 # labeled corpus and compares lanes and items with the frozen labels.
@@ -14,7 +14,8 @@
 # if present, as .overdrive/risk-map.conf), change.sh makes the change, and the classifier runs in
 # --worktree mode. TSV rows are repo<TAB>sha<TAB>lane<TAB>items<TAB>note; repos are bare partial
 # clones at CACHE/<name>.git, cloned from $OVERDRIVE_CORPUS_REMOTE/<repo>.git when missing
-# (default https://github.com).
+# (default https://github.com). --map FILE classifies every row with that risk map instead of the
+# project's (the rules a project would commit, tried on its history before it commits them).
 
 set -u
 
@@ -29,20 +30,22 @@ die() {
 }
 
 usage() {
-  die "usage: run-corpus.sh --synthetic DIR | --tsv FILE --clone-cache DIR"
+  die "usage: run-corpus.sh --synthetic DIR | --tsv FILE --clone-cache DIR [--map FILE]"
 }
 
 synthetic=""
 tsv=""
 cache=""
+map=""
 while [ "$#" -gt 0 ]; do
   case $1 in
-    --synthetic | --tsv | --clone-cache)
+    --synthetic | --tsv | --clone-cache | --map)
       if [ "$#" -lt 2 ] || [ -z "$2" ]; then usage; fi
       case $1 in
         --synthetic) synthetic=$2 ;;
         --tsv) tsv=$2 ;;
         --clone-cache) cache=$2 ;;
+        --map) map=$2 ;;
       esac
       shift
       ;;
@@ -51,11 +54,15 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 if [ -n "$synthetic" ]; then
-  if [ -n "$tsv" ] || [ -n "$cache" ]; then usage; fi
+  if [ -n "$tsv" ] || [ -n "$cache" ] || [ -n "$map" ]; then usage; fi
   [ -d "$synthetic" ] || die "not a directory: $synthetic"
 elif [ -n "$tsv" ]; then
   [ -n "$cache" ] || usage
   [ -f "$tsv" ] || die "not a file: $tsv"
+  if [ -n "$map" ]; then
+    [ -f "$map" ] || die "not a file: $map"
+    map="$(cd "$(dirname "$map")" && pwd)/$(basename "$map")"
+  fi
 else
   usage
 fi
@@ -222,7 +229,7 @@ run_tsv() {
       *) range="$sha^1..$sha" ;;
     esac
     n=$((n + 1))
-    got=$(classify "$work/row$n.err" "$gitdir" --diff "$range")
+    got=$(classify "$work/row$n.err" "$gitdir" --diff "$range" ${map:+--map "$map"})
     printf '%s\t%s\t%s\t%s\n' "$repo@$(printf '%s' "$sha" | cut -c1-12)" "$lane" \
       "$(normalize_items "$items")" "$got" >> "$results"
   done < "$work/rows"

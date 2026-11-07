@@ -253,3 +253,21 @@ test_runner_rejects_malformed_tsv_row() {
   assert_eq 2 "$rc" "exit code"
   printf '%s\n' "$out" | grep -qF 'corpus/units.tsv:1'
 }
+
+test_runner_tsv_passes_a_map_file() {
+  make_upstream remote/acme/widget.git
+  local up=remote/acme/widget.git plain out map
+  plain=$(git -C "$up" rev-parse HEAD^1)
+  mkdir corpus
+  printf 'acme/widget\t%s\tdirect\tnone\tplain commit\n' "$plain" > corpus/units.tsv
+  freeze corpus
+  printf 'symbol widgetSecret secrets\n' > widget.conf
+  map=$(cd . && pwd)/widget.conf
+  stub_classifier "$PWD/stub" direct
+  out=$(OVERDRIVE_BIN="$PWD/stub" OVERDRIVE_CORPUS_REMOTE="$PWD/remote" \
+    bash "$(corpus_runner)" --tsv corpus/units.tsv --clone-cache cache --map widget.conf 2>&1)
+  assert_line "$(cat stub.log)" "risk --repo $(cd cache/widget.git && pwd) --diff $plain^..$plain --map $map"
+  rc=0
+  out=$(OVERDRIVE_BIN="$PWD/stub" bash "$(corpus_runner)" --tsv corpus/units.tsv --clone-cache cache --map missing.conf 2>&1) || rc=$?
+  assert_eq 2 "$rc" "missing map: $out"
+}

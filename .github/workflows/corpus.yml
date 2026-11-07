@@ -1,0 +1,28 @@
+name: corpus
+
+# The OSS corpus classifies real commits from public repositories, so it needs the network
+# and a few minutes; it runs nightly against main instead of on every push.
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oss:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Blobless clones of every repository in oss.tsv; the runner fetches any commit the
+      # cache lacks, so an older cache restored by prefix is still a head start.
+      - name: Restore clones
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/corpus-clones
+          key: corpus-oss-${{ hashFiles('tests/risk/corpus/oss.tsv') }}
+          restore-keys: corpus-oss-
+      - name: OSS risk corpus
+        run: bash tests/risk/run-corpus.sh --tsv tests/risk/corpus/oss.tsv --clone-cache "$RUNNER_TEMP/corpus-clones"

@@ -5,7 +5,16 @@ The risk classifier puts every change in one of three lanes: `direct`, `standard
 - **Floors** (`plugins/overdrive/lib/floors.conf`) ship with Overdrive and apply to every project: data and irreversible migrations, auth and tenant isolation, money, secrets, delivery and CI, public contracts, concurrency, dependencies, test harness configuration and the project map itself. Floors cannot be removed by a project.
 - **The project map** (`.overdrive/risk-map.conf`) is committed in each project's repository and names what is risky there in particular: a billing module with an unusual name, a domain word in the team's language, an internal API other services consume.
 
-Both files use the grammar below. A change's lane is the highest lane among the items it raises; a change that raises none is `direct`. Besides the rules, the classifier computes five items from the change itself: `test-removed` (critical: a deleted test file, a test renamed to a non-test name, or a test file whose removed `it(`, `test(`, `def test_` or `func Test` lines outnumber the added ones), `unscanned-content` (critical: a changed file git shows as binary, through a NUL byte or a `-diff`/`binary` attribute, when its name is not a binary format such as an image, font, archive, media file, PDF, WebAssembly or compiled object), `untested-change` (critical: a changed source file with no test named after it, in a change that touches no test file), `deletion` (standard: a deleted file that is not a test) and `exec-bit` (standard: an existing file made executable).
+Both files use the grammar below. A change's lane is the highest lane among the items it raises; a change that raises none is `direct`. Besides the rules, the classifier computes five items from the change itself: `test-removed` (critical: a deleted test file, a test renamed to a non-test name, or a test file whose removed test cases outnumber the added ones; an added `describe.skip(`, `it.only(`, `xit(`, `@pytest.mark.skip`, `t.Skip(`, `@Disabled` or `#[ignore]` counts as a removed case unless it replaces a removed one, removing a skipped case gives no credit, and commented-out lines count for nothing), `unscanned-content` (critical: a changed file git shows as binary, through a NUL byte or a `-diff`/`binary` attribute, when its name is not a binary format such as an image, font, archive, media file, PDF, WebAssembly or compiled object), `untested-change` (critical: a changed source file that no test covers, see below), `deletion` (standard: a deleted file that is not a test) and `exec-bit` (standard: an existing file made executable). A `package.json` that adds a `vercel-build`, `deploy`, `release`, `predeploy` or `postdeploy` script raises the critical item `delivery` as well.
+
+### Which tests cover a source
+
+Test files follow the conventions of their runners: `*.test.*`, `*.spec.*`, `*_test.*`, `*_spec.rb`, `test_*.py`, `test_*.rb`, `*Test(s).java`, `*Test(s).kt`, `*Test(s).swift` and `*Test(s).cs` inside a test directory (`src/test/`, `androidTest/`, `Tests/AppTests/`, `Api.Tests/`), anything under `__tests__/`, JVM sources under `src/test/` and Rust files under `tests/`. A changed source file is covered when:
+
+- a test the change carries is named after it and sits in the same package, or sits in its directory (a test in `__tests__/` counts for the directory above); or
+- a test in the repository, as of the change's final commit, is named after it and sits in the same directory, in a sibling `__tests__/`, or in its package's test directory (`test/`, `tests/`, `spec/`, `__tests__/` or `src/test/<lang>/` at the package root) at the path that mirrors the source's, with or without the source root (`packages/b/test/util/date.test.ts` covers `packages/b/src/util/date.ts`; `tests/test_models.py` covers `app/models.py`; `src/test/java/x/FooTest.java` covers `src/main/java/x/Foo.java`).
+
+The package is the nearest directory above the file that holds a manifest (`package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, `pom.xml`, `build.gradle`, `Package.swift`, `*.csproj` and the like), or the repository root. A test in another package never covers the file, even when it shares its name. Declaration files (`*.d.ts`), tool configuration (`*.config.*`) and the tests themselves need no test.
 
 ## Grammar
 
@@ -26,7 +35,7 @@ One rule per line:
 
 | Kind | Pattern | Matches against | Case |
 |---|---|---|---|
-| `path` | glob | paths the change touches (both sides of a rename) | sensitive |
+| `path` | glob | paths the change touches (both sides of a rename) | sensitive (floors: insensitive) |
 | `pathtoken` | one path segment token | path segments split on `/ . _ -` | insensitive |
 | `keyword` | one or more words | request text and added lines, as whole words | insensitive |
 | `symbol` | identifier | added or removed lines, at identifier boundaries | sensitive |
@@ -43,6 +52,8 @@ path **/migrations/**          data-migration
 path packages/db/**            data-migration
 path "apps/web/src/app/páginas legales/**"  legal-copy  standard
 ```
+
+Globs in a project map match case-sensitively, exactly as written. The floors' globs ignore case, because the files they name are spelled differently across tools and platforms (`.Env`, `dockerfile`).
 
 A glob that starts with `/` is rejected, because no repository path starts with one. Use `**/name` to match a file name at any depth, `name` to match it only at the root.
 
