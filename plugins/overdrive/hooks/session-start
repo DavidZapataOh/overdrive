@@ -16,7 +16,7 @@ core=
 # shellcheck source=../lib/json.sh
 if ! { IFS= read -r -d '' core < "$root/hooks/core.md" || [ -n "$core" ]; } 2>/dev/null ||
   ! . "$root/lib/json.sh" 2>/dev/null; then
-  printf '%s\n' '{"systemMessage":"Overdrive could not load its session router (hooks/core.md); reinstall the plugin."}'
+  printf '%s\n' '{"systemMessage":"Overdrive could not load its session router files; reinstall the plugin."}'
   exit 0
 fi
 
