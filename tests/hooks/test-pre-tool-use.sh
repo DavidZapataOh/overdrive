@@ -587,10 +587,10 @@ test_repo_containing_the_plugin_is_still_marked() {
   printf '%s' "$(bash_event "cd $p/skills && npm run x" "$p")" |
     CLAUDE_PLUGIN_ROOT=$p CLAUDE_PROJECT_DIR=/nonexistent "$p/hooks/pre-tool-use" >/dev/null
   [ ! -e "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "plugin's own files marked" >&2; return 1; }
-  # The same plugin root spelled the Windows way still matches.
+  # On Windows, Claude Code spells both the plugin root and the file path the Windows way.
   case $OSTYPE in
     msys* | cygwin*)
-      printf '%s' "$(file_event Write "$p/skills/x.md" "$repo")" |
+      printf '%s' "$(file_event Write "$(cygpath -w "$p/skills/x.md")" "$repo")" |
         CLAUDE_PLUGIN_ROOT=$(cygpath -w "$p") CLAUDE_PROJECT_DIR=/nonexistent "$p/hooks/pre-tool-use" >/dev/null
       [ ! -e "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "Windows-spelled root not matched" >&2; return 1; }
       ;;
