@@ -42,6 +42,7 @@ usage_error() {
 next_critical='Full TDD plan approved by the user; per-task critical review and final review.'
 
 notes=''
+next_first=''
 
 # add_note TEXT: a note line for the output, kept in the order added.
 add_note() {
@@ -251,6 +252,7 @@ else
       add_note 'risk-map missing; a proposal waits for approval in .overdrive/run/risk-map.proposed'
     else
       add_note 'risk-map missing; propose one with overdrive:risk-triage'
+      next_first='Load overdrive:risk-triage and propose the risk map, then: '
     fi
   fi
 fi
@@ -347,7 +349,7 @@ signals_path_items "$work/records" "$work/rules" "$work/listing" > "$work/items"
 # Item lines are ordered critical first, then standard, by item, keeping evidence in the
 # order the changes were read; the Risk line lists each item once in the same order.
 # The same evidence reached twice (two modes, two maps) is printed once.
-NOTES=$notes NEXT_CRITICAL=$next_critical LC_ALL=C awk -F '\t' '
+NOTES=$notes NEXT_CRITICAL=$next_critical NEXT_FIRST=$next_first LC_ALL=C awk -F '\t' '
   BEGIN {
     next_text["direct"] = "Work inline; test first if testable; verify with evidence."
     next_text["standard"] = "Short decision plan; TDD where testable; one review at the end of the slice."
@@ -376,7 +378,8 @@ NOTES=$notes NEXT_CRITICAL=$next_critical LC_ALL=C awk -F '\t' '
     }
     k = split(ENVIRON["NOTES"], note, "\n")
     for (i = 1; i <= k; i++) print "note " note[i]
-    print "next " next_text[lane]
+    # Above direct the skill loads anyway; a direct change needs telling.
+    print "next " (lane == "direct" ? ENVIRON["NEXT_FIRST"] : "") next_text[lane]
     print "Risk: " lane " — " risk
   }
 ' "$work/items" "$work/content" > "$work/out" || fail_closed "cannot print the classification"
