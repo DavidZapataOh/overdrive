@@ -98,9 +98,8 @@ content "stripe\.charges\.create" money'
   assert_line "$out" "item concurrency critical floor line src/lib/mod0500.ts:11"
   assert_budget "$(budget_ms)" "diff of 10,000 changed lines in 1,000 files" "$repo" --diff HEAD~1..HEAD
 
-  # New files the working tree has not added yet are read as well: every one is opened
-  # from disk, which on Windows costs more than the whole classification, so this check
-  # has twice the budget.
+  # New files the working tree has not added yet are read as well. Each one is read from
+  # disk and added to a scratch index, so this check has twice the budget.
   git -C "$repo" reset -q --hard HEAD~1
   mkdir -p "$repo/src/fresh"
   write_files "$repo/src/fresh" 1000 10 new
