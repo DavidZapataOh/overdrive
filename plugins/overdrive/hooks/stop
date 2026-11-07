@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# Stop: a turn that changed a repository closes with a Risk line the classifier backs.
+# A stated lane below the classifier's passes only when the line cites an active
+# decision in which the user lowered it.
+# A turn that changed nothing costs builtins only. A failed classification counts as
+# critical, so it blocks only a line that states less; a failure of the hook itself lets
+# the stop through, because a broken hook must never trap the session.
+
+export LC_ALL=C
+
+plugin=${CLAUDE_PLUGIN_ROOT:-}
+if [ -z "$plugin" ]; then
+  case ${BASH_SOURCE[0]} in
+    */*) cd -P -- "${BASH_SOURCE[0]%/*}/.." 2>/dev/null && plugin=$PWD ;;
+    *) cd -P .. 2>/dev/null && plugin=$PWD ;;
+  esac
+fi
+# shellcheck source=../lib/json.sh
+# shellcheck source=../lib/path.sh
+if ! . "$plugin/lib/json.sh" 2>/dev/null || ! . "$plugin/lib/path.sh" 2>/dev/null; then
+  printf '%s\n' '{"systemMessage":"Overdrive could not load its stop hook files; reinstall the plugin."}'
+  exit 0
+fi
+
+MISSING='Close this change with its Risk line: run overdrive risk --worktree (or --diff <base>...HEAD) and end with the Risk line it prints.'
+LANES=(direct standard critical)
+
+# classify ROOT: set NEED (lane rank), ITEMS and WHY (the failure, if any) from the
+# classifier over the working tree and, when a default branch is known, everything
+# committed since it.
+classify() {
+  local root=$1 refs cur name sym ohead='' omain='' omaster='' lmain='' lmaster='' base='' out rc=0 line lane=''
+  refs=$(git -C "$root" for-each-ref --format='%(refname) %(symref)' refs/remotes/origin/HEAD \
+    refs/remotes/origin/main refs/remotes/origin/master refs/heads/main refs/heads/master 2>/dev/null) || refs=''
+  cur=$(git -C "$root" symbolic-ref -q HEAD 2>/dev/null) || cur=''
+  while read -r name sym; do
+    case $name in
+      refs/remotes/origin/HEAD) ohead=$sym ;;
+      refs/remotes/origin/main) omain=$name ;;
+      refs/remotes/origin/master) omaster=$name ;;
+      refs/heads/main) lmain=$name ;;
+      refs/heads/master) lmaster=$name ;;
+    esac
+  done <<<"$refs"
+  # The remote default counts even on the default branch: unpushed commits are part of
+  # the change. A local default counts only from another branch.
+  base=${ohead:-${omain:-$omaster}}
+  if [ -z "$base" ] && [ "$cur" != refs/heads/main ] && [ "$cur" != refs/heads/master ]; then
+    base=${lmain:-$lmaster}
+  fi
+  if [ -n "$base" ]; then
+    out=$("$BASH" "$plugin/bin/overdrive" risk --repo "$root" --worktree --diff "$base...HEAD" 2>&1) || rc=$?
+  else
+    out=$("$BASH" "$plugin/bin/overdrive" risk --repo "$root" --worktree 2>&1) || rc=$?
+  fi
+  ITEMS='' WHY=''
+  while IFS= read -r line; do
+    case $line in
+      'lane direct') lane=0 ;;
+      'lane standard') lane=1 ;;
+      'lane critical') lane=2 ;;
+      'Risk: '*' — '*) ITEMS=${line#*' — '} ;;
+      'overdrive risk: classification failed: '*) WHY=${line#'overdrive risk: classification failed: '} ;;
+    esac
+  done <<<"$out"
+  if [ "$rc" -eq 0 ] && [ -n "$lane" ] && [ -n "$ITEMS" ]; then
+    NEED=$lane
+    return 0
+  fi
+  NEED=2
+  [ "$rc" -eq 3 ] && [ -n "$ITEMS" ] || ITEMS=classification-failed
+  if [ -z "$WHY" ]; then
+    WHY=${out%%$'\n'*}
+    WHY=${WHY:-the classifier exited with status $rc}
+  fi
+}
+
+# active ROOT ID: true when ID is an active entry of ROOT's decisions log.
+active() {
+  local file=$1/.overdrive/decisions.md out line v
+  [ -f "$file" ] || return 1
+  out=$("$BASH" "$plugin/bin/overdrive" decisions show "$2" "$file" 2>/dev/null) || return 1
+  while IFS= read -r line; do
+    case $line in
+      '- Status:'*)
+        v=${line#- Status:}
+        v=${v#"${v%%[![:space:]]*}"}
+        v=${v%"${v##*[![:space:]]}"}
+        [ "$v" = active ]
+        return
+        ;;
+    esac
+  done <<<"$out"
+  return 1
+}
+
+input=''
+IFS= read -r -d '' input || :
+json_extract_strings "$input" session_id cwd
+sid=${JSON_VALUES[0]-}
+[ -n "$sid" ] || exit 0
+cwd=$PWD
+[ -z "${JSON_VALUES[1]-}" ] || cwd=${JSON_VALUES[1]}
+continuing=''
+! json_get_bool stop_hook_active "$input" >/dev/null || continuing=1
+
+# The repositories this session changed: the one around cwd, and those right below it,
+# since a session can start in a plain folder that holds its repositories.
+marker=.overdrive/run/markers/${sid//[!A-Za-z0-9._-]/_}.changed
+roots=()
+if _od_find_root "$cwd" && [ -f "$_OD_ROOT/$marker" ]; then roots=("$_OD_ROOT"); fi
+cwd=${_OD_PATH%/}
+for m in "$cwd"/*/"$marker"; do
+  [ -f "$m" ] || continue
+  m=${m%/"$marker"}
+  [ ! -e "$m/.git" ] || roots+=("$m")
+done
+[ "${#roots[@]}" -gt 0 ] || exit 0
+
+# A Claude Code too old to send the closing message cannot be checked.
+json_extract_string last_assistant_message "$input" || exit 0
+msg=$JSON_VALUE
+
+stated=-1
+ids=()
+case $msg in
+  *'Risk: '*)
+    while IFS= read -r line || [ -n "$line" ]; do
+      line=${line%$'\r'}
+      case $line in
+        'Risk: direct — '*) r=0 ;;
+        'Risk: standard — '*) r=1 ;;
+        'Risk: critical — '*) r=2 ;;
+        *) continue ;;
+      esac
+      [ "$r" -le "$stated" ] || stated=$r
+      case $line in
+        *'(lowered by user, D-'[0-9][0-9][0-9][0-9]*')'*)
+          id=${line#*'(lowered by user, '}
+          id=${id%%')'*}
+          case ${id#D-} in *[!0-9]*) ;; *) ids+=("$id") ;; esac
+          ;;
+      esac
+    done <<<"$msg"
+    ;;
+esac
+
+if [ "$stated" -lt 0 ]; then
+  [ -n "$continuing" ] || {
+    printf '{"decision":"block","reason":"'
+    json_escape "$MISSING"
+    printf '"}\n'
+  }
+  exit 0
+fi
+
+reason=''
+for root in "${roots[@]}"; do
+  NEED=2 ITEMS='' WHY=''
+  classify "$root"
+  ok=''
+  if [ "$stated" -ge "$NEED" ]; then
+    ok=1
+  else
+    for id in ${ids[@]+"${ids[@]}"}; do
+      if active "$root" "$id"; then ok=1; break; fi
+    done
+  fi
+  if [ -n "$ok" ]; then
+    rm -f -- "$root/$marker" 2>/dev/null
+    continue
+  fi
+  r="Risk line says ${LANES[$stated]} but the diff classifies as ${LANES[$NEED]} ($ITEMS). Raise the lane, or cite the user's explicit decision as \"(lowered by user, D-NNNN)\"."
+  [ -z "$WHY" ] || r="$r The classifier failed: $WHY."
+  for id in ${ids[@]+"${ids[@]}"}; do
+    r="$r $id is not an active decision in .overdrive/decisions.md."
+  done
+  [ "${#roots[@]}" -eq 1 ] || r="$root: $r"
+  reason=$reason${reason:+$'\n'}$r
+done
+
+if [ -n "$reason" ] && [ -z "$continuing" ]; then
+  printf '{"decision":"block","reason":"'
+  json_escape "$reason"
+  printf '"}\n'
+fi
+exit 0
