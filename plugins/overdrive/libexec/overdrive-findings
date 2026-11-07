@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# overdrive findings: deterministic checks and merging for review findings files.
+
+OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=../lib/common.sh
+. "$OVERDRIVE_HOME/lib/common.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive findings check [--head REV] FILE
+       overdrive findings merge FILE...
+
+One finding per line, nine fields separated by " | ":
+  F<n> | P0..P3 | 0|25|50|75|100 | path:line | title | "verbatim quote" | failure mode | fix | plan-mandated:yes|no
+Use "-" for no location and "" for no quote. Inside the double-quoted quote, write \" and
+\\ for a quote and a backslash; a | there is plain text. In other fields write \| for a
+literal pipe. Blank lines and lines starting with # are ignored.
+
+check  exit 1 when a line is malformed, a confidence is not an anchor, a finding at 75 or
+       more lacks a quote or a path:line, or a quote given with a path:line is not
+       within three lines of it in the tree of REV (default HEAD).
+merge  drop confidence 25 or less and 50 unless P0, dedupe by path, line and title,
+       sort P0 to P3 then by confidence, renumber, print to stdout.
+USAGE
+}
+
+# Parses findings files. Mode "check" writes, for each finding with a quote and a
+# location, four lines (where, line, path, quote) to the file in ENVIRON["OUT"];
+# mode "merge" prints the merged findings. Any problem makes the exit status 1.
+# shellcheck disable=SC2016
+parser='
+# check reports problems as its output; merge keeps stdout for the merged findings.
+function fail(msg) {
+  bad = 1
+  if (mode == "check") printf "%s:%d: %s\n", FILENAME, FNR, msg
+  else printf "%s:%d: %s\n", FILENAME, FNR, msg > "/dev/stderr"
+}
+
+# split_fields: fill raw[] and val[] from line, return the field count or -1.
+function split_fields(line,    n, i, L, c, d, r, v, closed) {
+  n = 0; i = 1; L = length(line)
+  while (1) {
+    n++; r = ""; v = ""; quoted[n] = 0
+    if (substr(line, i, 1) == "\"") {
+      quoted[n] = 1; r = "\""; i++; closed = 0
+      while (i <= L) {
+        c = substr(line, i, 1)
+        if (c == "\\" && i < L) {
+          d = substr(line, i + 1, 1)
+          r = r c d; v = v ((d == "\"" || d == "\\") ? d : c d); i += 2; continue
+        }
+        r = r c; i++
+        if (c == "\"") { closed = 1; break }
+        v = v c
+      }
+      if (!closed) { perr = "unterminated quoted field " n; return -1 }
+      raw[n] = r; val[n] = v
+      if (i > L) return n
+      if (substr(line, i, 3) != " | ") { perr = "text after the closing quote of field " n; return -1 }
+      i += 3
+    } else {
+      while (i <= L && substr(line, i, 3) != " | ") {
+        c = substr(line, i, 1); d = substr(line, i + 1, 1)
+        if (c == "\\" && (d == "|" || d == "\\")) { r = r c d; v = v d; i += 2; continue }
+        r = r c; v = v c; i++
+      }
+      raw[n] = r; val[n] = v
+      if (i > L) return n
+      i += 3
+    }
+  }
+}
+
+function norm_path(p) {
+  while (substr(p, 1, 2) == "./") p = substr(p, 3)
+  while (index(p, "//")) sub(/\/\/+/, "/", p)
+  return p
+}
+
+{
+  sub(/\r$/, "")
+  if ($0 ~ /^[ \t]*$/ || $0 ~ /^#/) next
+  n = split_fields($0)
+  if (n < 0) { fail(perr); next }
+  if (n != 9) { fail("expected 9 fields separated by \" | \", found " n); next }
+  id = val[1]
+  if (id !~ /^F[0-9]+$/) { fail("first field must be F<n>: " id); next }
+  where = FILENAME ":" FNR ": " id
+  ok = 1
+  if (val[2] !~ /^P[0-3]$/) { fail(id ": severity must be P0, P1, P2 or P3: " val[2]); ok = 0 }
+  conf = val[3]
+  if (conf !~ /^(0|25|50|75|100)$/) { fail(id ": confidence " conf " is not one of 0, 25, 50, 75, 100"); ok = 0 }
+  # Fields are strings; compare confidence as a number.
+  conf += 0
+  path = ""; lno = 0; loc = val[4]
+  if (loc != "" && loc != "-") {
+    if (!match(loc, /:[1-9][0-9]*$/) || RSTART == 1) { fail(id ": location must be path:line: " loc); ok = 0 }
+    else {
+      path = norm_path(substr(loc, 1, RSTART - 1)); lno = substr(loc, RSTART + 1) + 0
+      if (substr(path, 1, 1) == "/") { fail(id ": path must be relative to the repository root: " path); ok = 0 }
+    }
+  }
+  if (val[5] ~ /^[ \t]*$/) { fail(id ": title is empty"); ok = 0 }
+  quote = ""
+  if (quoted[6]) { if (val[6] !~ /^[ \t]*$/) quote = val[6] }
+  else if (raw[6] != "" && raw[6] != "-") { fail(id ": quote must be in double quotes"); ok = 0 }
+  if (val[7] ~ /^[ \t]*$/ || val[8] ~ /^[ \t]*$/) { fail(id ": failure mode and fix must not be empty"); ok = 0 }
+  if (val[9] !~ /^plan-mandated:(yes|no)$/) { fail(id ": last field must be plan-mandated:yes or plan-mandated:no"); ok = 0 }
+  if (!ok) next
+  if (conf >= 75 && (path == "" || quote == "")) { fail(id ": confidence " conf " needs a path:line and a verbatim quote"); next }
+
+  if (mode == "check") {
+    # Every quote that comes with a location must be real, whatever the confidence.
+    if (quote != "" && path != "") printf "%s\n%d\n%s\n%s\n", where, lno, path, quote > ENVIRON["OUT"]
+    next
+  }
+  if (conf <= 25 || (conf == 50 && val[2] != "P0")) next
+  t = tolower(val[5]); gsub(/[ \t]+/, " ", t); sub(/^ /, "", t); sub(/ $/, "", t)
+  key = path SUBSEP lno SUBSEP t
+  sev = substr(val[2], 2) + 0
+  line = raw[2]
+  for (k = 3; k <= 9; k++) line = line " | " raw[k]
+  if (key in at) {
+    j = at[key]
+    if (sev > rs[j] || (sev == rs[j] && conf <= rc[j])) next
+  } else {
+    j = ++count; at[key] = j
+  }
+  rs[j] = sev; rc[j] = conf; ri[j] = NR; rl[j] = line
+}
+
+END {
+  if (bad) exit 1
+  if (mode != "merge") exit 0
+  for (i = 1; i <= count; i++) ord[i] = i
+  for (i = 2; i <= count; i++) {
+    x = ord[i]
+    for (j = i - 1; j >= 1; j--) {
+      y = ord[j]
+      if (rs[y] < rs[x] || (rs[y] == rs[x] && (rc[y] > rc[x] || (rc[y] == rc[x] && ri[y] < ri[x])))) break
+      ord[j + 1] = y
+    }
+    ord[j + 1] = x
+  }
+  for (i = 1; i <= count; i++) printf "F%d | %s\n", i, rl[ord[i]]
+}
+'
+
+# Prints 1 when ENVIRON QUOTE is a substring of a line within three of ENVIRON LNO.
+# shellcheck disable=SC2016
+matcher='
+{ sub(/\r$/, "") }
+NR >= ENVIRON["LNO"] - 3 && NR <= ENVIRON["LNO"] + 3 && index($0, ENVIRON["QUOTE"]) { found = 1; exit }
+NR > ENVIRON["LNO"] + 3 { exit }
+END { print found + 0 }
+'
+
+check() {
+  local rev=HEAD file root head_sha work where lno path quote failed=0
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --head) [ $# -ge 2 ] || { usage >&2; exit 64; }; rev=$2; shift 2 ;;
+      -*) usage >&2; exit 64 ;;
+      *) break ;;
+    esac
+  done
+  [ $# -eq 1 ] || { usage >&2; exit 64; }
+  file=$1
+  [ -f "$file" ] || od_die "findings file not found: $file" 66
+  work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive.XXXXXX") || od_die "cannot create a temporary directory"
+  trap 'rm -rf "$work"' EXIT
+  : > "$work/lookups"
+  OUT=$work/lookups awk -v mode=check "$parser" "$(awk_operand "$file")" || failed=1
+  if [ -s "$work/lookups" ]; then
+    root=$(od_repo_root) || od_die "not inside a git repository"
+    head_sha=$(git -C "$root" rev-parse --verify --quiet "$rev^{commit}") || od_die "unknown revision: $rev" 65
+    while IFS= read -r where && IFS= read -r lno && IFS= read -r path &&
+      IFS= read -r quote; do
+      if ! git -C "$root" cat-file blob "$head_sha:$path" > "$work/blob" 2>/dev/null; then
+        printf '%s: %s is not in %s\n' "$where" "$path" "$rev"
+        failed=1
+      elif [ "$(QUOTE=$quote LNO=$lno awk "$matcher" "$work/blob")" != 1 ]; then
+        printf '%s: quote not found within three lines of %s:%s in %s\n' "$where" "$path" "$lno" "$rev"
+        failed=1
+      fi
+    done < "$work/lookups"
+  fi
+  [ "$failed" -eq 0 ] || exit 1
+  printf 'ok\n'
+}
+
+# awk_operand FILE: awk reads an operand like a=b as an assignment, so give such names
+# a directory prefix.
+awk_operand() {
+  case $1 in /* | ./*) printf '%s\n' "$1" ;; *=*) printf './%s\n' "$1" ;; *) printf '%s\n' "$1" ;; esac
+}
+
+merge() {
+  local f files=()
+  [ $# -ge 1 ] || { usage >&2; exit 64; }
+  for f in "$@"; do
+    [ -f "$f" ] || od_die "findings file not found: $f" 66
+    files[${#files[@]}]=$(awk_operand "$f")
+  done
+  awk -v mode=merge "$parser" "${files[@]}"
+}
+
+case ${1-} in
+  check) shift; check "$@" ;;
+  merge) shift; merge "$@" ;;
+  -h | --help) usage ;;
+  *) usage >&2; exit 64 ;;
+esac

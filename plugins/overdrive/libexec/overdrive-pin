@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# overdrive pin: freeze committed tests so the change that follows cannot weaken them.
+
+OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=../lib/common.sh
+. "$OVERDRIVE_HOME/lib/common.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive pin PATH...
+       overdrive pin --status
+       overdrive pin --release "REASON"
+       overdrive pin --clear
+
+PATH...    pin committed test files (a directory pins its tracked files). Exit 65 when a
+           path is untracked or differs from HEAD: commit the tests first.
+--status   list pinned paths as "unchanged PATH" or "changed PATH"; exit 1 if any changed.
+--release  drop the pins because a test itself was wrong; the reason is appended to the
+           active ledger as "Note: pins released — REASON". Redo red afterwards.
+--clear    drop the pins after green; refused unless green evidence exists for them.
+
+Pins live in .overdrive/run/pins: "sha <commit>", one "path <blob> <repo path>" per pinned
+file (its blob at that commit), then "seal <cksum of the lines above>". Pins that fail
+these checks, or whose commit is no longer in HEAD's history, are invalid: every check
+fails closed until they are released.
+USAGE
+}
+
+root=$(od_repo_root) || od_die "not inside a git repository"
+run=$(od_run_dir "$root") || od_die "cannot create $root/.overdrive/run"
+pins=$run/pins
+# Pinned names are file paths, never pathspec patterns.
+GIT_LITERAL_PATHSPECS=1
+export GIT_LITERAL_PATHSPECS
+g() { git -C "$root" -c core.quotePath=false "$@"; }
+
+pin_sha='' pin_paths=() pin_error=''
+
+# blob_lines SHA PATH...: print "path <blob> <path>" for each PATH in SHA's tree, in
+# tree order (each path once).
+blob_lines() {
+  local sha=$1 rec meta
+  shift
+  g ls-tree -z "$sha" -- "$@" | while IFS= read -r -d '' rec; do
+    meta=${rec%%$'\t'*}
+    printf 'path %s %s\n' "${meta##* }" "${rec#*$'\t'}"
+  done
+}
+
+seal_of() {
+  printf '%s\n' "$1" | cksum | cut -d' ' -f1
+}
+
+# read_pins: load and verify the pins file into pin_sha and pin_paths. Returns 1 when
+# there is none, 65 (reason in pin_error) when it fails any check: a file that does not
+# match what pinning wrote must never pass as pins, since editing it would unpin a test.
+read_pins() {
+  local line n=0 body='' seal='' stored='' rest
+  pin_sha='' pin_paths=() pin_error=''
+  [ -f "$pins" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1))
+    [ -z "$seal" ] || { pin_error='text after the seal line'; return 65; }
+    case $n:$line in
+      1:'sha '?*) pin_sha=${line#sha } ;;
+      1:*) pin_error='first line is not "sha <commit>"'; return 65 ;;
+      *:'path '?*' '?*)
+        rest=${line#path * }
+        pin_paths[${#pin_paths[@]}]=$rest
+        stored=${stored:+$stored$'\n'}$line
+        ;;
+      *:'seal '?*) seal=${line#seal }; continue ;;
+      *) pin_error="unexpected line $n"; return 65 ;;
+    esac
+    body=${body:+$body$'\n'}$line
+  done < "$pins"
+  [ "${#pin_paths[@]}" -gt 0 ] || { pin_error='no pinned paths'; return 65; }
+  [ "$seal" = "$(seal_of "$body")" ] || { pin_error='the seal does not match the file'; return 65; }
+  g rev-parse --verify --quiet "$pin_sha^{commit}" > /dev/null || { pin_error="unknown commit $pin_sha"; return 65; }
+  # An amended or rebased pin commit leaves HEAD's history: the pins no longer describe it.
+  g merge-base --is-ancestor "$pin_sha" HEAD 2>/dev/null ||
+    { pin_error="pin commit $pin_sha is not in the history of HEAD"; return 65; }
+  [ "$stored" = "$(blob_lines "$pin_sha" "${pin_paths[@]}")" ] ||
+    { pin_error="pinned contents do not match commit $pin_sha"; return 65; }
+}
+
+pins_invalid() {
+  od_die "pins are invalid ($pin_error). If the pinned tests are right, run: overdrive pin --release \"<reason>\" and pin them again" 65
+}
+
+load_pins() {
+  local rc=0
+  read_pins || rc=$?
+  [ "$rc" -ne 65 ] || pins_invalid
+  return "$rc"
+}
+
+# changed_since SHA PATH...: print, NUL-separated and once each, the paths that differ
+# from SHA in HEAD, in the index or in the working tree.
+changed_since() {
+  local sha=$1
+  shift
+  {
+    g diff --no-ext-diff --name-only -z "$sha" -- "$@"
+    g diff --no-ext-diff --name-only -z --cached "$sha" -- "$@"
+    g diff --no-ext-diff --name-only -z "$sha" HEAD -- "$@"
+  } | tr '\0' '\n' | LC_ALL=C sort -u
+}
+
+status() {
+  local p changed rc=0
+  load_pins || { printf 'no pins\n'; return 0; }
+  changed=$(changed_since "$pin_sha" "${pin_paths[@]}") || od_die "git diff failed"
+  printf 'sha %s\n' "$pin_sha"
+  for p in "${pin_paths[@]}"; do
+    if printf '%s\n' "$changed" | grep -qxF -- "$p"; then
+      printf 'changed %s\n' "$p"
+      rc=1
+    else
+      printf 'unchanged %s\n' "$p"
+    fi
+  done
+  return "$rc"
+}
+
+drop_pins() {
+  od_lock "$pins.lock" || od_die "cannot lock $pins"
+  rm -f "$pins"
+  od_unlock "$pins.lock"
+}
+
+pin() {
+  local head p f changed tmp body
+  local files=()
+  head=$(g rev-parse --verify --quiet 'HEAD^{commit}') || od_die "no commit yet: commit the tests first" 65
+  for p in "$@"; do
+    # Relative to the caller's directory, like any other path argument.
+    if ! git ls-files --error-unmatch -- "$p" > /dev/null 2>&1; then
+      od_die "not tracked: $p (commit the tests first)" 65
+    fi
+    while IFS= read -r -d '' f; do
+      files[${#files[@]}]=$f
+    done < <(git -c core.quotePath=false ls-files -z --full-name -- "$p")
+  done
+  changed=$(g diff --no-ext-diff --name-only HEAD -- "${files[@]}"; g diff --no-ext-diff --name-only --cached HEAD -- "${files[@]}")
+  [ -z "$changed" ] || od_die "differs from HEAD: ${changed%%$'\n'*} (commit the tests first)" 65
+
+  od_lock "$pins.lock" || od_die "cannot lock $pins"
+  local rc=0
+  read_pins || rc=$?
+  if [ "$rc" -eq 65 ]; then
+    od_unlock "$pins.lock"
+    pins_invalid
+  elif [ "$rc" -eq 0 ]; then
+    changed=$(changed_since "$pin_sha" "${pin_paths[@]}")
+    if [ -n "$changed" ]; then
+      od_unlock "$pins.lock"
+      od_die "pinned test changed since it was pinned: ${changed%%$'\n'*}" 65
+    fi
+    files=("${pin_paths[@]}" "${files[@]}")
+  fi
+  tmp=$pins.$$.tmp
+  body="sha $head"$'\n'$(blob_lines "$head" "${files[@]}")
+  printf '%s\nseal %s\n' "$body" "$(seal_of "$body")" > "$tmp" && mv -f "$tmp" "$pins"
+  rc=$?
+  od_unlock "$pins.lock"
+  [ "$rc" -eq 0 ] || { rm -f "$tmp"; od_die "cannot write $pins"; }
+  cat "$pins"
+}
+
+case ${1-} in
+  '' | -h | --help)
+    [ -n "${1-}" ] || { usage >&2; exit 64; }
+    usage
+    ;;
+  --status)
+    [ $# -eq 1 ] || { usage >&2; exit 64; }
+    status
+    ;;
+  --release)
+    [ $# -eq 2 ] || { usage >&2; exit 64; }
+    # One ledger line: newlines in the reason become spaces.
+    reason=$(printf '%s' "$2" | tr '\r\n' '  ' | sed 's/^ *//; s/ *$//')
+    [ -n "$reason" ] || { usage >&2; exit 64; }
+    # No parsing: releasing is also the way out of a corrupt pins file.
+    [ -f "$pins" ] || { printf 'no pins\n'; exit 0; }
+    drop_pins
+    if ledger=$(od_active_ledger "$run"); then
+      od_append "$ledger" "Note: pins released — $reason" || od_die "pins released, but the ledger note failed: $ledger"
+    fi
+    printf 'pins released\n'
+    ;;
+  --clear)
+    [ $# -eq 1 ] || { usage >&2; exit 64; }
+    load_pins || { printf 'no pins\n'; exit 0; }
+    # Only the header counts: captured output can contain any text.
+    found=''
+    for f in "$run"/evidence/[0-9]*-green.md; do
+      [ -f "$f" ] || continue
+      if awk -v want="Pin: $pin_sha" '/^## / { exit } $0 == want { found = 1; exit } END { exit !found }' "$f"; then
+        found=1
+        break
+      fi
+    done
+    if [ -z "$found" ]; then
+      od_die "no green evidence for these pins; run overdrive evidence green, or release them with a reason" 65
+    fi
+    drop_pins
+    printf 'pins cleared\n'
+    ;;
+  -*)
+    usage >&2
+    exit 64
+    ;;
+  *)
+    pin "$@"
+    ;;
+esac

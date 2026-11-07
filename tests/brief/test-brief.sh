@@ -301,16 +301,18 @@ test_brief_outside_git_fails() {
 
 test_brief_same_named_plans_do_not_share_a_dir() {
   isolate
-  local repo root a b
+  local repo root phys a b
   repo=$(make_repo)
   root=$(cd "$repo" && pwd)
+  # Relative plan paths are made absolute from the physical cwd (od_plan_dir).
+  phys=$(cd "$repo" && pwd -P)
   mkdir -p "$repo/one" "$repo/two"
   cp "$(fixtures)/plan.md" "$repo/one/plan.md"
   cp "$(fixtures)/plan.md" "$repo/two/plan.md"
   a=$(cd "$repo" && od brief --plan one/plan.md --task 1 --lane standard)
   b=$(cd "$repo/two" && od brief --plan plan.md --task 1 --lane standard)
-  assert_eq "$root/.overdrive/run/$(run_dir "$root/one/plan.md")/task-1.md" "$a"
-  assert_eq "$root/.overdrive/run/$(run_dir "$root/two/plan.md")/task-1.md" "$b"
+  assert_eq "$root/.overdrive/run/$(run_dir "$phys/one/plan.md")/task-1.md" "$a"
+  assert_eq "$root/.overdrive/run/$(run_dir "$phys/two/plan.md")/task-1.md" "$b"
   [ "$a" != "$b" ]
 }
 

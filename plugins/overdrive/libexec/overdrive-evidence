@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# overdrive evidence: run a test command and record the red or green result.
+
+OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=../lib/common.sh
+. "$OVERDRIVE_HOME/lib/common.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive evidence red -- CMD...
+       overdrive evidence green -- CMD...
+       overdrive evidence list
+
+red    CMD must fail (a command that cannot run, exit 126 or 127, does not count).
+green  CMD must pass and every pinned test must be unchanged since its pin, in HEAD,
+       the index and the working tree.
+Both run CMD in the current directory with stdin closed, write
+.overdrive/run/evidence/<NNNN>-<red|green>.md (command, exit code, HEAD, pin sha, UTC
+time, last 40 lines of output) and print its path. Otherwise they record nothing and
+exit 1. list prints the evidence files in order.
+USAGE
+}
+
+work='' tmp='' child=''
+cleanup() {
+  [ -z "$child" ] || kill "$child" 2> /dev/null
+  [ -z "$work" ] || rm -rf "$work"
+  [ -z "$tmp" ] || rm -f "$tmp"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+root=$(od_repo_root) || od_die "not inside a git repository"
+run=$(od_run_dir "$root") || od_die "cannot create $root/.overdrive/run"
+dir=$run/evidence
+
+# pin_check KIND: set pin to the pin sha (or none); exit 1 naming a changed pinned path.
+pin_check() {
+  local out rc=0
+  pin=none
+  [ -f "$run/pins" ] || return 0
+  out=$("$BASH" "$OVERDRIVE_HOME/libexec/overdrive-pin" --status 2>&1) || rc=$?
+  case $rc in
+    0) pin=$(printf '%s\n' "$out" | sed -n 's/^sha //p') ;;
+    1)
+      printf 'not %s: pinned test changed: %s\n' "$1" \
+        "$(printf '%s\n' "$out" | sed -n 's/^changed //p' | paste -sd ',' - | sed 's/,/, /g')"
+      exit 1
+      ;;
+    *) printf 'not %s: %s\n' "$1" "$out"; exit 1 ;;
+  esac
+}
+
+record() {
+  local kind=$1 rc=0 head cmd rel n max f id dest
+  shift
+  [ $# -gt 0 ] || { usage >&2; exit 64; }
+  pin_check "$kind"
+  work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive.XXXXXX") || od_die "cannot create a temporary directory"
+  # In the background so a signal is handled at once instead of after CMD ends.
+  "$@" > "$work/out" 2>&1 < /dev/null &
+  child=$!
+  wait "$child" || rc=$?
+  child=
+  case $kind:$rc in
+    red:0) printf 'not red: the test passed before the change\n'; exit 1 ;;
+    red:126 | red:127)
+      printf 'not red: the command could not run (exit %s)\n' "$rc"
+      tail -n 5 "$work/out"
+      exit 1
+      ;;
+    # The command itself could have rewritten a pinned test.
+    green:0) pin_check green ;;
+    green:*) printf 'not green: the command exited %s\n' "$rc"; tail -n 40 "$work/out"; exit 1 ;;
+  esac
+  head=$(git -C "$root" rev-parse --verify --quiet 'HEAD^{commit}') || head=none
+  cmd=$(printf '%q ' "$@")
+  case $PWD/ in
+    "$root"/) rel=. ;;
+    "$root"/*) rel=${PWD#"$root"/} ;;
+    *) rel=$PWD ;;
+  esac
+  mkdir -p "$dir" || od_die "cannot create $dir"
+  tmp=$dir/.$$.tmp
+  {
+    printf '# Evidence: %s\n\n' "$kind"
+    printf 'Command: %s\n' "${cmd% }"
+    printf 'Directory: %s\n' "$rel"
+    printf 'Exit: %s\n' "$rc"
+    printf 'Head: %s\n' "$head"
+    printf 'Pin: %s\n' "$pin"
+    printf 'Time: %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '## Output (last 40 lines)\n\n'
+    tail -n 40 "$work/out"
+  } > "$tmp" || { rm -f "$tmp"; od_die "cannot write $tmp"; }
+  # Numbers are allocated under the lock; the record is complete before it is visible.
+  # Placement never replaces anything: if the id is somehow taken, take the next one.
+  od_lock "$dir/.lock" || od_die "cannot lock $dir"
+  max=0
+  for f in "$dir"/[0-9]*-*.md; do
+    [ -f "$f" ] || continue
+    n=${f##*/}
+    n=${n%%-*}
+    case $n in *[!0-9]*) continue ;; esac
+    [ $((10#$n)) -le "$max" ] || max=$((10#$n))
+  done
+  rc=1
+  while [ "$rc" -ne 0 ]; do
+    max=$((max + 1))
+    id=$(printf '%04d' "$max")
+    dest=$dir/$id-$kind.md
+    [ ! -e "$dest" ] || continue
+    if ln "$tmp" "$dest" 2> /dev/null; then
+      rc=0
+    elif [ ! -e "$dest" ]; then
+      # No hard links on this filesystem: an exclusive create, then the content.
+      (set -C; cat "$tmp" > "$dest") 2> /dev/null && rc=0
+      [ "$rc" -eq 0 ] || [ -e "$dest" ] || break
+    fi
+  done
+  od_unlock "$dir/.lock"
+  [ "$rc" -eq 0 ] || od_die "cannot write $dest"
+  rm -f "$tmp"
+  tmp=''
+  printf '%s\n' "$dest"
+}
+
+case ${1-} in
+  red | green)
+    kind=$1
+    shift
+    [ "${1-}" = -- ] || { usage >&2; exit 64; }
+    shift
+    record "$kind" "$@"
+    ;;
+  list)
+    [ $# -eq 1 ] || { usage >&2; exit 64; }
+    for f in "$dir"/[0-9]*-*.md; do
+      [ -f "$f" ] && printf '%s\n' "$f"
+    done
+    exit 0
+    ;;
+  -h | --help) usage ;;
+  *) usage >&2; exit 64 ;;
+esac

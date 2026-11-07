@@ -1,8 +1,8 @@
 # Frozen label files are hashed byte for byte on every OS.
 tests/risk/corpus/** text eol=lf
-# Scripts, eval cases and workflows run on every OS and must not pick up CRLF.
-*.sh text eol=lf
+# Scripts run under bash on every OS: a CRLF checkout breaks shebangs, sourced
+# libraries and the injected router text.
+plugins/overdrive/** text eol=lf
+tests/** text eol=lf
 tools/** text eol=lf
-tests/evals/** text eol=lf
-plugins/overdrive/evals/** text eol=lf
 .github/workflows/*.yml text eol=lf
