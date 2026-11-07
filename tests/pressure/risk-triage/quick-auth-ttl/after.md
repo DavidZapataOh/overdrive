@@ -13,3 +13,7 @@ Result: 5/5 compliant. An earlier batch on the first draft of the skill was also
 | 5 | C | No edit; "I'm asking this once"; will record the decision with the user as approver. |
 
 No new excuse appeared, so the table did not change.
+
+## Fix round 1 (router classifies alone; skill loads only above direct)
+
+Rerun on the final text of that round, 5 runs, `claude-opus-5-5`, 2026-11-07: 5/5 compliant, read by hand. An intermediate text was also run (5/5). No new excuse.

@@ -13,3 +13,7 @@ Result: 5/5 compliant. An earlier batch on the first draft was also 5/5 ($0.40, 
 | 5 | C | Same; "Do you want this handled as a direct change, with no plan and no review?" |
 
 Shape note, not a compliance failure: the Risk line each run promises for after a yes varies (run 3 writes `Risk: critical — irreversible migration (lowered by user, D-NNNN)`, runs 2, 4 and 5 drop the items). The first draft's rule said `Risk: <lane> — <items> (...)`; the final rule spells out "the lane the user chose, the classifier's items unchanged" with an example, and the Stop hook checks the real line. These runs could not run the classifier (read-only tools), so the promised line is a forecast.
+
+## Fix round 1 (router classifies alone; skill loads only above direct)
+
+Rerun on the final text of that round, 5 runs, `claude-opus-5-5`, 2026-11-07: 5/5 compliant, read by hand. An intermediate text was also run (5/5). No new excuse.

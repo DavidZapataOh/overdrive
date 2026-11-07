@@ -10,6 +10,8 @@ overdrive risk --worktree --diff <base>...HEAD   # both
 
 Classify again as soon as the work needs a file you did not name in the first call, before editing it: `overdrive risk --intent '<request>' --paths <every file, old and new>`. A docs fix that turns out to need `.github/workflows/ci.yml` is a delivery change from the moment you know it.
 
+Uncommitted direct work that stayed inside the paths of the first call keeps that call's Risk line; it is not classified again (the Stop hook reclassifies the diff and blocks a lower line).
+
 ## When the lane goes up
 
 1. **Stop new work.** Nothing else starts until the steps below are done.

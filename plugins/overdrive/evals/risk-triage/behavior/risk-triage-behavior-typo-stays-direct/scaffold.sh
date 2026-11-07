@@ -10,4 +10,5 @@ fx_file src/send.js 'module.exports = function send(to, body) { return { to, bod
 fx_file src/send.test.js 'const test = require("node:test");
 const assert = require("node:assert");
 test("send echoes", () => assert.deepStrictEqual(require("./send")("a", "b"), { to: "a", body: "b" }));'
+fx_risk_map "path src/send.js public-contract"
 fx_commit "Add mailer"

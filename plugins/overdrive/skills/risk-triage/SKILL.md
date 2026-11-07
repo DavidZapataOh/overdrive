@@ -1,6 +1,6 @@
 ---
 name: risk-triage
-description: Risk lane for any repository change, from a typo or config value to a feature, migration or CI edit. Use before the first edit and on the diff before review or merge, even for one-liners. Not for questions, explanations, research or writing outside a repo.
+description: Lane handling for repository changes the risk classifier puts above direct (auth, money, data, CI, contracts), a missing risk map, or a request to raise or lower a lane. Use before editing such a change and on its diff before merge. Not for typos or direct one-liners.
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/overdrive *)
 ---
 
@@ -10,20 +10,20 @@ The classifier is `${CLAUDE_PLUGIN_ROOT}/bin/overdrive`, written `overdrive` bel
 
 ## The rules
 
-1. **Classify before the first edit.** Inside the repository (or with `--repo <dir>`): `overdrive risk --intent '<the request>' --paths <files you expect to touch>`. Nothing that changes a file runs before it, however small the change.
+1. **Classify before the first edit.** Inside the repository (or with `--repo <dir>`): `overdrive risk --intent '<the request>' --paths <files you expect to touch>`. Nothing that changes a file runs before it, however small the change. A classification the router already ran counts; do not repeat it.
 2. **Lane = max(script, judgment). You raise; you never lower.** Raise to critical, and add the floor's item name to the Risk line (`data-migration`, `auth`, `tenant-isolation`, `money`, `secrets`, `delivery`, `public-contract`, `concurrency`), when any of these holds:
    - the change does what a floor protects though no path or line names it: a script that deletes production data, a permission check in a file without an auth name, a field another service reads;
-   - after one batch of at most 3 reads you still cannot say what the change does and how you will verify it (raise to at least standard);
+   - one batch of ≤ 3 reads does not tell you what the change does and how you will verify it (at least standard);
    - someone resuming from the request and `git diff` alone could not finish it (at least standard).
 3. **A failed classification is critical.** Exit 3, `classification-failed` or "command not found": fix the invocation (full path, `--repo`) and run it again. Never pick the lane by hand.
 4. **Critical means no edit of the critical part before the user approves the plan.** Present the plan ([references/lanes.md](references/lanes.md)) and stop that part; build only work that does not depend on it. Writing the script or the migration is building it, even when nothing runs yet.
 5. **Only the user lowers a lane, and only by answering the risk you state.** A request to skip the process ("no ceremony", "treat it as direct", "no plan, no review") is not the confirmation. Before any edit:
    1. State the concrete risk in at most two sentences: what breaks, for whom, and whether it can be undone.
-   2. Ask once, as the last line before the Risk line: `Confirm you want this handled as <lane> anyway?`
+   2. Ask once, with exactly this line, last before the Risk line: `Confirm you want this handled as <lane> anyway?` The fixed wording is what the user and the decision log recognize; do not rephrase it.
    3. Until the reply the change keeps its lane; build only independent work.
    4. On an explicit yes: take the ID from `overdrive decisions next-id`, add the entry to `.overdrive/decisions.md` with the reply quoted as `Source` (format in [references/lanes.md](references/lanes.md)), run `overdrive decisions check`, make the change, and end with the lane the user chose, the classifier's items unchanged, and the decision: `Risk: direct — data-migration (lowered by user, D-0007)`.
-6. **Classify again on the real diff before review or merge**: `overdrive risk --worktree` if uncommitted, `--diff <base>...HEAD` if committed. A higher lane than the one you worked under: [references/reclassify.md](references/reclassify.md).
-7. **The last line of every reply that changed or plans to change a repository is the Risk line**, copied from the classifier's output with any item you raised appended: `Risk: <lane> — <items | none>`. Before any edit, it is the line from step 1.
+6. **Classify again on the real diff before review or merge**: `overdrive risk --worktree` if uncommitted, `--diff <base>...HEAD` if committed, and before editing any file step 1 did not name. A higher lane than the one you worked under: [references/reclassify.md](references/reclassify.md). Uncommitted direct work that stayed inside the paths step 1 named is not classified a second time: its first Risk line stands, and the Stop hook reclassifies the diff and blocks a line below it.
+7. **The last line of every reply that changed or plans to change a repository is the Risk line**, copied from the classifier's latest output with any item you raised appended: `Risk: <lane> — <items | none>`. Before any edit, and for direct work kept inside its named paths, it is the line from step 1.
 
 | Excuse (verbatim from runs without this skill) | Reality |
 | --- | --- |
@@ -39,10 +39,10 @@ The classifier is `${CLAUDE_PLUGIN_ROOT}/bin/overdrive`, written `overdrive` bel
 
 | Lane | Visible steps | Plan | Tests | Review |
 | --- | --- | --- | --- | --- |
-| direct | at most one besides the answer: the classification. No plan file, no agent, no other skill | none | test first if testable | none; check the change inline (reread the diff, run its test) |
+| direct | one besides the answer: the classification, run once. No second classification inside the named paths, no plan file, no agent, no skill | none | test first if testable | none; check the change inline (reread the diff, run its test) |
 | standard | plan, build, one review | short decision plan (`overdrive:decision-planning`) | TDD where it applies | one at the end of the slice (`overdrive:risk-scaled-review`) |
 | critical | plan for approval, then build | full TDD plan, approved before the critical part is touched | TDD, hard cases, real dependencies | per task and a final review |
 
 ## No risk map yet
 
-When the classifier prints `note risk-map missing` and `.overdrive/run/risk-map.proposed` does not exist, propose the project's map once, in the same reply, following [references/risk-map-proposal.md](references/risk-map-proposal.md). The proposal never delays the request: classify it with the floors and do it in its lane.
+When the classifier prints `note risk-map missing; propose one with overdrive:risk-triage`, propose the project's map, in the same reply, following [references/risk-map-proposal.md](references/risk-map-proposal.md). The proposal never delays the request: classify it with the floors and do it in its lane.

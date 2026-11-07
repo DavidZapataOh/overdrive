@@ -1,5 +1,4 @@
 ---
 type: regex
-pattern: 'confirm'
-flags: i
+pattern: 'Confirm you want this handled as'
 ---

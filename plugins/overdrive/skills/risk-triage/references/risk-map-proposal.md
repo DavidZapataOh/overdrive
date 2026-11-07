@@ -1,6 +1,6 @@
 # Proposing a project risk map
 
-The floors know generic names (`billing`, `auth`, `migrations`). A project names its risky code its own way: a payments package called after the provider, permissions in Spanish, a tenant key called `org_id`. The map (`.overdrive/risk-map.conf`, one rule per line: `<kind> <pattern> <item> [critical|standard]`, critical by default, `#` comments) teaches the classifier those names. Propose it once per repository, the first time the classifier prints `note risk-map missing`.
+The floors know generic names (`billing`, `auth`, `migrations`). A project names its risky code its own way: a payments package called after the provider, permissions in Spanish, a tenant key called `org_id`. The map (`.overdrive/risk-map.conf`, one rule per line: `<kind> <pattern> <item> [critical|standard]`, critical by default, `#` comments) teaches the classifier those names. Propose it once per repository, when the classifier prints `note risk-map missing; propose one with overdrive:risk-triage`.
 
 ## Steps
 
@@ -17,7 +17,7 @@ The floors know generic names (`billing`, `auth`, `migrations`). A project names
    | a guard function or tenant key | `symbol <identifier> <item>` |
    | a code pattern | `content <extended regex> <item>` |
 
-5. **Prove every rule fires.** Save the proposal to `.overdrive/run/risk-map.proposed` (the run directory ignores itself), then run `overdrive risk --map .overdrive/run/risk-map.proposed --paths <one file per rule>`; each rule's item must appear. Fix any rule the loader rejects.
+5. **Prove every rule fires.** Save the proposal to `.overdrive/run/risk-map.proposed` with the Write tool (the run directory ignores itself; a sandboxed shell may not write there), then run `overdrive risk --map .overdrive/run/risk-map.proposed --paths <one file per rule>`; each rule's item must appear. Fix any rule the loader rejects.
 6. **Show it in the reply**, one rule per line with a comment saying what it protects, and ask for approval:
 
    ```
@@ -34,4 +34,4 @@ The floors know generic names (`billing`, `auth`, `migrations`). A project names
 
 ## Once
 
-`.overdrive/run/risk-map.proposed` marks the proposal as made. While it exists and the map does not, later replies add one line instead of a new proposal: `Risk map proposal waiting for approval: .overdrive/run/risk-map.proposed`. After the approval, commit the map as its own change; it is classified critical (`risk-map`) like any edit of the map.
+`.overdrive/run/risk-map.proposed` marks the proposal as made: while it exists and the map does not, the classifier's note says `risk-map missing; a proposal waits for approval in .overdrive/run/risk-map.proposed`, and a reply mentions it in one line instead of proposing again. After the approval, commit the map as its own change; it is classified critical (`risk-map`) like any edit of the map.

@@ -73,6 +73,6 @@ The classifier reads paths, lines and the request; it cannot read what code mean
 | A field, endpoint or event another service or customer consumes | critical | `public-contract` |
 | Price, discount, rounding or currency arithmetic outside a billing path | critical | `money` |
 | Shared state touched from parallel jobs, retries or webhooks | critical | `concurrency` |
-| Not understood after one batch of at most 3 reads, or not resumable from the request and `git diff` | standard at least | none |
+| Not understood after one batch of ≤ 3 reads, or not resumable from the request and `git diff` | standard at least | none |
 
 Write the raised item into the Risk line after the classifier's items: `Risk: critical — data-migration`. When the floors and the project map keep missing the same kind of change, the narrowest rule that would catch it belongs in `.overdrive/risk-map.conf` (a critical change of its own).
