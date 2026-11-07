@@ -205,13 +205,10 @@ test_unwritable_tmp_uses_the_repository_run_dir() {
   local repo left real fake=$PWD/fake missing=$PWD/missing
   repo=$(make_repo)
   write_file "$repo" README.md 'receive'
-  # mktemp refuses every template outside the repository.
+  # mktemp refuses every template outside a repository's run directory.
   mkdir fake
   real=$(command -v mktemp)
-  printf '#!/usr/bin/env bash
-case "$*" in *"%s"/*) exec "%s" "$@" ;; esac
-exit 1
-' "$repo" "$real" > fake/mktemp
+  printf '#!/usr/bin/env bash\ncase "$*" in */.overdrive/run/*) exec "%s" "$@" ;; esac\nexit 1\n' "$real" > fake/mktemp
   chmod +x fake/mktemp
   rc=0
   out=$(cd "$repo" && PATH=$fake:$PATH TMPDIR=$missing overdrive risk --worktree 2>err) || rc=$?
