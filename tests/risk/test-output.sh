@@ -111,3 +111,21 @@ test_paths_mode_reads_head_map_in_bare_repo() {
   assert_eq 0 "$rc" "exit code: $(cat err)"
   assert_line "$out" 'item money critical map keyword "cobro"'
 }
+
+test_root_commit_against_the_empty_tree() {
+  local repo bare empty
+  repo=$PWD/root
+  git init -q "$repo"
+  git -C "$repo" config user.name Test
+  git -C "$repo" config user.email test@example.com
+  write_file "$repo" .overdrive/risk-map.conf 'pathtoken ranking ranking'
+  source_with_test "$repo" src/ranking/score.ts
+  commit_all "$repo" root
+  bare=$PWD/bare.git
+  git clone -q --bare "$repo" "$bare"
+  empty=$(git -C "$bare" hash-object -t tree --stdin </dev/null)
+  risk "$bare" --diff "$empty..HEAD"
+  assert_eq 0 "$rc" "exit code: $(cat err)"
+  assert_line "$out" "item ranking critical map path src/ranking/score.ts"
+  assert_line "$out" "item risk-map critical floor path .overdrive/risk-map.conf"
+}

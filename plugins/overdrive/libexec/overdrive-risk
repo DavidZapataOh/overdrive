@@ -172,7 +172,7 @@ if [ -z "$top" ] && { [ -n "$staged" ] || [ -n "$worktree" ]; }; then
   fail_closed "no working tree for --staged or --worktree"
 fi
 
-# The commits the classification reads: HEAD, then both sides of every range (the merge
+# What the classification reads: HEAD, then both sides of every range (the merge
 # base for A...B), resolved in one call; the first one missing names the failure.
 revs=('HEAD')
 for range in ${ranges[@]+"${ranges[@]}"}; do
@@ -186,11 +186,14 @@ for range in ${ranges[@]+"${ranges[@]}"}; do
   fi
   revs+=("${base:-HEAD}" "${end:-HEAD}")
 done
-if ! commits=$(git -C "$gitdir" rev-parse "${revs[@]/%/^{commit\}}" 2>"$work/git.err"); then
+# A range side may be a tree (the empty tree before a root commit), so sides peel to trees.
+sides=('HEAD^{commit}')
+for rev in "${revs[@]:1}"; do sides+=("$rev^{tree}"); done
+if ! resolved=$(git -C "$gitdir" rev-parse "${sides[@]}" 2>"$work/git.err"); then
   # Without a first commit there is nothing to compare against, in any mode.
   git -C "$gitdir" rev-parse -q --verify 'HEAD^{commit}' >/dev/null 2>&1 || fail_closed "no commits yet"
   for rev in "${revs[@]}"; do
-    git -C "$gitdir" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1 || fail_closed "cannot read $rev"
+    git -C "$gitdir" rev-parse -q --verify "$rev^{tree}" >/dev/null 2>&1 || fail_closed "cannot read $rev"
   done
   fail_closed "cannot read the commits: $(git_error)"
 fi
@@ -204,12 +207,12 @@ else
   wanted=''
   [ -z "$top" ] || [ ! -e "$top/.overdrive/risk-map.conf" ] || maps=("$top/.overdrive/risk-map.conf")
   if [ "${#ranges[@]}" -gt 0 ]; then
-    # Every resolved commit but HEAD (the first), which only staged and worktree compare.
-    wanted=${commits#*"$_OD_NL"}
+    # Every resolved side but HEAD (the first), which only staged and worktree compare.
+    wanted=${resolved#*"$_OD_NL"}
     wanted=${wanted//$_OD_NL/:.overdrive/risk-map.conf$_OD_NL}:.overdrive/risk-map.conf$_OD_NL
   fi
   if [ -n "$staged" ] || [ -n "$worktree" ] || { [ -z "$top" ] && [ "${#ranges[@]}" -eq 0 ]; }; then
-    wanted=$wanted${commits%%"$_OD_NL"*}:.overdrive/risk-map.conf$_OD_NL
+    wanted=$wanted${resolved%%"$_OD_NL"*}:.overdrive/risk-map.conf$_OD_NL
   fi
   # A conflicted map has stages 2 and 3 instead of 0.
   [ -z "$staged" ] || wanted=$wanted:0:.overdrive/risk-map.conf$_OD_NL:2:.overdrive/risk-map.conf$_OD_NL:3:.overdrive/risk-map.conf$_OD_NL
