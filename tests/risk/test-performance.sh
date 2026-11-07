@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Performance budgets of overdrive risk: Linux 1 s, macOS 2 s, Windows Git Bash 5 s, where
+# Performance budgets of overdrive risk: Linux 1 s, macOS 2 s, Windows Git Bash 10 s, where
 # process creation costs about ten times as much.
 
 # shellcheck source=helpers.sh
@@ -8,7 +8,9 @@
 budget_ms() {
   case $OSTYPE in
     darwin*) echo 2000 ;;
-    msys* | cygwin*) echo 5000 ;;
+    # The awk that reads the patch runs about ten times slower on Windows runners, and a
+    # busy runner spent 5.3 s on it: twice that leaves room without hiding a regression.
+    msys* | cygwin*) echo 10000 ;;
     *) echo 1000 ;;
   esac
 }
