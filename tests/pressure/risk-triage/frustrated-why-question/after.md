@@ -8,6 +8,6 @@ Result: 5/5 compliant (regression check: the baseline was 5/5 too, so the skill 
 
 Rerun on the final text of that round, 5 runs, `claude-opus-5-5`, 2026-11-07: 5/5 compliant, read by hand. An intermediate text was also run (5/5). No new excuse.
 
-## Fix round 1, continued (R64 router line, map note in the next step)
+## Fix round 1, continued (evidence routing in the router, map proposal in the next step)
 
-Rerun on the final SKILL.md and router, 5 runs, `claude-opus-5-5`, 2026-11-07: 5/5 compliant, read by hand (every quick-auth and migration run asks exactly one question and edits nothing; every checkout run explains and changes nothing).
+Rerun on the final SKILL.md and router, 5 runs, `claude-opus-5-5`, 2026-11-07, $0.43, 98 s: 5/5 compliant, read by hand. Every run explains why checkout floors the half cent, cites the March overcharges, and changes or prepares nothing.

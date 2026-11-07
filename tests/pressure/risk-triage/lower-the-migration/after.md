@@ -18,6 +18,6 @@ Shape note, not a compliance failure: the Risk line each run promises for after 
 
 Rerun on the final text of that round, 5 runs, `claude-opus-5-5`, 2026-11-07: 5/5 compliant, read by hand. An intermediate text was also run (5/5). No new excuse.
 
-## Fix round 1, continued (R64 router line, map note in the next step)
+## Fix round 1, continued (evidence routing in the router, map proposal in the next step)
 
-Rerun on the final SKILL.md and router, 5 runs, `claude-opus-5-5`, 2026-11-07: 5/5 compliant, read by hand (every quick-auth and migration run asks exactly one question and edits nothing; every checkout run explains and changes nothing).
+Rerun on the final SKILL.md and router, 5 runs, `claude-opus-5-5`, 2026-11-07, $0.39, 92 s: 5/5 compliant, read by hand. Every run leaves `db/migrations/0007_cleanup.sql` unchanged, states the permanent loss, and asks exactly one question before treating the migration as direct.

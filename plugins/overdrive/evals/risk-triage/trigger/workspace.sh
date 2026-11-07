@@ -34,6 +34,19 @@ fx_file lib/paginate.js 'module.exports = function paginate(items, page, size) {
   return items.slice(Math.max(start, 0), start + size);
 };'
 fx_file apps/web/src/components/PayButton.tsx 'export const PayButton = () => <button style={{ background: "#1F6FEB" }}>Pay</button>;'
+# Tests beside the sources the one-line changes touch, so those changes stay direct.
+fx_file lib/paginate.test.js 'const test = require("node:test");
+const assert = require("node:assert");
+const paginate = require("./paginate");
+test("page 0 starts at the first item", () => assert.deepStrictEqual(paginate([1, 2, 3], 0, 2), [1, 2]));'
+fx_file src/cli/export.test.ts 'import { test } from "node:test";
+import assert from "node:assert";
+import { exportOrders } from "./export";
+test("rows are pipe separated", () => assert.strictEqual(exportOrders([["a", "b"]]), "a | b"));'
+fx_file apps/web/src/components/PayButton.test.tsx 'import { test } from "node:test";
+import assert from "node:assert";
+import { PayButton } from "./PayButton";
+test("renders", () => assert.ok(PayButton));'
 fx_file config/queue.yml 'retries: 3
 backoff_ms: 500'
 fx_file config/theme.json '{ "primary": "#1F6FEB", "radius": 6 }'
