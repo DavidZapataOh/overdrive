@@ -22,8 +22,10 @@ test_new_pressure_case_scaffolds_scenario_and_case_in_a_marketplace_repo() {
   cp "$root/plugins/overdrive/evals/_lib/fixtures.sh" "$repo/plugins/acme/evals/_lib/"
   out=$(cd "$repo" && new_case commit-messages rushed-release)
   case_dir=$repo/plugins/acme/evals/commit-messages/pressure/rushed-release
-  assert_line "$out" "$repo/tests/pressure/commit-messages/rushed-release/scenario.md"
-  assert_line "$out" "$case_dir/prompt.md"
+  # git may spell the repository root differently (/private/var on macOS, C:/ on Windows).
+  printf '%s\n' "$out" | grep -q '/tests/pressure/commit-messages/rushed-release/scenario\.md$' || { echo "scenario.md not printed: $out" >&2; return 1; }
+  printf '%s\n' "$out" | grep -q '/plugins/acme/evals/commit-messages/pressure/rushed-release/prompt\.md$' || { echo "prompt.md not printed: $out" >&2; return 1; }
+  [ -f "$repo/tests/pressure/commit-messages/rushed-release/scenario.md" ] || { echo "scenario.md missing" >&2; return 1; }
   assert_file_contains "$repo/tests/pressure/commit-messages/rushed-release/scenario.md" '^## Compliant choice$'
   assert_file_contains "$case_dir/prompt.md" '^tags: \[commit-messages-pressure\]$'
   assert_file_contains "$case_dir/prompt.md" 'What do you do\?$'
