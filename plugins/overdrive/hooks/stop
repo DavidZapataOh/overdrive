@@ -107,6 +107,22 @@ decision() {
   D_TITLE=$TRIMMED
 }
 
+# users_words SOURCE: true when SOURCE quotes someone other than the agent:
+# "<quote>" — <who>, <date>, where no whole word of the attribution names an agent.
+users_words() {
+  local who w
+  case $1 in '"'*'" — '?*', '?*) ;; *) return 1 ;; esac
+  who=${1##*'" — '}
+  shopt -s nocasematch
+  for w in ${who//[!A-Za-z0-9]/ }; do
+    case $w in
+      claude | assistant | agent | overdrive | model | ai) shopt -u nocasematch; return 1 ;;
+    esac
+  done
+  shopt -u nocasematch
+  return 0
+}
+
 # in_base ROOT ID: true when entry ID is already in the decisions log at BASE, so it
 # predates this change.
 in_base() {
@@ -243,7 +259,7 @@ for root in "${roots[@]}"; do
     if [ -n "$id" ]; then
       if ! decision "$root" "$id" || [ "$D_STATUS" != active ]; then
         r="$r $id is not an active decision in .overdrive/decisions.md."
-      elif ! in_base "$root" "$id" && case $D_SOURCE in '"'*'" — '?*', '?*) false ;; *) true ;; esac; then
+      elif ! in_base "$root" "$id" && ! users_words "$D_SOURCE"; then
         # An entry written during this change counts only as the user's own words.
         r="$r $id is new in this change and its Source is not the user's quoted words (\"<quote>\" — <who>, <date>), so it cannot lower the lane."
       else

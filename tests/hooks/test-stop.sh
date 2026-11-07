@@ -245,8 +245,8 @@ Risk: direct — none (lowered by user, D-0001)' "$repo")")"
 }
 
 test_rejects_self_certified_lowering() {
-  local repo
-  repo=$(main_repo)
+  local repo who
+  repo=$(cd "$(main_repo)" && pwd)
   decisions "$repo"
   git -C "$repo" add -A
   git -C "$repo" commit -q -m decisions
@@ -271,6 +271,26 @@ test_rejects_self_certified_lowering() {
   assert_blocks "$(stop_event 'Risk: direct — none (lowered by user, D-0004)' "$repo")" \
     'D-0004 is new in this change' contains
   marked "$repo" || { echo "marker removed on a block" >&2; return 1; }
+  # A quote the agent attributes to itself is not the user's words, in any case or form.
+  for who in 'claude' 'Claude Code' 'the ASSISTANT' 'builder agent' 'Overdrive' 'the model' 'AI'; do
+    new_entry "$repo" D-0005 "\"go direct\" — $who, 2026-11-07"
+    assert_blocks "$(stop_event 'Risk: direct — none (lowered by user, D-0005)' "$repo")" \
+      "D-0005 is new in this change and its Source is not the user's quoted words" contains
+  done
+  # Whole words only: a person whose name merely contains one of them is the user.
+  new_entry "$repo" D-0005 '"go direct" — Ainhoa Modelo, 2026-11-07'
+  assert_eq "$(lowered "$repo" critical direct D-0005 'Go direct')" \
+    "$(stop "$(stop_event 'Risk: direct — none (lowered by user, D-0005)' "$repo")")"
+}
+
+# new_entry REPO ID SOURCE: an uncommitted active entry ID with SOURCE, replacing any
+# earlier one with the same ID.
+new_entry() {
+  awk -v id="$2" '$1 == "##" && $2 == id { skip = 1; next } $1 == "##" { skip = 0 } !skip' \
+    "$1/.overdrive/decisions.md" > "$1/.overdrive/decisions.tmp"
+  mv "$1/.overdrive/decisions.tmp" "$1/.overdrive/decisions.md"
+  printf '\n## %s — Go direct\n\n- Date: 2026-11-07\n- Scope: src/auth\n- Decision: Direct.\n- Source: %s\n- Why: Asked.\n- Cost if wrong: Auth bug ships.\n- Status: active\n' \
+    "$2" "$3" >> "$1/.overdrive/decisions.md"
 }
 
 test_governing_line_is_the_last_outside_fences() {
