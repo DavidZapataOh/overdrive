@@ -117,6 +117,7 @@ test_no_agent_references_plans_or_tasks() {
 }
 
 # bin/ is not on an agent's PATH, so an agent that runs the CLI takes its path from the brief.
+# shellcheck disable=SC2016  # backquotes are literal Markdown
 test_cli_users_take_the_path_from_the_brief() {
   for n in $names; do
     body "$agents_dir/$n.md" | grep -q '`overdrive [a-z]' || continue
