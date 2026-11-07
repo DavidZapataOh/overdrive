@@ -1,2 +1,7 @@
 # Frozen label files are hashed byte for byte on every OS.
 tests/risk/corpus/** text eol=lf
+# Scripts run under bash on every OS: a CRLF checkout breaks shebangs, sourced
+# libraries and the injected router text.
+plugins/overdrive/** text eol=lf
+tests/** text eol=lf
+tools/** text eol=lf
