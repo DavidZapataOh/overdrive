@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Stand-in for `claude plugin eval` in runner tests: records its arguments and writes the
+# result document the real command would write to the --json path.
+#
+# FAKE_LOG      file that receives one line per call with every argument
+# FAKE_SNAPSHOT file that receives the file listing of the target directory
+# FAKE_RESULT   document to copy to the --json path
+# FAKE_KEPT     when set, write a document with this many with-arm runs, each with a kept
+#               sandbox directory holding a trace like the real one
+# FAKE_NO_RESULT  omit the final result record from the traces
+# FAKE_EXIT     exit status (default 0)
+
+printf '%s ' "$@" >> "${FAKE_LOG:?}"
+printf '\n' >> "$FAKE_LOG"
+
+[ "$1 $2" = "plugin eval" ] || exit 99
+target=$3
+json=
+prev=
+for arg in "$@"; do
+  [ "$prev" = --json ] && json=$arg
+  prev=$arg
+done
+
+if [ -n "${FAKE_SNAPSHOT-}" ] && [ -d "$target" ]; then
+  (cd "$target" && find . -type f | LC_ALL=C sort) >> "$FAKE_SNAPSHOT"
+fi
+
+if [ -n "${FAKE_KEPT-}" ] && [ -n "$json" ]; then
+  runs=''
+  i=1
+  while [ "$i" -le "$FAKE_KEPT" ]; do
+    kept=$(mktemp -d "${TMPDIR:-/tmp}/claude-eval-XXXXXX")
+    mkdir -p "$kept/out" "$kept/sealed/home"
+    {
+      printf '{"type":"system","subtype":"init"}\n'
+      printf '{"type":"assistant","message":{"content":[{"type":"text","text":"Last assistant text %s"}]}}\n' "$i"
+      if [ -z "${FAKE_NO_RESULT-}" ]; then
+        printf '{"type":"result","subtype":"success","result":"Final message %s","total_cost_usd":0.1,"usage":{"input_tokens":4,"output_tokens":9}}\n' "$i"
+      fi
+    } > "$kept/out/trace.jsonl"
+    chmod 000 "$kept/sealed"
+    chmod 500 "$kept"
+    runs="$runs${runs:+,}{\"score\":1,\"error\":null,\"tracePath\":\"$kept/out/trace.jsonl\",\"graders\":[]}"
+    i=$((i + 1))
+  done
+  printf '{"schemaVersion":1,"claudeVersion":"2.1.319","startedAt":"2026-11-07T00:00:00.000Z","durationSeconds":1,"costUsd":0,"partial":false,"cases":[{"name":"x","dir":"evals/tdd/pressure/x","graders":[],"arms":{"with":[%s],"without":[]},"aggregates":{"score":1}}],"aggregates":{"casesTotal":1,"casesPassed":1,"overallScore":1}}\n' "$runs" > "$json"
+elif [ -n "${FAKE_RESULT-}" ] && [ -n "$json" ]; then
+  cp "$FAKE_RESULT" "$json"
+fi
+
+exit "${FAKE_EXIT:-0}"

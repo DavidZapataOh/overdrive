@@ -1,0 +1,114 @@
+name: evals
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/overdrive/**'
+      - 'tools/evals/**'
+      - '.github/workflows/evals.yml'
+  push:
+    tags:
+      - 'v*'
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Which suite to run for every skill that has cases
+        type: choice
+        options:
+          - smoke
+          - full
+        default: smoke
+
+concurrency:
+  group: evals-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.plan.outputs.enabled }}
+      tier: ${{ steps.plan.outputs.tier }}
+      skills: ${{ steps.plan.outputs.skills }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan
+        id: plan
+        env:
+          # Secrets are empty for forks and until the key is added to the repository.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TIER: ${{ inputs.tier }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            message='ANTHROPIC_API_KEY is not set, so the evals did not run. Run them locally with tools/evals/run-suite.sh.'
+            printf 'enabled=false\ntier=none\nskills=[]\n' >> "$GITHUB_OUTPUT"
+            echo "::notice title=Evals skipped::$message"
+            printf '### Evals skipped\n%s\n' "$message" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          case "$EVENT_NAME" in
+            pull_request) tier=smoke ;;
+            workflow_dispatch) tier=$INPUT_TIER ;;
+            *) tier=full ;;
+          esac
+          if [ "$EVENT_NAME" = pull_request ]; then
+            skills=$(bash tools/evals/changed-skills.sh "$BASE_SHA" "$HEAD_SHA")
+          else
+            skills=$(bash tools/evals/changed-skills.sh)
+          fi
+          matrix=$(printf '%s\n' "$skills" | jq -Rsc 'split("\n") | map(select(test("^[a-z0-9-]+$")))')
+          printf 'enabled=true\ntier=%s\nskills=%s\n' "$tier" "$matrix" >> "$GITHUB_OUTPUT"
+
+  evals:
+    name: evals (${{ matrix.skill }})
+    needs: plan
+    if: needs.plan.outputs.enabled == 'true' && needs.plan.outputs.skills != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'full' && 90 || 20 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        skill: ${{ fromJSON(needs.plan.outputs.skills) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install the shell sandbox
+        # Cases that grant Bash run under the OS sandbox, which needs these packages, and Ubuntu 24.04
+        # blocks the unprivileged user namespaces it relies on.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap socat
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Run the ${{ needs.plan.outputs.tier }} suite
+        shell: bash
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SKILL: ${{ matrix.skill }}
+          TIER: ${{ needs.plan.outputs.tier }}
+        run: bash tools/evals/run-suite.sh "$SKILL" --tier "$TIER" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: evals-${{ matrix.skill }}-${{ needs.plan.outputs.tier }}
+          path: |
+            plugins/overdrive/evals/results/
+            plugins/overdrive/evals/${{ matrix.skill }}/RESULTS.md
+          if-no-files-found: ignore
