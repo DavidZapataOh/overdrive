@@ -31,7 +31,7 @@ LANES=(direct standard critical)
 # else the commit the session's change started from, as the marker recorded it.
 classify() {
   local root=$1 refs name sym ohead='' omain='' omaster='' start='' range out rc=0 line lane=''
-  NEED=2 ITEMS=classification-failed WHY='' BASE=''
+  NEED=2 ITEMS=classification-failed WHY='' BASE='' MAPLESS=''
   refs=$(git -C "$root" for-each-ref --format='%(refname) %(symref)' refs/remotes/origin/HEAD \
     refs/remotes/origin/main refs/remotes/origin/master 2>/dev/null) || refs=''
   while read -r name sym; do
@@ -68,6 +68,7 @@ classify() {
       'lane standard') lane=1 ;;
       'lane critical') lane=2 ;;
       'Risk: '*' — '*) ITEMS=${line#*' — '} ;;
+      'note risk-map missing; propose one'*) MAPLESS=1 ;;
       'overdrive risk: classification failed: '*) WHY=${line#'overdrive risk: classification failed: '} ;;
     esac
   done <<<"$out"
@@ -296,6 +297,11 @@ for root in "${roots[@]}"; do
         r=''
       fi
     fi
+  fi
+  # The project map is proposed once, in the first change that finds none; the
+  # proposal file then turns the classifier's note into a reminder.
+  if [ -z "$r" ] && [ -n "$MAPLESS" ] && ! unchanged "$root"; then
+    r="This repository has no risk map yet. Load overdrive:risk-triage, write the proposed map to .overdrive/run/risk-map.proposed with the Write tool as its risk-map proposal reference says, show it in your reply, and end with the Risk line again."
   fi
   if [ -z "$r" ]; then
     rm -f -- "$root/$marker" "$root/${marker%.changed}.edited" 2>/dev/null

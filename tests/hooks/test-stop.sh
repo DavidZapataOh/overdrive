@@ -90,6 +90,9 @@ main_repo() {
   git -C "$repo" branch -q -M main
   git -C "$repo" update-ref refs/remotes/origin/main HEAD
   git -C "$repo" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+  # A project map, so only the tests about a missing one meet the proposal reminder.
+  commit_file "$repo" .overdrive/risk-map.conf 'pathtoken widgets widgets standard'
+  pushed "$repo"
   printf '%s\n' "$repo"
 }
 
@@ -351,6 +354,7 @@ test_committed_work_visible_without_remote_default() {
   # A remote whose default is develop, without origin/HEAD.
   repo=$(make_repo)
   git -C "$repo" branch -q -M develop
+  commit_file "$repo" .overdrive/risk-map.conf 'pathtoken widgets widgets standard'
   git -C "$repo" update-ref refs/remotes/origin/develop HEAD
   git -C "$repo" checkout -q -b feature
   mark "$repo"
@@ -599,4 +603,28 @@ test_blocks_missing_line_for_changes_status_cannot_see() {
   git -C "$repo" tag v9
   git -C "$repo" reset -q --hard HEAD~1
   assert_blocks "$(stop_event 'Done.' "$repo")" "$MISSING"
+}
+
+# The first change in a repository without a map closes with a proposal for one.
+test_blocks_once_for_a_missing_risk_map() {
+  local repo
+  repo=$(main_repo)
+  git -C "$repo" rm -q .overdrive/risk-map.conf
+  git -C "$repo" commit -q -m 'no map'
+  pushed "$repo"
+  mark "$repo"
+  # A turn that only planned changed nothing, so it is not asked for the map.
+  assert_allows "$(stop_event 'Plan for approval.
+Risk: critical — auth' "$repo")"
+  mark "$repo"
+  write_file "$repo" README.md 'receive'
+  assert_blocks "$(stop_event 'Fixed. Risk: x
+Risk: direct — none' "$repo")" 'no risk map yet' contains
+  marked "$repo" || { echo "marker removed on a block" >&2; return 1; }
+  # A continuation never blocks twice.
+  assert_allows "$(stop_event 'Risk: direct — none' "$repo" sess-1 true)"
+  # Once proposed, the change closes normally.
+  mark "$repo"
+  write_file "$repo" .overdrive/run/risk-map.proposed 'pathtoken ledger money'
+  assert_allows "$(stop_event 'Risk: direct — none' "$repo")"
 }

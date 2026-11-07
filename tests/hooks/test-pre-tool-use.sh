@@ -555,3 +555,17 @@ rm -rf src" "TMPDIR=/x $cli risk --worktree" "$cli riskier" "$cli risk --paths *
     case $out in *'"allow"'*) printf 'approved: %s\n' "$c" >&2; return 1 ;; esac
   done
 }
+
+# Neither the plugin's own checkout nor a project's runtime folder counts as a change.
+test_plugin_root_and_run_dir_are_not_marked() {
+  local repo pr
+  repo=$(main_repo)
+  pr=$(plugin_dir)
+  assert_allows "$(bash_event "cd $pr/skills && npm run x" "$pr")"
+  [ ! -e "$(dirname "$(dirname "$pr")")/.overdrive/run/markers/sess-1.changed" ] ||
+    { echo "plugin checkout marked" >&2; return 1; }
+  assert_allows "$(file_event Write "$repo/.overdrive/run/risk-map.proposed" "$repo")"
+  [ ! -e "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "run dir write marked" >&2; return 1; }
+  assert_allows "$(file_event Write "$repo/src/a.ts" "$repo")"
+  [ -f "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "real edit not marked" >&2; return 1; }
+}

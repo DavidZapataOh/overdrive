@@ -40,6 +40,8 @@ guard() {
 mark() {
   local run=$1/.overdrive/run s head data=${CLAUDE_PLUGIN_DATA:-}
   [ -n "$sid" ] || return 0
+  # Reading the plugin's own files (a skill's references) is not a change to a project.
+  case $plugin/ in "$1"/*) return 0 ;; esac
   s=${sid//[!A-Za-z0-9._-]/_}
   if [ -n "${2-}" ] && [ -d "$run/markers" ] && [ ! -f "$run/markers/$s.edited" ]; then
     { : > "$run/markers/$s.edited"; } 2>/dev/null
@@ -90,6 +92,8 @@ file_tool() {
     guard
     check_target "$_OD_PATH" '' ''
   fi
+  # Runtime state (a risk-map proposal, briefs, findings) ignores itself and is no change.
+  case $_OD_PATH in "$croot"/.overdrive/run/*) return 0 ;; esac
   mark "$croot" edit
 }
 
