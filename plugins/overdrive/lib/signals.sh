@@ -3,10 +3,12 @@
 # Sourced, never executed; needs common.sh, glob.sh and riskmap.sh. Callers export
 # LC_ALL=C so that bytes, not characters, are compared everywhere.
 #
-# A change record is one line: status<TAB>oldmode<TAB>newmode<TAB>path<TAB>oldpath.
-# status is git's raw letter (A C D M R T U X), "?" for an untracked file or "P" for a
-# path named by the caller; modes are git's (000000 when absent or unknown); oldpath is
-# set for renames and copies only. Paths are escaped so that any file name fits on one
+# A change record is one line: status<TAB>oldmode<TAB>newmode<TAB>path<TAB>oldpath<TAB>newsha.
+# status is git's raw letter (A C D M R T U X), "?" for an untracked file, "P" for a
+# path named by the caller or "L" for the target of a symlink (oldpath = the link);
+# modes are git's (000000 when absent or unknown); oldpath is set for renames, copies
+# and link targets; newsha is git's object id of the new side (zeros when git did not
+# hash it, empty when there is none). Paths are escaped so that any file name fits on one
 # line: backslash, tab, newline and carriage return become \\ \t \n \r.
 
 if [ -n "${_OD_SIGNALS_LOADED:-}" ]; then return 0; fi
@@ -39,84 +41,143 @@ _signals_escape() {
   _SIGNALS_ESC=$out
 }
 
-# _signals_raw FILE: print records for the output of git diff --raw -z in FILE, in
-# bash. Only used when a path holds a newline; see _signals_parse.
-_signals_raw() {
-  local h st om nm p q
-  while IFS= read -r -d '' h; do
-    case $h in :*) ;; *) return 1 ;; esac
-    h=${h#:}
-    om=${h%% *} h=${h#* }
-    nm=${h%% *} h=${h#* }
-    h=${h#* } h=${h#* }
-    st=${h:0:1}
-    IFS= read -r -d '' p || return 1
-    q=''
-    case $st in
-      R | C)
-        q=$p
-        IFS= read -r -d '' p || return 1
-        _signals_escape "$q"
-        q=$_SIGNALS_ESC
-        ;;
-    esac
-    _signals_escape "$p"
-    printf '%s\t%s\t%s\t%s\t%s\n' "$st" "$om" "$nm" "$_SIGNALS_ESC" "$q"
-  done < "$1"
-}
-
-# _signals_list STATUS FILE: print a record for each NUL-terminated path in FILE, in bash.
-_signals_list() {
-  local p
-  while IFS= read -r -d '' p; do
-    _signals_escape "$p"
-    printf '%s\t000000\t000000\t%s\t\n' "$1" "$_SIGNALS_ESC"
-  done < "$2"
-}
-
-# The same parsing as _signals_raw and _signals_list, for NUL-terminated fields turned
-# into lines. Fields are counted from each header's status, so a path that looks like a
-# header is still read as a path.
+# Git output is parsed by one awk program in two forms. With -z, NULs become newlines
+# when no path holds a newline (the output then has none at all): fields are counted
+# from each header's status, so a path that looks like a header is still read as a path.
+# Otherwise git is asked again without -z, where core.quotePath=true C-quotes every
+# unusual path into printable ASCII. NUL itself cannot pass through every awk.
 # shellcheck disable=SC2016
 _OD_SIGNALS_PARSE_AWK='
 # gsub replacements treat backslashes differently across awks, so escape by hand.
 function esc(s,    out, i, n, c) {
-  if (!index(s, "\\") && !index(s, "\t") && !index(s, "\r")) return s
+  if (!index(s, "\\") && !index(s, "\t") && !index(s, "\n") && !index(s, "\r")) return s
   out = ""; n = length(s)
   for (i = 1; i <= n; i++) {
     c = substr(s, i, 1)
-    if (c == "\\") c = "\\\\"; else if (c == "\t") c = "\\t"; else if (c == "\r") c = "\\r"
+    if (c == "\\") c = "\\\\"
+    else if (c == "\t") c = "\\t"
+    else if (c == "\n") c = "\\n"
+    else if (c == "\r") c = "\\r"
     out = out c
   }
   return out
 }
-mode == "list" { printf "%s\t000000\t000000\t%s\t\n", status, esc($0); next }
-want == 0 {
-  if (substr($0, 1, 1) != ":" || split(substr($0, 2), h, " ") != 5) { bad = 1; exit }
-  om = h[1]; nm = h[2]; st = substr(h[5], 1, 1)
-  want = (st == "R" || st == "C") ? 2 : 1; old = ""
+
+function unquote(s,    out, i, n, c) {
+  if (substr(s, 1, 1) != "\"") return s
+  s = substr(s, 2, length(s) - 2); out = ""; n = length(s)
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1)
+    if (c == "\\") {
+      c = substr(s, ++i, 1)
+      if (c ~ /[0-7]/) {
+        c = sprintf("%c", c * 64 + substr(s, i + 1, 1) * 8 + substr(s, i + 2, 1))
+        i += 2
+      }
+      else if (c == "t") c = "\t"; else if (c == "n") c = "\n"; else if (c == "r") c = "\r"
+      else if (c == "a") c = "\007"; else if (c == "b") c = "\010"; else if (c == "f") c = "\014"
+      else if (c == "v") c = "\013"
+    }
+    out = out c
+  }
+  return out
+}
+
+function header(s) {
+  if (substr(s, 1, 1) != ":" || split(substr(s, 2), h, " ") != 5) { bad = 1; exit }
+  om = h[1]; nm = h[2]; sha = h[4]; st = substr(h[5], 1, 1)
+}
+
+# Symlinks are judged by their target as well; untracked files have no mode here.
+function record(path, old) {
+  printf "%s\t%s\t%s\t%s\t%s\t%s\n", st, om, nm, esc(path), esc(old), sha
+  if ((nm == "120000" && st != "D") || st == "?") printf "%s\t%s\n", (sha == "" ? "-" : sha), esc(path) > links
+}
+
+BEGIN { FS = "\t" }
+mode == "list" { st = status; om = nm = "000000"; sha = ""; record(quoted ? unquote($0) : $0, ""); next }
+quoted {
+  header($1)
+  if (st == "R" || st == "C") record(unquote($3), unquote($2)); else record(unquote($2), "")
   next
 }
-want == 2 { old = esc($0); want = 1; next }
-{ printf "%s\t%s\t%s\t%s\t%s\n", st, om, nm, esc($0), old; want = 0 }
+want == 0 { header($0); want = (st == "R" || st == "C") ? 2 : 1; old = ""; next }
+want == 2 { old = $0; want = 1; next }
+{ record($0, old); want = 0 }
 END { if (bad || want) exit 1 }
 '
 
-# _signals_parse raw|list STATUS FILE: print the records of a -z git output. NUL cannot
-# pass through every awk, so NULs become newlines when no path holds a newline (the
-# file has none at all), and bash reads the fields otherwise. A bash read loop is too
-# slow for the common case: reading 10,000 paths takes seconds.
-_signals_parse() {
-  local lines
-  [ -s "$3" ] || return 0
-  lines=$(wc -l < "$3") || return
+# _signals_git raw|list STATUS DIR WORK SUBCOMMAND ARG...: run a git listing and print
+# its records. Link candidates go to WORK/links, git's stderr to WORK/git.err.
+_signals_git() {
+  local kind=$1 status=$2 dir=$3 work=$4 sub=$5 lines
+  shift 5
+  git --no-pager -c core.quotePath=true -C "$dir" "$sub" -z "$@" > "$work/git.out" 2> "$work/git.err" || return
+  lines=$(wc -l < "$work/git.out") || return
   if [ "$lines" -eq 0 ]; then
-    tr '\000' '\n' < "$3" | awk -v mode="$1" -v status="$2" "$_OD_SIGNALS_PARSE_AWK"
-  elif [ "$1" = raw ]; then
-    _signals_raw "$3"
+    tr '\000' '\n' < "$work/git.out" |
+      awk -v mode="$kind" -v status="$status" -v quoted=0 -v links="$work/links" "$_OD_SIGNALS_PARSE_AWK"
   else
-    _signals_list "$2" "$3"
+    git --no-pager -c core.quotePath=true -C "$dir" "$sub" "$@" > "$work/git.out" 2> "$work/git.err" || return
+    awk -v mode="$kind" -v status="$status" -v quoted=1 -v links="$work/links" \
+      "$_OD_SIGNALS_PARSE_AWK" < "$work/git.out"
   fi
+}
+
+# _signals_unescape TEXT: set _SIGNALS_ESC to a record path turned back into the name.
+_signals_unescape() {
+  local s=$1 out='' c
+  case $s in *"\\"*) ;; *) _SIGNALS_ESC=$s; return 0 ;; esac
+  while [ -n "$s" ]; do
+    c=${s:0:1}
+    s=${s:1}
+    if [ "$c" = "\\" ]; then
+      c=${s:0:1}
+      s=${s:1}
+      case $c in
+        t) c=$_SIGNALS_TAB ;;
+        n) c=$_SIGNALS_NL ;;
+        r) c=$_SIGNALS_CR ;;
+      esac
+    fi
+    out=$out$c
+  done
+  _SIGNALS_ESC=$out
+}
+
+# _signals_links DIR WORK: print an "L" record for the target of each link candidate,
+# read from the object when git hashed it and from the working tree otherwise. The
+# target is resolved against the link's directory, so it names a repository path.
+_signals_links() {
+  local dir=$1 work=$2 sha p name target base
+  [ -s "$work/links" ] || return 0
+  while IFS=$_SIGNALS_TAB read -r sha p; do
+    _signals_unescape "$p"
+    name=$_SIGNALS_ESC
+    # A zero id is a working tree file git did not hash; "-" is an untracked file.
+    case $sha in
+      - | *[!0]*) ;;
+      *) sha=- ;;
+    esac
+    if [ "$sha" != - ]; then
+      target=$(git -C "$dir" cat-file blob "$sha" 2> "$work/git.err") || return
+    elif [ -L "$dir/$name" ]; then
+      target=$(readlink "$dir/$name") || return
+    else
+      continue
+    fi
+    case $target in
+      /*) ;;
+      *)
+        base=''
+        case $name in */*) base=${name%/*}/ ;; esac
+        _od_normalize_path "$base$target"
+        target=$_OD_PATH
+        ;;
+    esac
+    _signals_escape "$target"
+    printf 'L\t000000\t000000\t%s\t%s\t\n' "$_SIGNALS_ESC" "$p"
+  done < "$work/links"
 }
 
 # signals_changes GIT_DIR WORK MODE [ARG...]: print the change records of one mode.
@@ -134,21 +195,20 @@ signals_changes() {
     signals_named_paths "$@"
     return
   fi
+  : > "$work/links"
   # Options that change the raw format or the paths it prints are pinned, so user
   # configuration cannot alter what is classified.
-  set -- --no-pager -C "$dir" diff --raw -z -M --no-color --no-ext-diff --no-relative \
-    --ignore-submodules=none "$@"
+  set -- diff --raw --no-abbrev -M --no-color --no-ext-diff --no-relative --ignore-submodules=none "$@"
   case $mode in
-    diff) git "$@" -- > "$work/git.out" 2> "$work/git.err" || return ;;
-    staged) git "$@" --cached -- > "$work/git.out" 2> "$work/git.err" || return ;;
-    worktree) git "$@" HEAD -- > "$work/git.out" 2> "$work/git.err" || return ;;
+    diff) _signals_git raw '' "$dir" "$work" "$@" -- || return ;;
+    staged) _signals_git raw '' "$dir" "$work" "$@" --cached -- || return ;;
+    worktree)
+      _signals_git raw '' "$dir" "$work" "$@" HEAD -- || return
+      _signals_git list '?' "$dir" "$work" ls-files -o --exclude-standard || return
+      ;;
     *) return 2 ;;
   esac
-  _signals_parse raw '' "$work/git.out" || return
-  if [ "$mode" = worktree ]; then
-    git -C "$dir" ls-files -o --exclude-standard -z > "$work/git.out" 2> "$work/git.err" || return
-    _signals_parse list '?' "$work/git.out"
-  fi
+  _signals_links "$dir" "$work"
 }
 
 # signals_named_paths P...: print a record for each path named by the caller.
@@ -156,7 +216,7 @@ signals_named_paths() {
   local p
   for p in "$@"; do
     _signals_escape "$p"
-    printf 'P\t000000\t000000\t%s\t\n' "$_SIGNALS_ESC"
+    printf 'P\t000000\t000000\t%s\t\t\n' "$_SIGNALS_ESC"
   done
 }
 
@@ -228,14 +288,36 @@ function add(s,    i, n, k, r, t, list) {
   shown[i] = s
   raw[i] = unescape(s)
   if (ntok == 0 || is_doc(raw[i])) return i
-  n = split(tolower(raw[i]), seg, "[/._-]")
+  n = split(raw[i], seg, "[/._-]")
   for (k = 1; k <= n; k++) {
-    t = seg[k]
-    if (!(t in tok_rules)) continue
-    split(tok_rules[t], list, " ")
-    for (r = 1; r in list; r++) hit(i, tok_item[list[r]], tok_lane[list[r]], tok_src[list[r]])
+    token(i, tolower(seg[k]))
+    if (seg[k] ~ /[a-z][A-Z]|[A-Z][A-Z][a-z]|[A-Za-z][0-9]|[0-9][A-Za-z]/) words(i, seg[k])
   }
   return i
+}
+
+function token(i, t,    r, list) {
+  if (!(t in tok_rules)) return
+  split(tok_rules[t], list, " ")
+  for (r = 1; r in list; r++) hit(i, tok_item[list[r]], tok_lane[list[r]], tok_src[list[r]])
+}
+
+# words(i, s): the words of an identifier-like segment, split where a lowercase letter
+# meets an uppercase one, before the last capital of a run followed by lowercase
+# (OAuthToken: O Auth Token) and between letters and digits (oauth2: oauth 2).
+function words(i, s,    n, k, c, q, w, kind, prev) {
+  n = length(s); w = ""; prev = ""
+  for (k = 1; k <= n; k++) {
+    c = substr(s, k, 1)
+    kind = (c ~ /[a-z]/) ? "l" : (c ~ /[A-Z]/) ? "u" : (c ~ /[0-9]/) ? "d" : "o"
+    q = (k < n) ? substr(s, k + 1, 1) : ""
+    if (w != "" && ((prev == "l" && kind == "u") || (prev == "u" && kind == "u" && q ~ /[a-z]/) ||
+        (prev == "d" && (kind == "l" || kind == "u")) || ((prev == "l" || prev == "u") && kind == "d"))) {
+      token(i, tolower(w)); w = ""
+    }
+    w = w c; prev = kind
+  }
+  if (w != "") token(i, tolower(w))
 }
 
 BEGIN { FS = "\t" }

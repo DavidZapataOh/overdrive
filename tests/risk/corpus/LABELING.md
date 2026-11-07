@@ -21,7 +21,7 @@ These labels are the ground truth for the deterministic risk classifier. They ar
 | Item | Lane | Signals |
 |---|---|---|
 | `data-migration` | critical | paths `**/migrations/**`, `**/*.sql`, `**/schema.prisma`, `**/drizzle/**`, `**/alembic/**`; added lines `DROP TABLE`, `DROP COLUMN`, `ALTER TABLE`, `TRUNCATE`, `DELETE FROM` |
-| `auth` | critical | path tokens `auth authn authz session sessions permission permissions rbac acl oauth jwt login logout password passwords credential credentials`; added lines `bcrypt`, `argon2`, `verifyToken`, `getServerSession` |
+| `auth` | critical | path tokens `auth authn authz authentication authorization session sessions permission permissions rbac acl oauth jwt login logout password passwords credential credentials`; added lines `bcrypt`, `argon2`, `verifyToken`, `getServerSession` |
 | `tenant-isolation` | critical | path tokens `tenant tenants tenancy rls`; added lines `ROW LEVEL SECURITY`, `CREATE POLICY`, `tenant_id`, `tenantId` |
 | `money` | critical | path tokens `billing payment payments checkout invoice invoices invoicing subscription subscriptions refund refunds payout payouts charge charges` |
 | `secrets` | critical | paths `.env`, `.env.*`, `**/*.pem`, `**/*.key`, `**/*secret*`, `**/credentials*`; added lines matching `AKIA[0-9A-Z]{16}`, `sk_live_[0-9a-zA-Z]{10,}`, `-----BEGIN [A-Z ]*PRIVATE KEY-----`, `gh[pousr]_[A-Za-z0-9]{36}`, `xox[baprs]-`, `(api[_-]?key|secret|token|password)[[:space:]]*[:=][[:space:]]*["'][^"']{12,}` |
@@ -37,7 +37,7 @@ These labels are the ground truth for the deterministic risk classifier. They ar
 | project map items | from map | `.overdrive/risk-map.conf` rules |
 | `classification-failed` | critical | any internal error, invalid map, missing range, unborn HEAD |
 
-Path tokens match whole segments split on `/ . _ -` (case-insensitive). No items → `direct`. Lane = highest item.
+Path tokens match whole segments split on `/ . _ -` (case-insensitive), and the words of a segment split at lowercase-to-uppercase boundaries, before the last capital of a capital run followed by lowercase, and between letters and digits (`PaymentService` → payment, service; `OAuthToken` → o, auth, token; `JWTSecret` → jwt, secret; `oauth2` → oauth, 2). No items → `direct`. Lane = highest item.
 
 Content case rules: the SQL and concurrency phrases (`DROP TABLE`, `DROP COLUMN`, `ALTER TABLE`, `TRUNCATE`, `DELETE FROM`, `FOR UPDATE`, `SKIP LOCKED`, `SERIALIZABLE`, `isolation level`, `ROW LEVEL SECURITY`, `CREATE POLICY`) match case-insensitively, because SQL keywords are case-insensitive. Identifiers (`bcrypt`, `argon2`, `verifyToken`, `getServerSession`, `tenant_id`, `tenantId`, `advisory_lock`, `pg_advisory`, `Mutex`, `Semaphore`, `Atomics.`) match case-sensitively, as written. Secret patterns are regular expressions and match exactly as written.
 
@@ -89,6 +89,7 @@ cd tests/risk/corpus && find synthetic oss.tsv -type f | LC_ALL=C sort | xargs s
 ### Relabel log
 
 - `lowercase-prose-is-not-concurrency` replaced by `update-form-prose-is-not-concurrency`, and `lowercase-for-update-is-concurrency` and `truncate-lowercase-is-data-migration` added: SQL and concurrency phrases match case-insensitively, so lowercase `for update` in prose is no longer a valid negative.
+- policy: camelCase/digit token split, added authentication/authorization. Path tokens are also matched on the words of camelCase and letter/digit segments, and `authentication` and `authorization` join the `auth` tokens. No existing label changed; cases `camel-case-*`, `digit-split-oauth2`, `authentication-and-authorization-dirs`, `author-component-is-not-auth` and `charger-component-is-not-money` were added and SHA256SUMS regenerated.
 
 ### Pending conflicts
 

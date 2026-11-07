@@ -153,14 +153,17 @@ test_quote_tab_and_newline_paths() {
   git -C "$repo" mv "src/billing/a${tab}b.ts" "src/misc/a${tab}b.ts"
   write_file "$repo" "src/session/line${nl}break.ts" 'x'
   write_file "$repo" 'src/tenants/back\slash.ts' 'y'
+  write_file "$repo" 'src/checkout/páginas "de" cobro.ts' 'x'
   risk "$repo" --worktree
   assert_eq 0 "$rc" "exit code"
+  assert_line "$out" 'item money critical floor path src/checkout/páginas "de" cobro.ts'
   assert_line "$out" 'item auth critical floor path src/session/line\nbreak.ts'
   assert_line "$out" 'item money critical floor path src/billing/a\tb.ts'
   assert_line "$out" 'item tenant-isolation critical floor path src/tenants/back\\slash.ts'
   stage_all "$repo"
   git -C "$repo" commit -q -m newline
   risk "$repo" --diff HEAD~1..HEAD
+  assert_line "$out" 'item money critical floor path src/checkout/páginas "de" cobro.ts'
   assert_line "$out" 'item auth critical floor path src/session/line\nbreak.ts'
   assert_line "$out" 'item money critical floor path src/billing/a\tb.ts'
   assert_line "$out" 'item tenant-isolation critical floor path src/tenants/back\\slash.ts'
@@ -401,4 +404,92 @@ test_usage_errors_exit_64() {
   assert_exit 64 overdrive risk --repo "$repo" --diff
   assert_exit 64 overdrive risk --repo "$repo" --diff HEAD
   assert_exit 64 overdrive risk --repo "$repo" --paths
+}
+
+test_unborn_head_fails_closed() {
+  local repo=$PWD/unborn mode
+  git init -q "$repo"
+  write_file "$repo" src/a.ts 'x'
+  git -C "$repo" add -A
+  for mode in --staged --worktree '--paths src/a.ts' '--diff HEAD..HEAD'; do
+    # shellcheck disable=SC2086
+    risk "$repo" $mode
+    assert_eq 3 "$rc" "exit code for $mode"
+    assert_line "$out" "lane critical"
+    assert_line "$out" "item classification-failed critical failure no commits yet"
+    assert_eq "Risk: critical — classification-failed" "$(printf '%s\n' "$out" | tail -n 1)"
+  done
+}
+
+test_paths_relative_to_cwd_inside_repo() {
+  local repo
+  repo=$(make_repo)
+  mkdir -p "$repo/src/billing"
+  # From a subdirectory a relative path may be written either way; both are judged.
+  out=$(cd "$repo/src/billing" && overdrive risk --paths fee.ts src/auth/x.ts)
+  assert_line "$out" "item money critical floor path src/billing/fee.ts"
+  assert_line "$out" "item auth critical floor path src/auth/x.ts"
+  out=$(cd "$repo/src/billing" && overdrive risk --repo "$repo" --paths fee.ts)
+  assert_line "$out" "item money critical floor path src/billing/fee.ts"
+}
+
+test_camel_case_and_digit_tokens() {
+  local repo
+  repo=$(make_repo)
+  risk "$repo" --paths src/PaymentService.ts src/AuthController.ts src/userSessions.ts \
+    src/sessionStore.ts src/oauth2/cb.ts src/authentication/a.ts src/authorization/b.ts \
+    src/OAuthToken.ts src/JWTSecret.ts src/Author.tsx src/Charger.ts src/Authors2.ts
+  assert_line "$out" "item money critical floor path src/PaymentService.ts"
+  for p in AuthController.ts userSessions.ts sessionStore.ts oauth2/cb.ts authentication/a.ts \
+    authorization/b.ts OAuthToken.ts JWTSecret.ts; do
+    assert_line "$out" "item auth critical floor path src/$p"
+  done
+  assert_no_line "$out" "path src/(Author.tsx|Charger.ts|Authors2.ts)$"
+}
+
+test_symlink_target_is_evaluated() {
+  if windows_fs; then return 0; fi
+  local repo
+  repo=$(make_repo)
+  mkdir -p "$repo/src/misc" "$repo/src/billing"
+  ln -s ../billing/fee.ts "$repo/src/misc/link.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "item money critical floor path src/billing/fee.ts"
+  git -C "$repo" add -A
+  risk "$repo" --staged
+  assert_line "$out" "item money critical floor path src/billing/fee.ts"
+  git -C "$repo" commit -q -m link
+  risk "$repo" --diff HEAD~1..HEAD
+  assert_line "$out" "item money critical floor path src/billing/fee.ts"
+  # A changed target counts too, through the working tree.
+  ln -sfn ../auth/x.ts "$repo/src/misc/link.ts"
+  risk "$repo" --worktree
+  assert_line "$out" "item auth critical floor path src/auth/x.ts"
+  git -C "$repo" clone -q --bare "$repo" "$PWD/bare.git"
+  risk "$PWD/bare.git" --diff HEAD~1..HEAD
+  assert_eq 0 "$rc" "exit code: $(cat err)"
+  assert_line "$out" "item money critical floor path src/billing/fee.ts"
+}
+
+test_paths_double_dash_ends_options() {
+  local repo
+  repo=$(make_repo)
+  risk "$repo" --paths src/a.ts -- --odd/auth.ts --staged
+  assert_eq 0 "$rc" "exit code"
+  assert_line "$out" "item auth critical floor path --odd/auth.ts"
+  risk "$repo" --paths -- --billing.ts
+  assert_line "$out" "item money critical floor path --billing.ts"
+}
+
+test_intent_alone_fails_closed_until_evaluated() {
+  local repo
+  repo=$(make_repo)
+  risk "$repo" --intent "ajusta el cobro"
+  assert_eq 3 "$rc" "exit code"
+  assert_line "$out" "item classification-failed critical failure intent not evaluated"
+  assert_line "$out" "note intent not evaluated"
+  risk "$repo" --intent "ajusta el cobro" --paths docs/x.md
+  assert_eq 0 "$rc" "exit code"
+  assert_line "$out" "note intent not evaluated"
+  assert_line "$out" "lane direct"
 }

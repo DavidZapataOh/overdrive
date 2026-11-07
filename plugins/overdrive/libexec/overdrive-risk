@@ -14,12 +14,15 @@ Modes (combine freely; at least one, or --intent):
   --diff A..B | --diff A...B   committed changes in a range (works in a bare repository)
   --staged                     the index against HEAD
   --worktree                   tracked changes against HEAD plus untracked files
-  --paths P...                 paths named before any change exists, relative to the
-                               repository root; takes every argument up to the next --option
+  --paths P...                 paths named before any change exists; takes every argument
+                               up to the next --option, or every one after a lone --.
+                               Relative paths are read from the repository root and, below
+                               it, from the current directory too
 
   --repo DIR    repository to classify (default: the one containing the current directory)
   --map FILE    project risk map (default: .overdrive/risk-map.conf of the repository)
-  --intent TEXT the request, before any work starts
+  --intent TEXT the request, before any work starts (not evaluated yet: alone it fails
+                closed, with a mode it adds a note)
 
 Output: lane, item, note and next lines, then "Risk: <lane> — <items | none>".
 Exit: 0 classified, 3 classification failed (reported as critical), 64 usage error.
@@ -34,11 +37,26 @@ usage_error() {
 
 next_critical='Full TDD plan approved by the user; per-task critical review and final review.'
 
+notes=''
+
+# add_note TEXT: a note line for the output, kept in the order added.
+add_note() {
+  notes=$notes${notes:+$_OD_NL}$1
+}
+printf -v _OD_NL '\n'
+
 # fail_closed REASON: the classification failed, so the change is critical.
 fail_closed() {
+  local n rest=$notes
   printf 'overdrive risk: classification failed: %s\n' "$1" >&2
-  printf 'lane critical\nitem classification-failed critical failure %s\nnext %s\nRisk: critical — classification-failed\n' \
-    "$1" "$next_critical"
+  printf 'lane critical\nitem classification-failed critical failure %s\n' "$1"
+  while [ -n "$rest" ]; do
+    n=${rest%%"$_OD_NL"*}
+    printf 'note %s\n' "$n"
+    [ "$n" != "$rest" ] || break
+    rest=${rest#*"$_OD_NL"}
+  done
+  printf 'next %s\nRisk: critical — classification-failed\n' "$next_critical"
   exit 3
 }
 
@@ -74,7 +92,14 @@ while [ "$#" -gt 0 ]; do
       shift
       n=${#paths[@]}
       while [ "$#" -gt 0 ]; do
-        case $1 in --*) break ;; esac
+        case $1 in
+          --)
+            shift
+            while [ "$#" -gt 0 ]; do paths+=("$1"); shift; done
+            break
+            ;;
+          --*) break ;;
+        esac
         paths+=("$1")
         shift
       done
@@ -86,6 +111,8 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ -n "$have_mode" ] || [ -n "$intent" ] || usage_error "give a mode or --intent"
+# Request text is not read yet, so it can never make a change look safer than it is.
+[ -z "$intent" ] || add_note "intent not evaluated"
 
 lib=${OVERDRIVE_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib
 # shellcheck source=../lib/common.sh
@@ -131,8 +158,9 @@ fi
 if [ -z "$top" ] && { [ -n "$staged" ] || [ -n "$worktree" ]; }; then
   fail_closed "no working tree for --staged or --worktree"
 fi
+# Without a first commit there is nothing to compare against, in any mode.
+git -C "$gitdir" rev-parse -q --verify 'HEAD^{commit}' >/dev/null 2>&1 || fail_closed "no commits yet"
 
-notes=''
 if [ -z "$map" ]; then
   if [ -n "$top" ]; then
     [ ! -e "$top/.overdrive/risk-map.conf" ] || map=$top/.overdrive/risk-map.conf
@@ -149,8 +177,9 @@ if [ -z "$map" ]; then
       map=$work/map.conf
     fi
   fi
-  [ -n "$map" ] || notes='risk-map missing'
+  [ -n "$map" ] || add_note 'risk-map missing'
 fi
+[ -n "$have_mode" ] || fail_closed "intent not evaluated"
 
 rc=0
 signals_rules "$lib/floors.conf" ${map:+"$map"} > "$work/rules" || rc=$?
@@ -176,6 +205,21 @@ fi
 if [ "${#paths[@]}" -gt 0 ]; then
   named=()
   physical=''
+  # A relative path written from a directory below the root is judged both as relative to
+  # that directory and as relative to the root: the extra spelling can only add items.
+  below=''
+  if [ -n "$top" ]; then
+    _od_posix_path "$PWD"
+    _od_normalize_path "$_OD_PATH"
+    cwd=$_OD_PATH
+    if [ "${cwd#"$top"/}" != "$cwd" ]; then
+      below=${cwd#"$top"/}
+    else
+      physical=$(cd "$top" && pwd -P) || physical=$top
+      cwd=$(pwd -P)
+      [ "${cwd#"$physical"/}" = "$cwd" ] || below=${cwd#"$physical"/}
+    fi
+  fi
   for p in "${paths[@]}"; do
     _od_posix_path "$p"
     _od_normalize_path "$_OD_PATH"
@@ -187,6 +231,12 @@ if [ "${#paths[@]}" -gt 0 ]; then
         elif [ -n "$top" ]; then
           [ -n "$physical" ] || physical=$(cd "$top" && pwd -P) || physical=$top
           [ "${p#"$physical"/}" = "$p" ] || p=${p#"$physical"/}
+        fi
+        ;;
+      *)
+        if [ -n "$below" ]; then
+          _od_normalize_path "$below/$p"
+          named+=("$_OD_PATH")
         fi
         ;;
     esac
@@ -223,7 +273,8 @@ NOTES=$notes NEXT_CRITICAL=$next_critical LC_ALL=C awk -F '\t' '
     if (NR == 0) { lane = "direct"; risk = "none" }
     print "lane " lane
     for (i = 1; i <= NR; i++) print out[i]
-    if (ENVIRON["NOTES"] != "") print "note " ENVIRON["NOTES"]
+    k = split(ENVIRON["NOTES"], note, "\n")
+    for (i = 1; i <= k; i++) print "note " note[i]
     print "next " next_text[lane]
     print "Risk: " lane " — " risk
   }
