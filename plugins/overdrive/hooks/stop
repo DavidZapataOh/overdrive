@@ -300,7 +300,11 @@ for root in "${roots[@]}"; do
   fi
   # The project map is proposed once, in the first change that finds none; the
   # proposal file then turns the classifier's note into a reminder.
-  if [ -z "$r" ] && [ -n "$MAPLESS" ] && ! unchanged "$root"; then
+  if [ -z "$r" ] && [ -n "$MAPLESS" ] && [ ! -e "$root/${marker%.changed}.map-asked" ] &&
+    ! unchanged "$root"; then
+    # Asked once per session: a continuation drops the block, and asking again on every
+    # later turn would trap the session.
+    { : > "$root/${marker%.changed}.map-asked"; } 2>/dev/null
     r="This repository has no risk map yet. Load overdrive:risk-triage, write the proposed map to .overdrive/run/risk-map.proposed with the Write tool as its risk-map proposal reference says, show it in your reply, and end with the Risk line again."
   fi
   if [ -z "$r" ]; then

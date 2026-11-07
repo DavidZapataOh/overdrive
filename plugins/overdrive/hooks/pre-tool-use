@@ -23,6 +23,17 @@ fi
 . "$plugin/lib/path.sh" 2>/dev/null || exit 0
 
 PINS_FILE=.overdrive/run/pins
+
+# The plugin's own files (a skill's references) are not a project's change, even when the
+# plugin sits inside the repository (vendored, or a checkout under development).
+_od_posix_path "$plugin"
+own=${_OD_PATH%/}
+
+# in_plugin PATH: true when PATH is the plugin directory or inside it.
+in_plugin() {
+  case $1/ in "$own"/*) return 0 ;; esac
+  return 1
+}
 US=$'\037'
 
 # guard: load the checks the fast path does not need.
@@ -40,8 +51,6 @@ guard() {
 mark() {
   local run=$1/.overdrive/run s head data=${CLAUDE_PLUGIN_DATA:-}
   [ -n "$sid" ] || return 0
-  # Reading the plugin's own files (a skill's references) is not a change to a project.
-  case $plugin/ in "$1"/*) return 0 ;; esac
   s=${sid//[!A-Za-z0-9._-]/_}
   if [ -n "${2-}" ] && [ -d "$run/markers" ] && [ ! -f "$run/markers/$s.edited" ]; then
     { : > "$run/markers/$s.edited"; } 2>/dev/null
@@ -86,6 +95,7 @@ file_tool() {
     /* | [A-Za-z]:*) ;;
     *) [ -n "$cwd" ] || return 0; absolute "$cwd" "$path"; _OD_PATH=$ABS ;;
   esac
+  ! in_plugin "$_OD_PATH" || return 0
   _od_find_root "$_OD_PATH" || return 0
   croot=$_OD_ROOT
   if [ -f "$croot/$PINS_FILE" ]; then
@@ -254,7 +264,7 @@ bash_tool() {
       case $cmd in *cd* | *-C* | *-c* | *eval*) need=1 ;; esac
     fi
   fi
-  [ -n "$ro" ] || [ -z "$croot" ] || roots=$croot$'\n'
+  [ -n "$ro" ] || [ -z "$croot" ] || in_plugin "$cwd" || roots=$croot$'\n'
   if [ -n "$need" ]; then
     guard
     scan
@@ -277,7 +287,7 @@ scan() {
     case ${f[0]} in
       D)
         # Every repository the command runs in, once each.
-        if [ -n "$ro" ] || ! _od_find_root "$dir"; then continue; fi
+        if [ -n "$ro" ] || in_plugin "$dir" || ! _od_find_root "$dir"; then continue; fi
         case $'\n'$roots in *$'\n'"$_OD_ROOT"$'\n'*) ;; *) roots=$roots$_OD_ROOT$'\n' ;; esac
         ;;
       P) check_push "$dir" "${f[@]:2}" ;;

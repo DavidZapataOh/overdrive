@@ -621,8 +621,10 @@ Risk: critical — auth' "$repo")"
   assert_blocks "$(stop_event 'Fixed. Risk: x
 Risk: direct — none' "$repo")" 'no risk map yet' contains
   marked "$repo" || { echo "marker removed on a block" >&2; return 1; }
-  # A continuation never blocks twice.
+  # A continuation never blocks twice, and the map is asked for once per session.
   assert_allows "$(stop_event 'Risk: direct — none' "$repo" sess-1 true)"
+  write_file "$repo" README.md 'receive it'
+  assert_allows "$(stop_event 'Risk: direct — none' "$repo")"
   # Once proposed, the change closes normally.
   mark "$repo"
   write_file "$repo" .overdrive/run/risk-map.proposed 'pathtoken ledger money'

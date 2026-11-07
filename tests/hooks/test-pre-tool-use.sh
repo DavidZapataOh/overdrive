@@ -569,3 +569,30 @@ test_plugin_root_and_run_dir_are_not_marked() {
   assert_allows "$(file_event Write "$repo/src/a.ts" "$repo")"
   [ -f "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "real edit not marked" >&2; return 1; }
 }
+
+# A repository that vendors the plugin is still a project: only paths inside the plugin
+# directory are the plugin's own.
+test_repo_containing_the_plugin_is_still_marked() {
+  local repo p
+  repo=$(main_repo)
+  mkdir -p "$repo/vendor"
+  cp -R "$(plugin_dir)" "$repo/vendor/overdrive"
+  p=$repo/vendor/overdrive
+  printf '%s' "$(file_event Write "$repo/src/auth.ts" "$repo")" |
+    CLAUDE_PLUGIN_ROOT=$p CLAUDE_PROJECT_DIR=/nonexistent "$p/hooks/pre-tool-use" >/dev/null
+  [ -f "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "edit outside the plugin not marked" >&2; return 1; }
+  rm -rf "$repo/.overdrive/run/markers"
+  printf '%s' "$(file_event Write "$p/skills/x.md" "$repo")" |
+    CLAUDE_PLUGIN_ROOT=$p CLAUDE_PROJECT_DIR=/nonexistent "$p/hooks/pre-tool-use" >/dev/null
+  printf '%s' "$(bash_event "cd $p/skills && npm run x" "$p")" |
+    CLAUDE_PLUGIN_ROOT=$p CLAUDE_PROJECT_DIR=/nonexistent "$p/hooks/pre-tool-use" >/dev/null
+  [ ! -e "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "plugin's own files marked" >&2; return 1; }
+  # The same plugin root spelled the Windows way still matches.
+  case $OSTYPE in
+    msys* | cygwin*)
+      printf '%s' "$(file_event Write "$p/skills/x.md" "$repo")" |
+        CLAUDE_PLUGIN_ROOT=$(cygpath -w "$p") CLAUDE_PROJECT_DIR=/nonexistent "$p/hooks/pre-tool-use" >/dev/null
+      [ ! -e "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "Windows-spelled root not matched" >&2; return 1; }
+      ;;
+  esac
+}
