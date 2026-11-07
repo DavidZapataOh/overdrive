@@ -46,7 +46,9 @@ A glob that starts with `/` is rejected, because no repository path starts with 
 
 ### pathtoken
 
-The token matches a whole segment after splitting the path on `/ . _ -`, ignoring case. `pathtoken auth` matches `src/auth/session.ts`, `lib/auth.ts` and `AUTH_README.md`, but not `authors.md`. A token cannot contain any of the separators.
+The token matches a whole segment after splitting the path on `/ . _ -`, ignoring case, or one word of a segment: a segment is also split where a lowercase letter meets an uppercase one, before the last capital of a run of capitals followed by lowercase, and between letters and digits. `pathtoken auth` matches `src/auth/session.ts`, `lib/auth.ts`, `auth.config.json`, `AuthController.ts` and `OAuthToken.ts` (`o`, `auth`, `token`), but not `authors.ts`, `Author.tsx` or `src/billing page/x.ts` (a space does not split). `pathtoken jwt` matches `JWTSecret.ts`; `pathtoken oauth` matches `oauth2/cb.ts`. A token cannot contain any of the separators.
+
+Tokens are not evaluated on documentation files, which describe a subject without being it: `docs/payments.md` is prose, not money code. A documentation file is one whose name ends in `.md`, `.mdx`, `.rst`, `.txt` or `.adoc` (any case), or any file under the repository's top-level `docs/` directory. Path globs still apply to documentation files, so `path "docs/legal/**" legal` and `.github/workflows/**` match them.
 
 ```
 pathtoken ledger   money

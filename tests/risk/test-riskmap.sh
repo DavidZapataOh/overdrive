@@ -257,7 +257,7 @@ test_floors_conf_parses() {
 
 test_floors_conf_encodes_table_signals() {
   out=$(load "$(lib_dir)/floors.conf" | cut -f 1-4)
-  for t in auth authn authz session sessions permission permissions rbac acl oauth jwt login logout password passwords credential credentials; do
+  for t in auth authn authz authentication authorization session sessions permission permissions rbac acl oauth jwt login logout password passwords credential credentials; do
     assert_line "$out" "pathtoken${tab}$t${tab}auth${tab}critical"
   done
   for t in tenant tenants tenancy rls; do
