@@ -79,7 +79,8 @@ test_rename_out_of_auth_counts_old_path() {
   git -C "$repo" mv src/auth/x.ts src/misc/x.ts
   risk "$repo" --worktree
   assert_line "$out" "item auth critical floor path src/auth/x.ts"
-  assert_eq "Risk: critical — auth" "$(printf '%s\n' "$out" | tail -n 1)"
+  # Its test stayed behind in src/auth/, so the moved file has none beside it.
+  assert_eq "Risk: critical — auth, untested-change" "$(printf '%s\n' "$out" | tail -n 1)"
 
   git -C "$repo" commit -q -m move
   risk "$repo" --diff HEAD~1..HEAD
@@ -466,4 +467,45 @@ test_paths_double_dash_ends_options() {
   assert_line "$out" "item auth critical floor path --odd/auth.ts"
   risk "$repo" --paths -- --billing.ts
   assert_line "$out" "item money critical floor path --billing.ts"
+}
+
+test_floor_globs_ignore_case() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" .Env 'X=1'
+  write_file "$repo" services/api-gw/dockerfile 'FROM scratch'
+  write_file "$repo" .GitHub/Workflows/ci.yml 'on: push'
+  risk "$repo" --worktree
+  assert_line "$out" "item secrets critical floor path .Env"
+  assert_line "$out" "item delivery critical floor path services/api-gw/dockerfile"
+  assert_line "$out" "item delivery critical floor path .GitHub/Workflows/ci.yml"
+  # Project map globs keep their case.
+  write_file "$repo" .overdrive/risk-map.conf 'path Legal/** legal standard'
+  commit_all "$repo" base
+  write_file "$repo" legal/terms.ts 'export const t = 1;'
+  write_file "$repo" legal/terms.test.ts 'test("t", () => {});'
+  risk "$repo" --worktree
+  assert_line "$out" "lane direct"
+}
+
+test_secret_scanner_allowlists_are_secrets() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" .gitleaksignore 'abc:src/x.ts:generic-api-key:5'
+  write_file "$repo" tools/.secrets.baseline '{}'
+  risk "$repo" --worktree
+  assert_line "$out" "item secrets critical floor path .gitleaksignore"
+  assert_line "$out" "item secrets critical floor path tools/.secrets.baseline"
+}
+
+test_vercel_build_script_is_delivery() {
+  local repo
+  repo=$(make_repo)
+  # Vercel runs the vercel-build script, not build, when deploying.
+  write_file "$repo" apps/web/scripts/vercel-build.mjs 'x'
+  write_file "$repo" apps/web/scripts/vercel-build.test.mjs 'test("b", () => {});'
+  write_file "$repo" scripts/build.sh 'x'
+  risk "$repo" --worktree
+  assert_line "$out" "item delivery critical floor path apps/web/scripts/vercel-build.mjs"
+  assert_no_line "$out" "delivery critical floor path scripts/build.sh"
 }

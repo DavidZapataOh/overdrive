@@ -46,7 +46,8 @@ _signals_escape() {
 # .md .mdx .rst .adoc (any case), and under a docs/ or doc/ directory also plain text,
 # images and fonts. Anything else there (a docs site's code and configuration) is code.
 # Test files follow the naming conventions of the test runners: *.test.* *.spec.*
-# *_test.* test_*.py and anything under a __tests__/ directory.
+# *_test.* *_spec.rb test_*.py test_*.rb *Test(s).java|kt|swift|cs, anything under a
+# __tests__/ directory, JVM sources under src/test/ and Rust files under tests/.
 # shellcheck disable=SC2016
 _OD_SIGNALS_LIB_AWK='
 # gsub replacements treat backslashes differently across awks, so escape by hand.
@@ -111,7 +112,9 @@ function has_source_ext(p) {
 function is_test(p,    base) {
   base = p
   sub(/.*\//, "", base)
-  return base ~ /\.(test|spec)\./ || base ~ /_test\./ || base ~ /^test_.*\.py$/ || p ~ /(^|\/)__tests__\//
+  if (base ~ /\.(test|spec)\./ || base ~ /_test\./ || base ~ /_spec\.rb$/ || base ~ /^test_.*\.(py|rb)$/) return 1
+  if (base ~ /Tests?\.(java|kt|swift|cs)$/ || p ~ /(^|\/)__tests__\//) return 1
+  return p ~ /(^|\/)src\/test\/.*\.(java|kts?|scala|groovy)$/ || p ~ /(^|\/)tests\/.*\.rs$/
 }
 
 '
@@ -302,14 +305,78 @@ function is_source(p,    base) {
   return has_source_ext(base) && base !~ /\.d\.ts$/ && base !~ /\.config\./ && !is_test(p)
 }
 
-# test_stems(p): register the names a test file is named after (stem.test.*,
-# stem.spec.*, test_stem.py, stem_test.*, __tests__/stem.*).
-function test_stems(p,    base, s) {
+function dirname(p) {
+  return sub(/\/[^\/]*$/, "", p) ? p : ""
+}
+
+# stem_of(p): the source file name without its extension.
+function stem_of(p) {
+  p = basename(p)
+  sub(/\.[^.]*$/, "", p)
+  return p
+}
+
+# test_stem(p): the name test file p is named after (stem.test.ts, stem_test.go,
+# test_stem.py, StemTest.java, __tests__/stem.ts, tests/stem.rs).
+function test_stem(p,    base) {
   base = basename(p)
-  if (match(base, /\.(test|spec)\./)) stem[substr(base, 1, RSTART - 1)] = 1
-  if (match(base, /_test\./)) stem[substr(base, 1, RSTART - 1)] = 1
-  if (base ~ /^test_.*\.py$/) stem[substr(base, 6, length(base) - 8)] = 1
-  if (p ~ /(^|\/)__tests__\//) { s = base; sub(/\.[^.]*$/, "", s); stem[s] = 1 }
+  if (match(base, /\.(test|spec)\./) || match(base, /_(test|spec)\./) || match(base, /Tests?\.(java|kt|swift|cs)$/))
+    return substr(base, 1, RSTART - 1)
+  if (base ~ /^test_.*\.(py|rb)$/) base = substr(base, 6)
+  sub(/\.[^.]*$/, "", base)
+  return base
+}
+
+# A test in a __tests__/ directory sits, for its sources, in the directory above.
+function test_dir(p,    d) {
+  d = "/" dirname(p) "/"
+  while (sub(/\/__tests__\//, "/", d)) ;
+  return substr(d, 2, length(d) - 2)
+}
+
+function is_manifest(p,    base) {
+  base = basename(p)
+  return base ~ /^(package\.json|deno\.jsonc?|go\.mod|Cargo\.toml|pyproject\.toml|setup\.py|setup\.cfg|pom\.xml|build\.gradle(\.kts)?|Package\.swift|composer\.json|Gemfile|mix\.exs)$/ ||
+    base ~ /\.(csproj|gemspec)$/
+}
+
+# package_of(d): the nearest directory at or above d holding a package manifest, "" for
+# the repository root.
+function package_of(d,    start) {
+  start = d
+  if (d in pkg_memo) return pkg_memo[d]
+  while (d != "" && !(d in pkg)) d = dirname(d)
+  return pkg_memo[start] = d
+}
+
+function below(d, top) {
+  return top == "" ? d : d == top ? "" : substr(d, length(top) + 2)
+}
+
+# cover_listed(p): a test of the repository covers the sources named after it in its own
+# directory and, when it lives in the test directory of its package (test/ tests/ spec/
+# __tests__/ src/test/<lang>/), in the directory it mirrors.
+function cover_listed(p,    s, d, top, rel) {
+  s = test_stem(p)
+  covers["D" SUBSEP test_dir(p) SUBSEP s] = 1
+  d = dirname(p); top = package_of(d); rel = below(d, top) "/"
+  if (match(rel, /^(src\/test\/[^\/]+|tests?|spec|__tests__)\//)) {
+    rel = substr(rel, RLENGTH + 1)
+    covers["M" SUBSEP top SUBSEP substr(rel, 1, length(rel) - 1) SUBSEP s] = 1
+  }
+}
+
+# covered(p): source p has a test in the change (same name, or same directory) or one in
+# the repository next to it or mirroring it from its package test directory. A source
+# root (src/, lib/, the first directory, src/main/<lang>/) is not mirrored.
+function covered(p,    s, d, top, rel) {
+  s = stem_of(p); d = dirname(p)
+  if ((s in diff_stem) || (d in diff_dir) || (("D" SUBSEP d SUBSEP s) in covers)) return 1
+  top = package_of(d); rel = below(d, top)
+  if (("M" SUBSEP top SUBSEP rel SUBSEP s) in covers) return 1
+  if (rel == "") return 0
+  if (!sub(/^src\/main\/[^\/]+(\/|$)/, "", rel) && !sub(/^[^\/]+(\/|$)/, "", rel)) return 0
+  return ("M" SUBSEP top SUBSEP rel SUBSEP s) in covers
 }
 
 BEGIN { FS = "\t" }
@@ -318,6 +385,9 @@ FILENAME == ARGV[1] {
   if ($1 == "path") {
     npath++; path_re[npath] = $2; path_item[npath] = $3; path_lane[npath] = $4; path_src[npath] = $5
     path_lit[npath] = $6
+    # Floors name files whose spelling varies by tool and platform (.Env, dockerfile),
+    # so they ignore case; a project map says exactly what it means.
+    if ($5 == "floor") { path_re[npath] = tolower($2); path_lit[npath] = tolower($6); path_ci[npath] = 1 }
   } else if ($1 == "pathtoken") {
     ntok++; tok_item[ntok] = $3; tok_lane[ntok] = $4; tok_src[ntok] = $5
     tok_rules[$2] = ($2 in tok_rules) ? tok_rules[$2] " " ntok : ntok
@@ -325,10 +395,11 @@ FILENAME == ARGV[1] {
   next
 }
 
-# The repository listing, C-quoted by git: only its test files matter.
+# The repository listing, C-quoted by git: its tests and package manifests matter.
 FILENAME == ARGV[2] {
   p = unquote($0)
-  if (is_test(p)) test_stems(p)
+  if (is_test(p)) listed[++nlisted] = p
+  else if (is_manifest(p)) pkg[dirname(p)] = 1
   next
 }
 
@@ -340,7 +411,8 @@ FILENAME == ARGV[2] {
   # A test renamed to a non-test name is a test removed; only new paths carry tests.
   if ($1 == "R" && $5 != "" && is_test(unescape($5)) && !is_test(raw[i]))
     hit(index_of[$5], "test-removed", "critical", "computed")
-  if ($1 != "D" && is_test(raw[i])) tests_changed = 1
+  # A test the change carries covers the sources named after it and those beside it.
+  if ($1 != "D" && is_test(raw[i])) { diff_stem[test_stem(raw[i])] = 1; diff_dir[test_dir(raw[i])] = 1 }
   if ($1 == "D") {
     hit(i, is_test(raw[i]) ? "test-removed" : "deletion", is_test(raw[i]) ? "critical" : "standard", "computed")
     next
@@ -354,17 +426,20 @@ FILENAME == ARGV[2] {
 # every rule once per path. (Their union as one expression is slower still: anchored
 # alternatives defeat the fast matchers.)
 END {
+  for (i = 1; i <= npaths; i++) lraw[i] = tolower(raw[i])
   for (r = 1; r <= npath; r++)
-    for (i = 1; i <= npaths; i++)
-      if (index(raw[i], path_lit[r]) && raw[i] ~ path_re[r]) hit(i, path_item[r], path_lane[r], path_src[r])
-  # A change that carries no test file is untested unless a test is named after the file.
-  if (!tests_changed)
-    for (k = 1; k <= nsource; k++) {
-      i = source[k]
-      s = basename(raw[i])
-      sub(/\.[^.]*$/, "", s)
-      if (!(s in stem) && !(shown[i] in link)) hit(i, "untested-change", "critical", "computed")
+    if (path_ci[r]) {
+      for (i = 1; i <= npaths; i++)
+        if (index(lraw[i], path_lit[r]) && lraw[i] ~ path_re[r]) hit(i, path_item[r], path_lane[r], path_src[r])
+    } else {
+      for (i = 1; i <= npaths; i++)
+        if (index(raw[i], path_lit[r]) && raw[i] ~ path_re[r]) hit(i, path_item[r], path_lane[r], path_src[r])
     }
+  if (nsource) for (k = 1; k <= nlisted; k++) cover_listed(listed[k])
+  for (k = 1; k <= nsource; k++) {
+    i = source[k]
+    if (!(shown[i] in link) && !covered(raw[i])) hit(i, "untested-change", "critical", "computed")
+  }
   for (i = 1; i <= npaths; i++)
     for (k = 1; k <= nhit[i]; k++) print line[i, k]
 }
@@ -374,7 +449,7 @@ END {
 # for the items the paths of RECORDS raise under RULES (from signals_rules), and the
 # items computed from the changes themselves (deletion, exec-bit, test-removed for a
 # deleted test, untested-change), in one awk pass. LISTING names the repository's files
-# (git ls-files or ls-tree output) to find the tests named after a source file.
+# (git ls-files or ls-tree output) to find the tests and package manifests near a source.
 # Renames are judged by both paths: moving a file out of auth/ is an auth change.
 # Named paths (P) are plans rather than changes, so nothing is computed from them.
 signals_path_items() {
@@ -515,13 +590,13 @@ function symbols(t, n,    r) {
     if (!((r_item["symbol", r] SUBSEP file) in done_file) && has_symbol(t, r_pat["symbol", r])) line_hit(r, "symbol", n)
 }
 
-function added(t, n,    r, l) {
+function added(t, n,    r, l, d) {
   if (is_link) {
     if (substr(t, 1, 1) != "/") t = normalize((index(file, "/") ? substr(file, 1, match(file, "/[^/]*$")) : "") t)
     printf "L\t000000\t000000\t%s\t%s\t\n", esc(t), shown >> records
     return
   }
-  if (test && t ~ /(^|[^A-Za-z0-9_$.])(it|test)[(]|(^|[^A-Za-z0-9_])(def test_|func Test)/) count(file, 1)
+  if (test && (d = test_case(t))) count(file, d)
   if (doc) {
     if (secret_any != "" && t ~ secret_any)
       for (r = 1; r <= n_content; r++)
@@ -538,10 +613,27 @@ function added(t, n,    r, l) {
   if (n_symbol && t ~ symbol_any) symbols(t, n)
 }
 
-function removed(t, n) {
+function removed(t, n,    d) {
   if (is_link) return
-  if (test && t ~ /(^|[^A-Za-z0-9_$.])(it|test)[(]|(^|[^A-Za-z0-9_])(def test_|func Test)/) count(file, -1)
+  if (test && (d = test_case(t))) count(file, -d)
   if (!doc && n_symbol && t ~ symbol_any) symbols(t, n)
+}
+
+# test_case(t): 1 when line t of a test file declares a test case, -1 when it skips or
+# focuses one (a focused case skips the others), 0 otherwise; comments count for nothing.
+# Rust attributes (#[test]) start with # but are not comments.
+function test_case(t) {
+  if (t ~ /^[[:space:]]*(\/\/|\/\*|\*|<!--|#([^[]|$))/) return 0
+  if (t ~ /(^|[^A-Za-z0-9_$])(it|test|describe|context|suite)(\.[A-Za-z]+)*\.(skip|only|skipIf)[.(]/ ||
+      t ~ /(^|[^A-Za-z0-9_$.])(xit|xtest|xdescribe|xcontext|fit|fdescribe|fcontext)[(]/ ||
+      t ~ /@pytest\.mark\.skip|@unittest\.skip|(^|[^A-Za-z0-9_.])pytest\.skip[(]|(^|[^A-Za-z0-9_])t\.Skip(Now|f)?[(]/ ||
+      t ~ /@(Disabled|Ignore)([^A-Za-z0-9_]|$)|#\[ignore|[(,][[:space:]]*Skip[[:space:]]*=/)
+    return -1
+  if (t ~ /(^|[^A-Za-z0-9_$.])(it|test)[(]|(^|[^A-Za-z0-9_])(def test_|func Test)/ ||
+      t ~ /@(Test|ParameterizedTest|RepeatedTest)([^A-Za-z0-9_]|$)|#\[([A-Za-z_]+::)?test([](]|$)/ ||
+      t ~ /\[(Fact|Theory|Test|TestMethod|TestCase)([](,]|$)|(^|[^A-Za-z0-9_])func test[A-Z_]/)
+    return 1
+  return 0
 }
 
 # count(f, d): test cases added (d = 1) or removed (d = -1) in test file f.
