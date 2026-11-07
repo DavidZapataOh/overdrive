@@ -87,9 +87,11 @@ test_plugin_root_substituted() {
   out=$(run_hook "$root")
   context_of "$out"
   case $JSON_VALUE in *'{{'*) echo "placeholder left: $JSON_VALUE" >&2; return 1 ;; esac
+  # The root is spelled out once, and both the CLI and the user-only skills hang off it.
+  # shellcheck disable=SC2016  # backquotes are literal Markdown
   case $JSON_VALUE in
-    *"$root/skills/<name>/SKILL.md"*) ;;
-    *) echo "no user-only skill path" >&2; return 1 ;;
+    *"R = \`$root\`"*'`R/bin/overdrive`'*'R/skills/<name>/SKILL.md'*) ;;
+    *) echo "no absolute root for the CLI and the user-only skills" >&2; return 1 ;;
   esac
 }
 

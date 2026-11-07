@@ -58,8 +58,9 @@ assert_denies() {
   fi
 }
 
+# The command is named by its absolute path: bin/ is not on the Bash tool's PATH.
 pin_reason() {
-  printf '%s is a pinned test. Tests change only before the red run. If the test itself is wrong, run: overdrive pin --release "<reason>" and redo red.' "$1"
+  printf '%s is a pinned test. Tests change only before the red run. If the test itself is wrong, run: %s/bin/overdrive pin --release "<reason>" and redo red.' "$1" "$(plugin_dir)"
 }
 
 # main_repo: a repo on branch main whose origin's default branch is main.
@@ -136,18 +137,21 @@ test_marker_records_start_and_session_roots() {
   m=$repo/.overdrive/run/markers/sess-R.changed
   CLAUDE_PLUGIN_DATA=$data assert_allows "$(file_event Edit "$repo/src/a.ts" "$repo" sess-R)"
   # The commit the change started from, so committed work stays visible at Stop.
-  assert_eq "$head" "$(cat "$m")" "start commit"
+  assert_eq "$head" "$(sed -n 1p "$m")" "start commit"
+  # The refs as they were, so a commit on another branch or a stash shows at Stop.
+  case $(sed -n 2p "$m") in 'refs '[0-9]*) ;; *) echo "no refs checksum: $(sed -n 2p "$m")" >&2; return 1 ;; esac
+  [ -f "${m%.changed}.edited" ] || { echo "file tool not recorded" >&2; return 1; }
   assert_eq "$repo" "$(cat "$data/sessions/sess-R.roots")" "session roots"
   # Later calls neither move the start nor list the repository again.
   commit_file "$repo" src/b.ts 'b'
   CLAUDE_PLUGIN_DATA=$data assert_allows "$(bash_event 'npm run build' "$repo" sess-R)"
-  assert_eq "$head" "$(cat "$m")" "start commit after a commit"
+  assert_eq "$head" "$(sed -n 1p "$m")" "start commit after a commit"
   assert_eq "$repo" "$(cat "$data/sessions/sess-R.roots")" "session roots after a second call"
   # A repository without commits starts unborn.
   repo=$PWD/unborn
   git init -q "$repo"
   CLAUDE_PLUGIN_DATA=$data assert_allows "$(file_event Write "$repo/a.txt" "$repo" sess-R)"
-  assert_eq unborn "$(cat "$repo/.overdrive/run/markers/sess-R.changed")" "unborn start"
+  assert_eq unborn "$(sed -n 1p "$repo/.overdrive/run/markers/sess-R.changed")" "unborn start"
   assert_eq "$repo" "$(sed -n 2p "$data/sessions/sess-R.roots")" "second root"
 }
 
@@ -159,7 +163,7 @@ test_denies_edit_of_pinned_test() {
   assert_denies "$(file_event MultiEdit "$repo/src/../tests/./cart total.test.sh" /)" "$(pin_reason 'tests/cart total.test.sh')"
   assert_denies "$(file_event NotebookEdit "$repo/tests/cart total.test.sh" "$repo")" "$(pin_reason 'tests/cart total.test.sh')"
   # The pins file itself is not a way around the pins.
-  assert_denies "$(file_event Write "$repo/.overdrive/run/pins" "$repo")" 'overdrive pin --release'
+  assert_denies "$(file_event Write "$repo/.overdrive/run/pins" "$repo")" "$(plugin_dir)/bin/overdrive pin --release"
   if is_windows; then
     # Claude Code sends Windows paths with backslashes and a drive letter.
     local win
@@ -361,6 +365,10 @@ test_marks_session_changed() {
   [ ! -e "$m/sess-B.changed" ] || { echo "read-only command marked" >&2; return 1; }
   assert_allows "$(bash_event 'npm run format' "$repo" 'sess-B')"
   [ -f "$m/sess-B.changed" ] || { echo "mutating command not marked" >&2; return 1; }
+  # Only file tools leave the edit note; a shell command is judged by status and refs.
+  [ ! -e "$m/sess-B.edited" ] || { echo "shell command noted as a file edit" >&2; return 1; }
+  assert_allows "$(file_event Write "$repo/.env" "$repo" 'sess-B')"
+  [ -f "$m/sess-B.edited" ] || { echo "file tool after a shell command not noted" >&2; return 1; }
   assert_allows "$(bash_event 'echo hi > out.txt' "$repo" 'sess-C')"
   [ -f "$m/sess-C.changed" ] || { echo "redirect not marked" >&2; return 1; }
   # A session id cannot write outside the markers folder.
@@ -512,4 +520,38 @@ test_latency_p95_under_30ms_with_pins() {
   best=$(p95_us 50 run_alternating "$(file_event Edit "$repo/src/cart.sh" "$repo")" \
     "$(bash_event 'rm -f build/out.txt && npm test > log.txt' "$repo")")
   [ "$best" -lt 30000 ] || { echo "best p95 ${best} us over 30 ms" >&2; return 1; }
+}
+
+# assert_auto_allows EVENT: the hook approves the call so no permission prompt appears.
+assert_auto_allows() {
+  local out rc=0
+  out=$(guard "$1") || rc=$?
+  assert_eq 0 "$rc" "exit code"
+  assert_eq '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Overdrive read-only command"}}' "$out"
+}
+
+# The router's own classification must not cost a permission prompt; nothing else is
+# approved, and nothing chained onto the CLI is.
+test_allows_the_plugins_read_only_cli_calls() {
+  local repo cli
+  repo=$(main_repo)
+  cli=$(plugin_dir)/bin/overdrive
+  assert_auto_allows "$(bash_event "$cli risk --intent 'fix the typo; rm -rf / \$(x) | y' --paths README.md" "$repo")"
+  assert_auto_allows "$(bash_event "$cli risk --worktree" "$repo")"
+  assert_auto_allows "$(bash_event "\"$cli\" risk --intent \"bump the TTL\" --paths src/auth/session.ts" "$repo")"
+  assert_auto_allows "$(bash_event "$cli decisions next-id" "$repo")"
+  assert_auto_allows "$(bash_event "$cli decisions check" "$repo")"
+  assert_auto_allows "$(bash_event "$cli recall session ttl" "$repo")"
+  [ ! -e "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "classification marked" >&2; return 1; }
+  # Not approved: other subcommands, other paths, chains, expansions, redirections.
+  local c
+  for c in "$cli pin src/a.test.ts" "$cli decisions show D-0001x" "$cli evidence red -- npm test" \
+    "/tmp/x/bin/overdrive risk --worktree" "overdrive risk --worktree" "$cli risk --worktree; rm -rf src" \
+    "$cli risk --worktree && git push" "$cli risk --worktree | tee out" "$cli risk --worktree > out" \
+    "$cli risk --intent \"\$(rm -rf src)\"" "$cli risk --intent \`id\`" "$cli risk --paths ~/x" \
+    "$cli risk --intent 'unterminated" "$cli risk
+rm -rf src" "TMPDIR=/x $cli risk --worktree" "$cli riskier" "$cli risk --paths *"; do
+    out=$(guard "$(bash_event "$c" "$repo")")
+    case $out in *'"allow"'*) printf 'approved: %s\n' "$c" >&2; return 1 ;; esac
+  done
 }

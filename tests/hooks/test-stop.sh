@@ -67,8 +67,14 @@ mark() {
   mkdir -p "$1/.overdrive/run/markers"
   printf '*\n' > "$1/.overdrive/run/.gitignore"
   head=$(git -C "$1" rev-parse -q --verify 'HEAD^{commit}') || head=unborn
-  printf '%s\n' "$head" > "$1/.overdrive/run/markers/${2:-sess-1}.changed"
+  # shellcheck source=../../plugins/overdrive/lib/path.sh
+  . "$(plugin_dir)/lib/path.sh"
+  _od_refs_sum "$1"
+  printf '%s\nrefs %s\n' "$head" "$_OD_REFS" > "$1/.overdrive/run/markers/${2:-sess-1}.changed"
 }
+
+# edited REPO [SID]: what the PreToolUse hook leaves when a file tool wrote in REPO.
+edited() { : > "$1/.overdrive/run/markers/${2:-sess-1}.edited"; }
 
 # lowered ROOT FROM TO ID TITLE: the notice an accepted lowering prints.
 lowered() {
@@ -558,4 +564,39 @@ test_allows_missing_line_when_nothing_changed() {
   mark "$repo"
   write_file "$repo" notes.txt 'x'
   assert_blocks "$(stop_event 'Wrote notes.' "$repo")" "$MISSING"
+}
+
+# Changes that leave HEAD and the status as they were still need the Risk line.
+test_blocks_missing_line_for_changes_status_cannot_see() {
+  local repo
+  # A commit on a new branch, then back to where the turn started.
+  repo=$(main_repo)
+  mark "$repo"
+  git -C "$repo" checkout -q -b side
+  commit_file "$repo" src/auth/session.ts 'export const ttl = 1'
+  git -C "$repo" checkout -q main
+  assert_blocks "$(stop_event 'Done.' "$repo")" "$MISSING"
+  # A file tool wrote an ignored .env with a live key.
+  repo=$(main_repo)
+  commit_file "$repo" .gitignore '.env'
+  mark "$repo"
+  write_file "$repo" .env 'STRIPE_KEY=sk_live_0123456789abcdef'
+  edited "$repo"
+  assert_eq '' "$(git -C "$repo" status --porcelain)" "the .env is ignored"
+  assert_blocks "$(stop_event 'Done.' "$repo")" "$MISSING"
+  # Work stashed away.
+  repo=$(main_repo)
+  commit_file "$repo" src/a.ts 'a'
+  pushed "$repo"
+  mark "$repo"
+  write_file "$repo" src/a.ts 'b'
+  git -C "$repo" stash -q
+  assert_blocks "$(stop_event 'Done.' "$repo")" "$MISSING"
+  # A commit and a tag, then a hard reset to the start.
+  repo=$(main_repo)
+  mark "$repo"
+  commit_file "$repo" src/a.ts 'a'
+  git -C "$repo" tag v9
+  git -C "$repo" reset -q --hard HEAD~1
+  assert_blocks "$(stop_event 'Done.' "$repo")" "$MISSING"
 }

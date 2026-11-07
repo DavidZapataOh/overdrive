@@ -31,21 +31,28 @@ guard() {
   [ -n "${_OD_GUARD_LOADED:-}" ] || . "$plugin/lib/guard.sh"
 }
 
-# mark ROOT: record that this session changed files in ROOT. Only the session's first
-# call in ROOT forks: it records the commit the change starts from, so the Stop hook
-# also classifies what gets committed meanwhile, and lists ROOT in the session's roots
-# so the Stop hook finds it from any cwd.
+# mark ROOT [EDIT]: record that this session changed files in ROOT. Only the session's
+# first call in ROOT forks: it records the commit the change starts from and a checksum
+# of the refs, so the Stop hook also classifies what gets committed meanwhile and sees
+# a change that left HEAD and the worktree as they were, and lists ROOT in the session's
+# roots so the Stop hook finds it from any cwd. EDIT notes that a file tool wrote in
+# ROOT, which may be an ignored file no status shows.
 mark() {
   local run=$1/.overdrive/run s head data=${CLAUDE_PLUGIN_DATA:-}
   [ -n "$sid" ] || return 0
   s=${sid//[!A-Za-z0-9._-]/_}
+  if [ -n "${2-}" ] && [ -d "$run/markers" ] && [ ! -f "$run/markers/$s.edited" ]; then
+    { : > "$run/markers/$s.edited"; } 2>/dev/null
+  fi
   [ ! -f "$run/markers/$s.changed" ] || return 0
   if [ ! -d "$run/markers" ]; then
     mkdir -p "$run/markers" 2>/dev/null || return 0
   fi
   [ -f "$run/.gitignore" ] || { printf '*\n' > "$run/.gitignore"; } 2>/dev/null
   head=$(git -C "$1" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null) || head=unborn
-  { printf '%s\n' "$head" > "$run/markers/$s.changed"; } 2>/dev/null || return 0
+  _od_refs_sum "$1" || _OD_REFS=unknown
+  [ -z "${2-}" ] || { : > "$run/markers/$s.edited"; } 2>/dev/null
+  { printf '%s\nrefs %s\n' "$head" "$_OD_REFS" > "$run/markers/$s.changed"; } 2>/dev/null || return 0
   if [ -n "$data" ]; then
     [ -d "$data/sessions" ] || mkdir -p "$data/sessions" 2>/dev/null
     { printf '%s\n' "$1" >> "$data/sessions/$s.roots"; } 2>/dev/null
@@ -83,7 +90,7 @@ file_tool() {
     guard
     check_target "$_OD_PATH" '' ''
   fi
-  mark "$croot"
+  mark "$croot" edit
 }
 
 # read_only: true when the command plainly changes no file (a conservative allowlist).
@@ -160,10 +167,58 @@ read_only() {
   return 0
 }
 
+# plain_words TEXT: true when TEXT is only words and quoted strings: nothing the shell
+# would chain, redirect, substitute, expand or glob.
+plain_words() {
+  local s=$1 i c q=''
+  for ((i = 0; i < ${#s}; i++)); do
+    c=${s:i:1}
+    case $q in
+      "'") [ "$c" != "'" ] || q=''; continue ;;
+      '"')
+        case $c in
+          '"') q='' ;;
+          '$' | '`' | \\) return 1 ;;
+        esac
+        continue
+        ;;
+    esac
+    case $c in
+      "'" | '"') q=$c ;;
+      [\;\&\|\<\>\$\`\(\)\{\}\\\*\?\[\~\#] | $'\n' | $'\r') return 1 ;;
+    esac
+  done
+  [ -z "$q" ]
+}
+
+# own_read_only_cli: true when cmd runs this plugin's CLI, by its absolute path, for a
+# command that only reads: classification, decision ids and checks, recall. The router
+# runs these before every change, and a permission prompt for each would cost the user
+# a step on trivial work.
+own_read_only_cli() {
+  local exe=$plugin/bin/overdrive rest
+  case $cmd in
+    "$exe "*) rest=${cmd#"$exe"} ;;
+    "\"$exe\" "*) rest=${cmd#"\"$exe\""} ;;
+    "'$exe' "*) rest=${cmd#"'$exe'"} ;;
+    *) return 1 ;;
+  esac
+  case $rest in
+    ' risk' | ' risk '* | ' decisions next-id' | ' decisions next-id '* | ' decisions check' | \
+      ' decisions check '* | ' recall '*) ;;
+    *) return 1 ;;
+  esac
+  plain_words "$rest"
+}
+
 bash_tool() {
   local croot_pins='' need='' ro='' a roots=''
   json_extract_string command "$input" || return 0
   cmd=$JSON_VALUE
+  if own_read_only_cli; then
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Overdrive read-only command"}}'
+    return 0
+  fi
   croot=''
   if [ -n "$cwd" ]; then
     absolute / "$cwd"

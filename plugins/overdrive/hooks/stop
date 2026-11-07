@@ -238,15 +238,18 @@ case $msg in
     ;;
 esac
 
-# unchanged ROOT: true when ROOT is exactly as the session's first marked call found it:
-# the same HEAD and nothing modified or untracked. The guard marks a repository on any
-# command it cannot prove read-only, so a marker alone does not mean a change.
+# unchanged ROOT: true when the session left ROOT exactly as its first marked call found
+# it: no file tool wrote there (an ignored .env shows in no status), the same HEAD, the
+# same branches, tags and stash, and nothing modified or untracked. The guard marks a
+# repository on any command it cannot prove read-only, so a marker alone is no change.
 unchanged() {
-  local start='' head status
-  { IFS= read -r start || :; } < "$1/$marker" 2>/dev/null
-  start=${start%$'\r'}
+  local start='' refs='' head status
+  [ ! -e "$1/${marker%.changed}.edited" ] || return 1
+  { IFS= read -r start && IFS= read -r refs; } < "$1/$marker" 2>/dev/null || return 1
+  start=${start%$'\r'} refs=${refs%$'\r'}
   head=$(git -C "$1" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null) || head=unborn
   [ -n "$start" ] && [ "$head" = "$start" ] || return 1
+  _od_refs_sum "$1" && [ "$refs" = "refs $_OD_REFS" ] || return 1
   status=$(git -C "$1" status --porcelain 2>/dev/null) || return 1
   [ -z "$status" ]
 }
@@ -255,7 +258,7 @@ if [ "$stated" -lt 0 ]; then
   changed=0
   for root in "${roots[@]}"; do
     if unchanged "$root"; then
-      rm -f -- "$root/$marker" 2>/dev/null
+      rm -f -- "$root/$marker" "$root/${marker%.changed}.edited" 2>/dev/null
       prune=1
     else
       changed=1
@@ -295,7 +298,7 @@ for root in "${roots[@]}"; do
     fi
   fi
   if [ -z "$r" ]; then
-    rm -f -- "$root/$marker" 2>/dev/null
+    rm -f -- "$root/$marker" "$root/${marker%.changed}.edited" 2>/dev/null
     prune=1
     continue
   fi
