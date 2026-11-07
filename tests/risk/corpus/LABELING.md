@@ -99,9 +99,6 @@ cd tests/risk/corpus && find synthetic oss.tsv -type f | LC_ALL=C sort | xargs s
 
 - policy: documentation under `docs/` and `doc/` is prose, images and fonts only; any other file there is code (`docs/.vitepress/config.mts`, `docs/conf.vue`). Case `nested-docs-dir-is-documentation` changed its file from `nav.json` (now code) to `notes.txt` so it still shows a nested documentation directory; its label is unchanged. Cases `docs-mts-is-code` and `docs-vue-is-code` were added and SHA256SUMS regenerated.
 
-### Pending conflicts
-
-These `oss.tsv` rows are critical only through a path token in a documentation file, which contradicts the documentation clarification above. They will be relabeled deliberately during calibration:
-
-- `better-auth/better-auth` `3f574ec70bb15c155a78673d42c5e25f7376ced3` (`auth` from `session-management.mdx`).
-- `trpc/trpc` `19da060cb0e05c75682ec813c606b51c6c52ee19` (`money` from `subscriptions.md`; `public-contract` is a judgment item).
+- `better-auth/better-auth` `3f574ec`: `critical auth` → `direct none`. Its only signal was the token `session` in `session-management.mdx`, a documentation file, which carries no path tokens (documentation clarification).
+- `better-auth/better-auth` `4d5ae29`: `test-removed` → `deletion`. The deleted `packages/better-auth/src/test/utils.ts` matches none of the test naming conventions, so it is a deleted non-test file; the lane stays critical through `auth`.
+- `trpc/trpc` `19da060`: label unchanged, note corrected. `money` comes from `httpSubscriptionLink.test.ts` (camelCase word `subscription`), not from the documentation file `subscriptions.md` the note cited.
