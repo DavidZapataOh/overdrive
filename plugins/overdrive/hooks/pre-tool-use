@@ -108,12 +108,20 @@ read_only() {
     case ${1##*/} in
       ls | cat | head | tail | grep | egrep | fgrep | rg | wc | pwd | echo | printf | which | type | \
         stat | file | du | df | tree | less | diff | cmp | date | uname | whoami | id | printenv | \
-        sort | uniq | cut | tr | jq | awk | test | '[' | '[[' | ']]' | true | false | sleep | cd | \
-        basename | dirname | realpath | readlink | hostname | ps | command | exit | overdrive | 'fi' | 'done' | 'esac') ;;
+        uniq | cut | tr | jq | test | '[' | '[[' | ']]' | true | false | sleep | cd | \
+        basename | dirname | realpath | readlink | hostname | ps | exit | overdrive | 'fi' | 'done' | 'esac') ;;
       sed)
         for part in "$@"; do
           case $part in -i* | --in-place* | -[!-]*i*) return 1 ;; esac
         done
+        ;;
+      sort | awk)
+        # sort -o and gawk -i inplace write files.
+        case ${1##*/}:$seg in sort:*' -o'* | sort:*' --output'* | awk:*' -i'*) return 1 ;; esac
+        ;;
+      command)
+        # command rm x runs rm; only the lookups are read-only.
+        case ${2-} in -v | -V) ;; *) return 1 ;; esac
         ;;
       find)
         case $seg in *-delete* | *-exec* | *-ok* | *-fprint* | *-fls*) return 1 ;; esac
@@ -150,18 +158,24 @@ bash_tool() {
   else
     cwd=$PWD
   fi
-  ! read_only || ro=1
-  case $cmd in *push*) need=1 ;; esac
-  # Without pins nearby, only a change of directory can reach a pinned file or
-  # another repository to mark.
-  if [ -z "$croot" ] || [ -n "$croot_pins" ]; then
-    case $cmd in
-      *'>'* | *rm* | *mv* | *cp* | *tee* | *sed* | *perl* | *truncate* | *dd* | *ln* | *install* | \
-        *checkout* | *switch* | *restore* | *unlink* | *shred*) need=1 ;;
-    esac
-    [ -n "$ro" ] || [ -n "$croot" ] || need=1
-  elif [ -z "$ro" ]; then
-    case $cmd in *cd* | *-C*) need=1 ;; esac
+  # A read-only command writes nothing and pushes nothing: no reading needed.
+  if read_only; then
+    ro=1
+  else
+    case $cmd in *push*) need=1 ;; esac
+    if [ -z "$croot" ]; then
+      # Outside a repository, any target or directory could be in one.
+      need=1
+    elif [ -n "$croot_pins" ]; then
+      case $cmd in
+        *'>'* | *rm* | *mv* | *cp* | *tee* | *sed* | *perl* | *truncate* | *dd* | *ln* | *install* | \
+          *checkout* | *switch* | *restore* | *unlink* | *shred* | *cd* | *-C* | *-c* | *eval*) need=1 ;;
+      esac
+    else
+      # Without pins nearby, only a change of directory reaches pins or another
+      # repository to mark.
+      case $cmd in *cd* | *-C* | *-c* | *eval*) need=1 ;; esac
+    fi
   fi
   [ -n "$ro" ] || [ -z "$croot" ] || roots=$croot$'\n'
   if [ -n "$need" ]; then

@@ -51,7 +51,7 @@ load_pins() {
       *) return 0 ;;
     esac
     body=${body:+$body$'\n'}$line
-  done < "$1/$PINS_FILE" 2>/dev/null
+  done 2>/dev/null < "$1/$PINS_FILE"
   [ -n "$seal" ] && [ "${#PINNED[@]}" -gt 0 ] || return 0
   sum=$(cksum <<<"$body") || return 0
   [ "${sum%% *}" = "$seal" ] && PINS_OK=1

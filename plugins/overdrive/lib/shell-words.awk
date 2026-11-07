@@ -5,7 +5,7 @@
 #   W DIR WORD           WORD is written or removed (a directory covers its files)
 #   C DIR DEST SRC       SRC is copied to DEST (DEST itself, or DEST/basename SRC)
 #   P DIR ARG...         git push run in DIR, with its arguments
-#   S DIR switch         git switch, or a git checkout that creates or detaches
+#   S DIR switch         git switch, or a git checkout that creates, detaches or goes back (-)
 #   S DIR OP...          git checkout without --: a switch unless every OP is a path
 # Quotes, escapes, comments, line continuations, here-documents (bodies skipped),
 # subshells, cd, pushd/popd, git -C, common wrappers (sudo, env, nice, timeout...) and
@@ -100,7 +100,7 @@ function git(d, j,   g, k, dd, sw, any) {
     operands(g, j + 1, "W")
     for (k = j + 1; k <= nw; k++) {
       if (w[k] == "--") dd = 1
-      else if (w[k] ~ /^(-[bBd]|--orphan|--detach)$/) sw = 1
+      else if (w[k] ~ /^(-[bBd]|-|--orphan|--detach)$/) sw = 1
       else if (w[k] !~ /^-/) any = 1
     }
     if (sw) out("S", g, "switch")

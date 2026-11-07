@@ -22,7 +22,7 @@ The repository is found from the file's own path, or from the call's `cwd` and e
 
 ## Cost
 
-These calls use shell builtins only: a file tool with no pins, and a shell command that neither mentions `push` nor needs reading. A shell command needs reading when it may write a file where pins are active, when it is mutating and runs outside any repository, or when it changes directory. Pins add one `cksum` to check the seal, and reading a command adds one `awk`. CI asserts p95 under 15 ms without pins and under 30 ms with pins on Linux.
+These calls use shell builtins only: a file tool with no pins, and any shell command on the read-only allowlist (it can neither write nor push). Any other shell command needs reading when it runs outside a repository, when it mentions `push`, when pins are active and it mentions a write form or a change of directory, or, without pins, when it changes directory (`cd`, `-C`, `-c`, `eval`). Pins add one `cksum` to check the seal, and reading a command adds one `awk`. CI asserts p95 under 15 ms without pins and under 30 ms with pins on Linux.
 
 ## Failure mode
 
@@ -35,6 +35,7 @@ These still reach a pinned test, or the default branch, and are left to the gree
 - paths built at run time: variables, the output of command substitution, `xargs` input, `find -exec` or `-delete`, `cd -`;
 - programs that write the files they are given or that they choose: formatters and linters with fixes (`prettier --write`, `eslint --fix`), package scripts (`npm run`, `make`), interpreters (`python -c`, `node -e`, scripts), `patch`, `git apply`, `git stash`, `git reset --hard`, `git merge`, `git rebase`, `git pull`;
 - wrappers and shells not listed above, and nesting deeper than 32 strings;
+- read-only-looking commands that write a file they are given (`uniq IN OUT`, `awk` calling `system()`);
 - symbolic links to a pinned file, and Unicode spellings of a name that differ from the pinned one;
 - a write into another repository through an absolute path, from a repository without pins;
 - `git push` refspecs are read as written: an upstream mapping (`push.default=upstream`, `remote.<name>.push`) that sends another branch to the default one is not seen, and in a repository on the reftable backend, whose refs cannot be read without git, a push with no refspec is not seen and the default branch falls back to `main`/`master`;

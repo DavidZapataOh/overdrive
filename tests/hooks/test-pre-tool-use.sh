@@ -168,6 +168,44 @@ test_denies_on_unparseable_pins() {
   assert_allows "$(file_event Edit "$other/src/cart.sh" "$repo")"
 }
 
+test_unreadable_pins_deny_quietly() {
+  local repo out err rc=0
+  repo=$(pinned_repo)
+  chmod 000 "$repo/.overdrive/run/pins"
+  # Windows and root read the file anyway.
+  if is_windows || [ -r "$repo/.overdrive/run/pins" ]; then
+    chmod 644 "$repo/.overdrive/run/pins"
+    echo "notice: chmod 000 does not block reads here; skipped"
+    return 0
+  fi
+  err=$PWD/err
+  out=$(guard "$(file_event Edit "$repo/src/cart.sh" "$repo")" 2>"$err") || rc=$?
+  chmod 644 "$repo/.overdrive/run/pins"
+  assert_eq 0 "$rc"
+  case $out in *'"permissionDecision":"deny"'*'cannot be parsed'*) ;; *) echo "not denied: $out" >&2; return 1 ;; esac
+  assert_eq '' "$(cat "$err")" "stderr"
+}
+
+test_read_only_commands_skip_the_reader() {
+  local plain repo
+  mkdir plain
+  plain=$PWD/plain
+  repo=$(pinned_repo)
+  # The only command on PATH is an awk that records being run.
+  mkdir bin
+  printf '#!%s\n: > "%s/awk-ran"\n' "$BASH" "$PWD" > bin/awk
+  chmod +x bin/awk
+  for cmd in 'cat format.txt' 'grep -r rm .' 'ls -la | grep perl'; do
+    out=$(bash_event "$cmd" "$plain" | PATH=$PWD/bin "$BASH" "$(plugin_dir)/hooks/pre-tool-use" 2>&1)
+    assert_eq '' "$out" "$cmd outside a repo"
+    [ ! -e awk-ran ] || { echo "reader ran for: $cmd" >&2; return 1; }
+  done
+  out=$(bash_event 'rm x' "$plain" | PATH=$PWD/bin "$BASH" "$(plugin_dir)/hooks/pre-tool-use" 2>&1)
+  [ -e awk-ran ] || { echo "reader skipped for a mutating command" >&2; return 1; }
+  # A wrapper is not read-only even when its command is spelled like one.
+  assert_denies "$(bash_event "command rm 'tests/cart total.test.sh'" "$repo")" 'is a pinned test'
+}
+
 test_denies_sed_i_on_pinned_test() {
   local repo r w
   repo=$(pinned_repo)
@@ -345,7 +383,7 @@ test_denies_branch_switch_while_pinned() {
   repo=$(pinned_repo)
   git -C "$repo" branch other
   for cmd in 'git switch other' 'git switch -c next' 'git checkout other' 'git checkout -b next' \
-    'git -C src checkout other'; do
+    'git -C src checkout other' 'git checkout -' 'git switch -'; do
     assert_denies "$(bash_event "$cmd" "$repo")" 'overdrive pin --release "<reason>"'
   done
   # Restoring a file that is not pinned is not a switch.
