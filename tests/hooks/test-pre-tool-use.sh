@@ -210,7 +210,8 @@ test_denies_push_to_main_explicit() {
   for cmd in 'git push origin main' 'git push -u origin HEAD:main' 'git push origin +main' \
     'git push origin feature:refs/heads/main' 'npm test && git push origin main' \
     "git push 'origin' \"main\"" 'git -c push.default=current push origin main' \
-    'git push --delete origin main' 'git push origin refs/heads/*:refs/heads/*' 'git push --all'; do
+    'git push --delete origin main' 'git push origin refs/heads/*:refs/heads/*' 'git push --all' \
+    'git push origin heads/main' 'git push origin feature:heads/main'; do
     assert_denies "$(bash_event "$cmd" "$repo")" 'main'
   done
   # From a folder above the repository.
@@ -287,6 +288,83 @@ test_marks_session_changed() {
   repo=$(pinned_repo)
   assert_denies "$(file_event Edit "$repo/tests/cart total.test.sh" "$repo" 'sess-D')" 'pinned'
   [ ! -e "$repo/.overdrive/run/markers/sess-D.changed" ] || { echo "denied edit marked" >&2; return 1; }
+}
+
+test_marks_repos_reached_by_cd_and_git_c() {
+  local top r inner m
+  # The session sits in a folder above the repository, as Reranker sessions do.
+  top=$PWD/top
+  mkdir -p "$top"
+  r=$(main_repo)
+  mv "$r" "$top/r"
+  r=$top/r
+  commit_file "$r" src/a.sh 'a'
+  assert_allows "$(bash_event 'cd r && sed -i.bak s/a/b/ src/a.sh' "$top" 'cd-sed')"
+  [ -f "$r/.overdrive/run/markers/cd-sed.changed" ] || { echo "cd target not marked" >&2; return 1; }
+  assert_allows "$(bash_event 'git -C r commit -qam x' "$top" 'git-c')"
+  [ -f "$r/.overdrive/run/markers/git-c.changed" ] || { echo "git -C target not marked" >&2; return 1; }
+  assert_allows "$(bash_event 'pushd r/src && npm run build' "$top" 'pushd')"
+  [ -f "$r/.overdrive/run/markers/pushd.changed" ] || { echo "pushd target not marked" >&2; return 1; }
+  assert_allows "$(bash_event 'cd r && git status' "$top" 'ro')"
+  [ ! -e "$r/.overdrive/run/markers/ro.changed" ] || { echo "read-only command marked" >&2; return 1; }
+  # A repository nested in another, reached with cd from the outer one.
+  inner=$r/vendor/inner
+  mkdir -p "$r/vendor"
+  git init -q "$inner"
+  assert_allows "$(bash_event 'cd vendor/inner && make' "$r" 'nested')"
+  m=.overdrive/run/markers/nested.changed
+  [ -f "$inner/$m" ] || { echo "nested repo not marked" >&2; return 1; }
+  [ -f "$r/$m" ] || { echo "outer repo not marked" >&2; return 1; }
+}
+
+test_tokenizer_follows_wrappers_subshells_and_nested_shells() {
+  local repo r
+  repo=$(pinned_repo)
+  r=$(pin_reason 'tests/cart total.test.sh')
+  commit_file "$repo" p.sh 'x'
+  # Options that are not -i: perl modules and include paths.
+  assert_allows "$(bash_event "perl -Mstrict -MList::Util=sum -Ilib -e 'print 1' 'tests/cart total.test.sh'" "$repo")"
+  assert_allows "$(bash_event "sed -n -e 's/i/x/p' -f script.sed 'tests/cart total.test.sh'" "$repo")"
+  assert_denies "$(bash_event "perl -0777 -pi.bak -e 's/a/b/' 'tests/cart total.test.sh'" "$repo")" "$r"
+  assert_denies "$(bash_event "sed -nEi 's/a/b/' 'tests/cart total.test.sh'" "$repo")" "$r"
+  for cmd in "nice -n 5 rm 'tests/cart total.test.sh'" "timeout -s KILL 30 rm 'tests/cart total.test.sh'" \
+    "stdbuf -o L tee 'tests/cart total.test.sh'" "env -u X A=1 rm 'tests/cart total.test.sh'" \
+    "command rm 'tests/cart total.test.sh'" "exec rm 'tests/cart total.test.sh'" \
+    "pushd tests && rm 'cart total.test.sh'" "bash -c \"rm 'tests/cart total.test.sh'\"" \
+    "sh -ec 'cd tests && echo x > \"cart total.test.sh\"'" "eval rm \"'tests/cart total.test.sh'\""; do
+    assert_denies "$(bash_event "$cmd" "$repo")" "$r"
+  done
+  # A subshell's cd ends with the subshell.
+  assert_allows "$(bash_event '(cd tests && ls); rm p.sh' "$repo")"
+  assert_denies "$(bash_event "(cd src); rm 'tests/cart total.test.sh'" "$repo")" "$r"
+  assert_denies "$(bash_event "echo \$(cd src && pwd); rm 'tests/cart total.test.sh'" "$repo")" "$r"
+}
+
+test_denies_branch_switch_while_pinned() {
+  local repo
+  repo=$(pinned_repo)
+  git -C "$repo" branch other
+  for cmd in 'git switch other' 'git switch -c next' 'git checkout other' 'git checkout -b next' \
+    'git -C src checkout other'; do
+    assert_denies "$(bash_event "$cmd" "$repo")" 'overdrive pin --release "<reason>"'
+  done
+  # Restoring a file that is not pinned is not a switch.
+  assert_allows "$(bash_event 'git checkout src/cart.sh' "$repo")"
+  assert_allows "$(bash_event 'git checkout -- src/cart.sh' "$repo")"
+  # Without pins, switching is free.
+  repo=$(main_repo)
+  git -C "$repo" branch other
+  assert_allows "$(bash_event 'git switch other' "$repo")"
+  assert_allows "$(bash_event 'git checkout other' "$repo")"
+}
+
+test_denies_removing_the_root_while_pinned() {
+  local repo r
+  repo=$(pinned_repo)
+  r=$(pin_reason 'tests/cart total.test.sh')
+  assert_denies "$(bash_event 'rm -rf /' "$repo")" "$r"
+  assert_denies "$(bash_event 'rm -rf /*' "$repo")" "$r"
+  assert_denies "$(bash_event 'rm -rf ..' "$repo/src")" "$r"
 }
 
 # p95_us N COMMAND...: best p95 in microseconds over three batches of N runs.

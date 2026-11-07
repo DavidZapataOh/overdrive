@@ -415,14 +415,26 @@ test_json_extract_strings_matches_single_lookups() {
 
 test_json_extract_strings_stops_early_on_large_input() {
   load_json
-  local big doc t0 t1
-  big=$(printf '"x\\" %.0s' $(seq 20000))
+  local big doc t0 t1 t2 early late
+  # Escaped quotes split the content into many parts: walking them is the slow part.
+  big=$(printf '\\"x\\" %.0s' $(seq 5000))
   doc='{"session_id":"s","cwd":"/r","tool_name":"Write","tool_input":{"content":"'$big'","file_path":"/f"}}'
-  t0=$SECONDS
+  t0=${EPOCHREALTIME:-}
   json_extract_strings "$doc" tool_name session_id cwd
-  t1=$SECONDS
+  t1=${EPOCHREALTIME:-}
   assert_eq Write "${JSON_VALUES[0]}"
   assert_eq s "${JSON_VALUES[1]}"
   assert_eq /r "${JSON_VALUES[2]}"
-  [ $((t1 - t0)) -le 2 ] || { echo "took $((t1 - t0)) s" >&2; return 1; }
+  json_extract_strings "$doc" tool_name file_path
+  t2=${EPOCHREALTIME:-}
+  assert_eq /f "${JSON_VALUES[1]}"
+  if [ -z "$t0" ]; then
+    echo "notice: bash $BASH_VERSION has no EPOCHREALTIME; early stop not timed"
+    return 0
+  fi
+  early=$((${t1/[.,]/} - ${t0/[.,]/}))
+  late=$((${t2/[.,]/} - ${t1/[.,]/}))
+  echo "early ${early} us, late ${late} us"
+  # Both pay the same split; only the late lookup walks the 10,000 content parts.
+  [ $((early * 4)) -lt "$late" ] || { echo "no early stop: early ${early} us, late ${late} us" >&2; return 1; }
 }

@@ -21,6 +21,10 @@ deny_invalid() {
   deny "Pinned tests are active in $1, but $PINS_FILE cannot be parsed, so changes to that repository are blocked. If the pins are wrong, run: overdrive pin --release \"<reason>\" and redo red."
 }
 
+deny_switch() {
+  deny "Switching branches is blocked while tests are pinned in $1: the pinned tests would change under the red run. Finish green and run overdrive pin --clear, or, if the test itself is wrong, run: overdrive pin --release \"<reason>\" and redo red."
+}
+
 deny_pins_file() {
   deny "$PINS_FILE is written only by overdrive pin. $PIN_TAIL"
 }
@@ -47,7 +51,7 @@ load_pins() {
       *) return 0 ;;
     esac
     body=${body:+$body$'\n'}$line
-  done < "$1/$PINS_FILE"
+  done < "$1/$PINS_FILE" 2>/dev/null
   [ -n "$seal" ] && [ "${#PINNED[@]}" -gt 0 ] || return 0
   sum=$(cksum <<<"$body") || return 0
   [ "${sum%% *}" = "$seal" ] && PINS_OK=1
@@ -85,31 +89,62 @@ hits() {
   return "$rc"
 }
 
+# covers ABS DIR GLOB: true when ABS is DIR or one of its ancestors (with GLOB, a glob
+# matching one of them).
+covers() {
+  local a=$2
+  [ "$1" != / ] || return 0
+  while [ -n "$a" ]; do
+    [ "$a" != "$1" ] || return 0
+    if [ -n "$3" ]; then
+      # shellcheck disable=SC2254
+      case $a in $1) return 0 ;; esac
+    fi
+    a=${a%/*}
+  done
+  return 1
+}
+
 # check_target ABS TREE GLOB: deny when ABS (absolute, normalized) names a pinned file
 # of its repo (see hits), or the pins file itself.
 check_target() {
   local abs=$1 root rel p
-  if _od_find_root "$abs"; then
-    root=$_OD_ROOT
-  elif [ -n "$2" ] && [ -n "$croot" ] && [[ $croot/ == "$abs"/* ]]; then
-    # A directory above the repository holds every pinned file.
+  if [ -n "$2" ] && [ -n "$croot" ] && covers "$abs" "$croot" "$3"; then
+    # The repository itself or a directory above it holds every pinned file.
     root=$croot
+    rel=''
+  elif _od_find_root "$abs"; then
+    root=$_OD_ROOT
+    if [ "$root" = / ]; then rel=${abs#/}; else rel=${abs#"$root"/}; fi
+    [ "$abs" != "$root" ] || rel=''
   else
     return 0
   fi
   load_pins "$root" || return 0
   [ "$PINS_OK" = 1 ] || deny_invalid "$root"
-  if [ "$abs" = "$root" ] || [[ $root/ == "$abs"/* ]]; then
-    rel=''
-  elif [ "$root" = / ]; then
-    rel=${abs#/}
-  else
-    rel=${abs#"$root"/}
-  fi
   for p in "${PINNED[@]}"; do
     ! hits "$rel" "$p" "$2" "$3" || deny_pinned "$p"
   done
   ! hits "$rel" "$PINS_FILE" "$2" "$3" || deny_pins_file
+}
+
+# check_switch DIR switch | DIR OP...: deny a branch switch in a repo with pins. A
+# checkout whose every operand exists as a path restores files instead (the
+# operands were checked as written files already).
+check_switch() {
+  local dir=$1 op
+  shift
+  _od_find_root "$dir" || return 0
+  load_pins "$_OD_ROOT" || return 0
+  if [ "$1" != switch ]; then
+    for op in "$@"; do
+      case $op in -*) continue ;; esac
+      absolute "$dir" "$op"
+      [ -e "$ABS" ] || deny_switch "$_OD_ROOT"
+    done
+    return 0
+  fi
+  deny_switch "$_OD_ROOT"
 }
 
 # read_line FILE: set LINE to the first line of FILE without a trailing CR.
@@ -194,7 +229,8 @@ check_push() {
       *) dst=$a ;;
     esac
     case $dst in HEAD | @) dst=$cur ;; esac
-    dst=${dst#refs/heads/}
+    dst=${dst#refs/}
+    dst=${dst#heads/}
     [ -n "$dst" ] || continue
     for d in $defaults; do
       # shellcheck disable=SC2254

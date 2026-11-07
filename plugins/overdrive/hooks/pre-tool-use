@@ -136,7 +136,7 @@ read_only() {
 }
 
 bash_tool() {
-  local croot_pins='' need='' records rec f a dir
+  local croot_pins='' need='' ro='' a roots=''
   json_extract_string command "$input" || return 0
   cmd=$JSON_VALUE
   croot=''
@@ -150,44 +150,61 @@ bash_tool() {
   else
     cwd=$PWD
   fi
+  ! read_only || ro=1
   case $cmd in *push*) need=1 ;; esac
-  case $cmd in
-    *'>'* | *rm* | *mv* | *cp* | *tee* | *sed* | *perl* | *truncate* | *dd* | *ln* | *install* | \
-      *checkout* | *restore* | *unlink* | *shred*)
-      # Without pins nearby, only a change of directory can reach a pinned file.
-      if [ -z "$croot" ] || [ -n "$croot_pins" ]; then
-        need=1
-      else
-        case $cmd in *cd* | *-C*) need=1 ;; esac
-      fi
-      ;;
-  esac
+  # Without pins nearby, only a change of directory can reach a pinned file or
+  # another repository to mark.
+  if [ -z "$croot" ] || [ -n "$croot_pins" ]; then
+    case $cmd in
+      *'>'* | *rm* | *mv* | *cp* | *tee* | *sed* | *perl* | *truncate* | *dd* | *ln* | *install* | \
+        *checkout* | *switch* | *restore* | *unlink* | *shred*) need=1 ;;
+    esac
+    [ -n "$ro" ] || [ -n "$croot" ] || need=1
+  elif [ -z "$ro" ]; then
+    case $cmd in *cd* | *-C*) need=1 ;; esac
+  fi
+  [ -n "$ro" ] || [ -z "$croot" ] || roots=$croot$'\n'
   if [ -n "$need" ]; then
     guard
-    records=$(OD_CWD=$cwd awk -f "$plugin/lib/shell-words.awk" <<<"$cmd" 2>/dev/null) || records=''
-    while IFS= read -r rec; do
-      [ -n "$rec" ] || continue
-      IFS=$US read -r -a f <<<"$rec"
-      dir=${f[1]-}
-      case ${f[0]} in
-        P) check_push "$dir" "${f[@]:2}" ;;
-        W)
-          absolute "$dir" "${f[2]-}"
-          check_target "$ABS" 1 1
-          ;;
-        C)
-          absolute "$dir" "${f[2]-}"
-          a=$ABS
-          check_target "$a" '' 1
-          if [ -n "${f[3]-}" ]; then
-            check_target "$a/${f[3]##*/}" '' 1
-          fi
-          ;;
-      esac
-    done <<<"$records"
+    scan
   fi
-  [ -n "$croot" ] || return 0
-  read_only || mark "$croot"
+  # Marked only once every check has passed: a denied command changes nothing.
+  while IFS= read -r a; do
+    [ -z "$a" ] || mark "$a"
+  done <<<"$roots"
+}
+
+# scan: check the records shell-words.awk prints for cmd, and add the repository of
+# every directory a mutating command runs in to roots.
+scan() {
+  local records rec f a dir
+  records=$(OD_CWD=$cwd awk -f "$plugin/lib/shell-words.awk" <<<"$cmd" 2>/dev/null) || records=''
+  while IFS= read -r rec; do
+    [ -n "$rec" ] || continue
+    IFS=$US read -r -a f <<<"$rec"
+    dir=${f[1]-}
+    case ${f[0]} in
+      D)
+        # Every repository the command runs in, once each.
+        if [ -n "$ro" ] || ! _od_find_root "$dir"; then continue; fi
+        case $'\n'$roots in *$'\n'"$_OD_ROOT"$'\n'*) ;; *) roots=$roots$_OD_ROOT$'\n' ;; esac
+        ;;
+      P) check_push "$dir" "${f[@]:2}" ;;
+      S) check_switch "$dir" "${f[@]:2}" ;;
+      W)
+        absolute "$dir" "${f[2]-}"
+        check_target "$ABS" 1 1
+        ;;
+      C)
+        absolute "$dir" "${f[2]-}"
+        a=$ABS
+        check_target "$a" '' 1
+        if [ -n "${f[3]-}" ]; then
+          check_target "$a/${f[3]##*/}" '' 1
+        fi
+        ;;
+    esac
+  done <<<"$records"
 }
 
 input=''
