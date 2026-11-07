@@ -98,7 +98,9 @@ content "stripe\.charges\.create" money'
   assert_line "$out" "item concurrency critical floor line src/lib/mod0500.ts:11"
   assert_budget "$(budget_ms)" "diff of 10,000 changed lines in 1,000 files" "$repo" --diff HEAD~1..HEAD
 
-  # New files the working tree has not added yet are read as well.
+  # New files the working tree has not added yet are read as well: every one is opened
+  # from disk, which on Windows costs more than the whole classification, so this check
+  # has twice the budget.
   git -C "$repo" reset -q --hard HEAD~1
   mkdir -p "$repo/src/fresh"
   write_files "$repo/src/fresh" 1000 10 new
@@ -106,7 +108,7 @@ content "stripe\.charges\.create" money'
   timed_risk "$repo" --worktree
   assert_eq 0 "$rc" "exit code: $(cat err)"
   assert_line "$out" "item concurrency critical floor line src/fresh/mod0500.ts:11"
-  assert_budget "$(budget_ms)" "worktree with 1,100 untracked files" "$repo" --worktree
+  assert_budget "$(($(budget_ms) * 2))" "worktree with 1,100 untracked files" "$repo" --worktree
 }
 
 test_many_files_stay_within_twice_the_budget() {
