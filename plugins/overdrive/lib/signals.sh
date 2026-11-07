@@ -110,11 +110,9 @@ function is_test(p,    base) {
 
 '
 
-# Git output is parsed by one awk program in two forms. With -z, NULs become newlines
-# when no path holds a newline (the output then has none at all): fields are counted
-# from each header's status, so a path that looks like a header is still read as a path.
-# Otherwise git is asked again without -z, where core.quotePath=true C-quotes every
-# unusual path into printable ASCII. NUL itself cannot pass through every awk.
+# Git output is read without -z: core.quotePath=true C-quotes every unusual path (tab,
+# newline, quote, backslash, control or non-ASCII bytes) into one printable field, which
+# is lossless and needs no NUL handling (NUL cannot pass through every awk).
 # shellcheck disable=SC2016
 _OD_SIGNALS_PARSE_AWK='
 function header(s) {
@@ -136,33 +134,22 @@ function record(path, old,    e, n, part, i, q) {
 }
 
 BEGIN { FS = "\t" }
-mode == "list" { st = status; om = nm = "000000"; sha = ""; record(quoted ? unquote($0) : $0, ""); next }
-quoted {
+mode == "list" { st = status; om = nm = "000000"; sha = ""; record(unquote($0), ""); next }
+{
   header($1)
   if (st == "R" || st == "C") record(unquote($3), unquote($2)); else record(unquote($2), "")
-  next
 }
-want == 0 { header($0); want = (st == "R" || st == "C") ? 2 : 1; old = ""; next }
-want == 2 { old = $0; want = 1; next }
-{ record($0, old); want = 0 }
-END { if (bad || want) exit 1 }
+END { if (bad) exit 1 }
 '
 
 # _signals_git raw|list STATUS DIR WORK SUBCOMMAND ARG...: run a git listing and print
 # its records. Untracked pathspecs go to WORK/untracked, git's stderr to WORK/git.err.
 _signals_git() {
-  local kind=$1 status=$2 dir=$3 work=$4 sub=$5 lines
+  local kind=$1 status=$2 dir=$3 work=$4 sub=$5
   shift 5
-  git --no-pager -c core.quotePath=true -C "$dir" "$sub" -z "$@" > "$work/git.out" 2> "$work/git.err" || return
-  lines=$(wc -l < "$work/git.out") || return
-  if [ "$lines" -eq 0 ]; then
-    tr '\000' '\n' < "$work/git.out" |
-      awk -v mode="$kind" -v status="$status" -v quoted=0 -v pathspecs="$work/untracked" "$_OD_SIGNALS_LIB_AWK$_OD_SIGNALS_PARSE_AWK"
-  else
-    git --no-pager -c core.quotePath=true -C "$dir" "$sub" "$@" > "$work/git.out" 2> "$work/git.err" || return
-    awk -v mode="$kind" -v status="$status" -v quoted=1 -v pathspecs="$work/untracked" \
-      "$_OD_SIGNALS_LIB_AWK$_OD_SIGNALS_PARSE_AWK" < "$work/git.out"
-  fi
+  git --no-pager -c core.quotePath=true -C "$dir" "$sub" "$@" > "$work/git.out" 2> "$work/git.err" || return
+  awk -v mode="$kind" -v status="$status" -v pathspecs="$work/untracked" \
+    "$_OD_SIGNALS_LIB_AWK$_OD_SIGNALS_PARSE_AWK" < "$work/git.out"
 }
 
 # signals_changes GIT_DIR WORK MODE [ARG...]: print the change records of one mode.
@@ -209,33 +196,41 @@ signals_named_paths() {
 # with path globs compiled to anchored EREs once here so the matcher never sees a glob.
 # A path rule also carries the longest literal run of its glob, which every matching
 # path contains: a substring test rules most paths out before the expression runs.
-# Returns riskmap_load's status (65 invalid, 66 unreadable) when a file fails.
+# Returns 65 when a file is invalid and 66 when one cannot be read (riskmap_read), and
+# checks every content pattern in one awk run (riskmap_check).
 signals_rules() {
-  local file source tab=$_SIGNALS_TAB kind pat item lane rest records lit piece
+  local file source tab=$_SIGNALS_TAB kind pat item lane where records='' lit rest piece
   for file in "$@"; do
     if [ "$file" = "$1" ]; then source=floor; else source=map; fi
-    records=$(riskmap_load "$file") || return
-    [ -n "$records" ] || continue
-    while IFS=$tab read -r kind pat item lane rest; do
-      if [ "$kind" = path ]; then
-        lit=''
-        # **/ may match nothing, its slash included, so it splits like a wildcard.
-        rest=${pat//\*\*\//*}
-        while [ -n "$rest" ]; do
-          piece=${rest%%[*?]*}
-          [ "${#piece}" -le "${#lit}" ] || lit=$piece
-          [ "$piece" != "$rest" ] || break
-          rest=${rest#*[*?]}
-        done
-        _glob_compile "$pat"
-        printf 'path\t%s\t%s\t%s\t%s\t%s\n' "$_GLOB_RE" "$item" "$lane" "$source" "$lit"
-        continue
-      fi
-      printf '%s\t%s\t%s\t%s\t%s\n' "$kind" "$pat" "$item" "$lane" "$source"
+    riskmap_read "$file" || return
+    [ -n "$_RISKMAP_RECORDS" ] || continue
+    while IFS=$tab read -r kind pat item lane where; do
+      records=$records$kind$tab$pat$tab$item$tab$lane$tab$where$tab$source$_SIGNALS_NL
     done <<EOF
-$records
+$_RISKMAP_RECORDS
 EOF
   done
+  riskmap_check "$records" || return
+  while IFS=$tab read -r kind pat item lane where source; do
+    [ -n "$kind" ] || continue
+    if [ "$kind" = path ]; then
+      lit=''
+      # **/ may match nothing, its slash included, so it splits like a wildcard.
+      rest=${pat//\*\*\//*}
+      while [ -n "$rest" ]; do
+        piece=${rest%%[*?]*}
+        [ "${#piece}" -le "${#lit}" ] || lit=$piece
+        [ "$piece" != "$rest" ] || break
+        rest=${rest#*[*?]}
+      done
+      _glob_compile "$pat"
+      printf 'path\t%s\t%s\t%s\t%s\t%s\n' "$_GLOB_RE" "$item" "$lane" "$source" "$lit"
+    else
+      printf '%s\t%s\t%s\t%s\t%s\n' "$kind" "$pat" "$item" "$lane" "$source"
+    fi
+  done <<EOF
+$records
+EOF
 }
 
 # Path tokens skip documentation files; path globs still apply to them.

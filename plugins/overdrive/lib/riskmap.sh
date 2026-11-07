@@ -212,30 +212,45 @@ END {
 }
 '
 
-# riskmap_load FILE: print FILE as normalized records
-# kind<TAB>pattern<TAB>item<TAB>lane<TAB>FILE:line; exit 65 on any invalid rule.
-riskmap_load() {
-  local records tab kind pat rest
+# riskmap_read FILE: set _RISKMAP_RECORDS to FILE as normalized records
+# kind<TAB>pattern<TAB>item<TAB>lane<TAB>FILE:line, without the platform awk check of
+# riskmap_check; 65 on any invalid rule, 66 when FILE cannot be read. One awk process.
+riskmap_read() {
+  _RISKMAP_RECORDS=''
   if [ ! -f "$1" ] || [ ! -r "$1" ]; then
     printf 'cannot read risk map: %s\n' "$1" >&2
     return 66
   fi
   # C locale: byte semantics and ASCII case folding behave the same in every awk.
-  records=$(OD_RISKMAP_SOURCE=$1 LC_ALL=C awk "$_OD_RISKMAP_AWK" < "$1") || return
-  tab=$(printf '\t')
-  case $records in
-    *"content$tab"*)
-      # The platform awk is the one that will match these patterns, so it has the
-      # last word; one run checks them all and only a failure pays for locating it.
-      if ! printf '%s\n' "$records" | LC_ALL=C awk -F '\t' '$1 == "content" && "" ~ $2 { n++ }' 2>/dev/null; then
-        printf '%s\n' "$records" | while IFS=$tab read -r kind pat rest; do
-          [ "$kind" = content ] || continue
-          P=$pat LC_ALL=C awk 'BEGIN { if ("" ~ ENVIRON["P"]) n++ }' 2>/dev/null ||
-            printf 'invalid rule at %s: invalid regular expression: rejected by awk\n' "${rest##*"$tab"}" >&2
-        done
-        return 65
-      fi
-      ;;
-  esac
-  if [ -n "$records" ]; then printf '%s\n' "$records"; fi
+  _RISKMAP_RECORDS=$(OD_RISKMAP_SOURCE=$1 LC_ALL=C awk "$_OD_RISKMAP_AWK" < "$1")
+}
+
+# riskmap_check RECORDS: 0 when this machine's awk compiles every content pattern of
+# RECORDS (riskmap_read records, from any number of files), else 65 with each refused rule
+# reported. The platform awk is the one that will match these patterns, so it has the
+# last word; one run checks them all and only a failure pays for locating it.
+riskmap_check() {
+  local tab kind pat where
+  printf -v tab '\t'
+  case $1 in *"content$tab"*) ;; *) return 0 ;; esac
+  LC_ALL=C awk -F '\t' '$1 == "content" && "" ~ $2 { n++ }' 2>/dev/null <<EOF && return 0
+$1
+EOF
+  # Fields after the fifth (FILE:line) are the caller's and are ignored.
+  while IFS=$tab read -r kind pat _ _ where; do
+    [ "$kind" = content ] || continue
+    P=$pat LC_ALL=C awk 'BEGIN { if ("" ~ ENVIRON["P"]) n++ }' 2>/dev/null ||
+      printf 'invalid rule at %s: invalid regular expression: rejected by awk\n' "${where%%"$tab"*}" >&2
+  done <<EOF
+$1
+EOF
+  return 65
+}
+
+# riskmap_load FILE: print FILE as normalized records
+# kind<TAB>pattern<TAB>item<TAB>lane<TAB>FILE:line; exit 65 on any invalid rule.
+riskmap_load() {
+  riskmap_read "$1" || return
+  riskmap_check "$_RISKMAP_RECORDS" || return
+  if [ -n "$_RISKMAP_RECORDS" ]; then printf '%s\n' "$_RISKMAP_RECORDS"; fi
 }

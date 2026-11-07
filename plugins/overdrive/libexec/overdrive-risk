@@ -148,11 +148,14 @@ git_error() {
 # project directory: sessions often start in a folder above the repository.
 top=''
 if [ -n "$repo" ]; then
-  inside=$(git -C "$repo" rev-parse --is-inside-work-tree 2>/dev/null) || fail_closed "not a git repository"
-  if [ "$inside" = true ]; then
+  # Two lines in a working tree ("true", then the way up to its top level), one when bare.
+  where=$(git -C "$repo" rev-parse --is-inside-work-tree --show-cdup 2>/dev/null) ||
+    fail_closed "not a git repository"
+  if [ "${where%%"$_OD_NL"*}" = true ]; then
+    cdup=${where#true}
+    cdup=${cdup#"$_OD_NL"}
     # The top level is spelled from DIR, not resolved, so that absolute --paths written
     # the way the caller sees the repository (through symlinks, too) fall inside it.
-    cdup=$(git -C "$repo" rev-parse --show-cdup 2>/dev/null) || fail_closed "not a git repository"
     _od_posix_path "$repo"
     case $_OD_PATH in /*) top=$_OD_PATH/$cdup ;; *) top=$PWD/$_OD_PATH/$cdup ;; esac
     _od_normalize_path "$top"
@@ -168,60 +171,68 @@ fi
 if [ -z "$top" ] && { [ -n "$staged" ] || [ -n "$worktree" ]; }; then
   fail_closed "no working tree for --staged or --worktree"
 fi
-# Without a first commit there is nothing to compare against, in any mode.
-git -C "$gitdir" rev-parse -q --verify 'HEAD^{commit}' >/dev/null 2>&1 || fail_closed "no commits yet"
 
-maps=()
-blobs=' '
-# map_at REV: add the risk map at commit REV, or in the index when REV is ":", to the
-# maps; a blob already added is skipped. An unreadable REV fails closed.
-map_at() {
-  local rev=$1 listing mode kind blob rest where=$1
-  if [ "$rev" = : ]; then
-    where='the index'
-    listing=$(git -C "$gitdir" ls-files -s -- .overdrive/risk-map.conf 2>"$work/git.err") ||
-      fail_closed "cannot read the index: $(git_error)"
-  else
-    listing=$(git -C "$gitdir" ls-tree "$rev" -- .overdrive/risk-map.conf 2>"$work/git.err") ||
-      fail_closed "cannot read $rev: $(git_error)"
+# The commits the classification reads: HEAD, then both sides of every range (the merge
+# base for A...B), resolved in one call; the first one missing names the failure.
+revs=('HEAD')
+for range in ${ranges[@]+"${ranges[@]}"}; do
+  case $range in
+    *...*) base=${range%%...*} end=${range#*...} ;;
+    *) base=${range%%..*} end=${range#*..} ;;
+  esac
+  if [ "${range#*...}" != "$range" ]; then
+    base=$(git -C "$gitdir" merge-base "${base:-HEAD}" "${end:-HEAD}" 2>"$work/git.err") ||
+      fail_closed "cannot find the merge base of $range: $(git_error)"
   fi
-  # ls-files -s: mode blob stage path (one line per stage during a merge); ls-tree:
-  # mode type blob path.
-  while read -r mode kind blob rest; do
-    [ -n "$mode" ] || continue
-    [ "$rev" != : ] || blob=$kind
-    case $blobs in *" $blob "*) continue ;; esac
-    blobs="$blobs$blob "
-    git -C "$gitdir" cat-file blob "$blob" > "$work/map.${#maps[@]}" 2>"$work/git.err" ||
-      fail_closed "cannot read the risk map in $where: $(git_error)"
-    maps+=("$work/map.${#maps[@]}")
-  done <<EOF
-$listing
-EOF
-}
+  revs+=("${base:-HEAD}" "${end:-HEAD}")
+done
+if ! commits=$(git -C "$gitdir" rev-parse "${revs[@]/%/^{commit\}}" 2>"$work/git.err"); then
+  # Without a first commit there is nothing to compare against, in any mode.
+  git -C "$gitdir" rev-parse -q --verify 'HEAD^{commit}' >/dev/null 2>&1 || fail_closed "no commits yet"
+  for rev in "${revs[@]}"; do
+    git -C "$gitdir" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1 || fail_closed "cannot read $rev"
+  done
+  fail_closed "cannot read the commits: $(git_error)"
+fi
 
+# The project map on every side of the change: the working tree, the index and the
+# commits each mode compares, looked up in one call and read once per distinct blob.
+maps=()
 if [ -n "$map" ]; then
   maps=("$map")
 else
+  wanted=''
   [ -z "$top" ] || [ ! -e "$top/.overdrive/risk-map.conf" ] || maps=("$top/.overdrive/risk-map.conf")
-  for range in ${ranges[@]+"${ranges[@]}"}; do
-    case $range in
-      *...*) base=${range%%...*} end=${range#*...} ;;
-      *) base=${range%%..*} end=${range#*..} ;;
-    esac
-    case $range in
-      *...*)
-        base=$(git -C "$gitdir" merge-base "${base:-HEAD}" "${end:-HEAD}" 2>"$work/git.err") ||
-          fail_closed "cannot find the merge base of $range: $(git_error)"
-        ;;
-    esac
-    map_at "${base:-HEAD}"
-    map_at "${end:-HEAD}"
-  done
-  [ -z "$staged" ] || map_at :
-  # Without a working tree or a range, the map in force is the one at HEAD.
+  if [ "${#ranges[@]}" -gt 0 ]; then
+    # Every resolved commit but HEAD (the first), which only staged and worktree compare.
+    wanted=${commits#*"$_OD_NL"}
+    wanted=${wanted//$_OD_NL/:.overdrive/risk-map.conf$_OD_NL}:.overdrive/risk-map.conf$_OD_NL
+  fi
   if [ -n "$staged" ] || [ -n "$worktree" ] || { [ -z "$top" ] && [ "${#ranges[@]}" -eq 0 ]; }; then
-    map_at HEAD
+    wanted=$wanted${commits%%"$_OD_NL"*}:.overdrive/risk-map.conf$_OD_NL
+  fi
+  # A conflicted map has stages 2 and 3 instead of 0.
+  [ -z "$staged" ] || wanted=$wanted:0:.overdrive/risk-map.conf$_OD_NL:2:.overdrive/risk-map.conf$_OD_NL:3:.overdrive/risk-map.conf$_OD_NL
+  if [ -n "$wanted" ]; then
+    printf '%s' "$wanted" > "$work/wanted"
+    git -C "$gitdir" cat-file --batch-check='%(objectname) %(objecttype)' < "$work/wanted" > "$work/found" 2>"$work/git.err" ||
+      fail_closed "cannot look up the risk map: $(git_error)"
+    current=''
+    [ "${#maps[@]}" -eq 0 ] || IFS= read -r -d '' current < "${maps[0]}" || :
+    seen=' '
+    while read -r blob kind; do
+      [ "$kind" = blob ] || continue
+      case $seen in *" $blob "*) continue ;; esac
+      seen="$seen$blob "
+      git -C "$gitdir" cat-file blob "$blob" > "$work/map.$blob" 2>"$work/git.err" ||
+        fail_closed "cannot read the risk map $blob: $(git_error)"
+      # The committed map usually equals the working tree's; one copy of its rules is enough.
+      if [ -n "$current" ]; then
+        IFS= read -r -d '' content < "$work/map.$blob" || :
+        [ "$content" != "$current" ] || continue
+      fi
+      maps+=("$work/map.$blob")
+    done < "$work/found"
   fi
   [ "${#maps[@]}" -gt 0 ] || add_note 'risk-map missing'
 fi
@@ -318,36 +329,38 @@ signals_path_items "$work/records" "$work/rules" "$work/listing" > "$work/items"
 # Item lines are ordered critical first, then standard, by item, keeping evidence in the
 # order the changes were read; the Risk line lists each item once in the same order.
 # The same evidence reached twice (two modes, two maps) is printed once.
-tab=$(printf '\t')
-LC_ALL=C awk -F '\t' '
-  $0 in seen { next }
-  { seen[$0] = 1; n++
-    rank = ($2 == "critical") ? 0 : 1
-    if (!($1 in best) || rank < best[$1]) best[$1] = rank
-    line[n] = $0; it[n] = $1 }
-  END { for (i = 1; i <= n; i++) printf "%d\t%s\t%d\t%s\n", best[it[i]], it[i], i, line[i] }
-' "$work/items" "$work/content" | sort -t "$tab" -k1,1n -k2,2 -k3,3n > "$work/sorted" || fail_closed "cannot sort items"
-
 NOTES=$notes NEXT_CRITICAL=$next_critical LC_ALL=C awk -F '\t' '
   BEGIN {
     next_text["direct"] = "Work inline; test first if testable; verify with evidence."
     next_text["standard"] = "Short decision plan; TDD where testable; one review at the end of the slice."
     next_text["critical"] = ENVIRON["NEXT_CRITICAL"]
   }
+  $0 in seen { next }
   {
-    if (NR == 1) lane = ($1 == 0) ? "critical" : "standard"
-    out[NR] = sprintf("item %s %s %s %s", $4, $5, $6, $7)
-    if (!($2 in listed)) { listed[$2] = 1; risk = risk (risk == "" ? "" : ", ") $2 }
+    seen[$0] = 1
+    if (!($1 in count)) { name[++items] = $1; rank[$1] = 1 }
+    if ($2 == "critical") rank[$1] = 0
+    line[$1, ++count[$1]] = "item " $1 " " $2 " " $3 " " $4
   }
   END {
-    if (NR == 0) { lane = "direct"; risk = "none" }
+    # Few items: insertion sort by rank, then name.
+    for (i = 2; i <= items; i++)
+      for (j = i; j > 1 && (rank[name[j - 1]] > rank[name[j]] ||
+          (rank[name[j - 1]] == rank[name[j]] && name[j - 1] > name[j])); j--) {
+        t = name[j]; name[j] = name[j - 1]; name[j - 1] = t
+      }
+    lane = items == 0 ? "direct" : rank[name[1]] == 0 ? "critical" : "standard"
     print "lane " lane
-    for (i = 1; i <= NR; i++) print out[i]
+    risk = items == 0 ? "none" : ""
+    for (i = 1; i <= items; i++) {
+      for (k = 1; k <= count[name[i]]; k++) print line[name[i], k]
+      risk = risk (i > 1 ? ", " : "") name[i]
+    }
     k = split(ENVIRON["NOTES"], note, "\n")
     for (i = 1; i <= k; i++) print "note " note[i]
     print "next " next_text[lane]
     print "Risk: " lane " — " risk
   }
-' "$work/sorted" > "$work/out" || fail_closed "cannot print the classification"
+' "$work/items" "$work/content" > "$work/out" || fail_closed "cannot print the classification"
 # Printed only once complete, so a failure never leaves a partial classification behind.
 cat "$work/out"
