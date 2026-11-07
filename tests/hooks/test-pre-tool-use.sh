@@ -206,6 +206,23 @@ test_read_only_commands_skip_the_reader() {
   assert_denies "$(bash_event "command rm 'tests/cart total.test.sh'" "$repo")" 'is a pinned test'
 }
 
+test_denies_sort_awk_uniq_writes_to_pinned_test() {
+  local repo r t cmd
+  repo=$(pinned_repo)
+  r=$(pin_reason 'tests/cart total.test.sh')
+  t="'tests/cart total.test.sh'"
+  for cmd in "sort -o $t src/cart.sh" "sort -o$t src/cart.sh" "sort -no $t src/cart.sh" \
+    "sort --output=$t src/cart.sh" "sort --output $t src/cart.sh" "ls && sort -o $t src/cart.sh" \
+    "cd . && sort -o $t src/cart.sh" "awk -i inplace '{print}' $t" "gawk -iinplace '{print}' $t" \
+    "awk --include=inplace -v x=1 '{print}' $t" "uniq src/cart.sh $t" "uniq -c src/cart.sh $t"; do
+    assert_denies "$(bash_event "$cmd" "$repo")" "$r"
+  done
+  # Reading them is fine.
+  for cmd in "sort $t" "sort -t, -k2 $t -o out.txt" "awk '{print}' $t" "awk -f prog.awk $t" "uniq $t" "uniq -c $t out.txt"; do
+    assert_allows "$(bash_event "$cmd" "$repo")"
+  done
+}
+
 test_denies_sed_i_on_pinned_test() {
   local repo r w
   repo=$(pinned_repo)

@@ -80,7 +80,7 @@ file_tool() {
 
 # read_only: true when the command plainly changes no file (a conservative allowlist).
 read_only() {
-  local seg segs part parts first=1 IFS
+  local seg segs part parts first=1 n IFS
   # shellcheck disable=SC2016
   case $cmd in *'$('* | *'`'* | *'<('* | *'>('*) return 1 ;; esac
   case $cmd in
@@ -108,16 +108,25 @@ read_only() {
     case ${1##*/} in
       ls | cat | head | tail | grep | egrep | fgrep | rg | wc | pwd | echo | printf | which | type | \
         stat | file | du | df | tree | less | diff | cmp | date | uname | whoami | id | printenv | \
-        uniq | cut | tr | jq | test | '[' | '[[' | ']]' | true | false | sleep | cd | \
+        cut | tr | jq | test | '[' | '[[' | ']]' | true | false | sleep | cd | \
         basename | dirname | realpath | readlink | hostname | ps | exit | overdrive | 'fi' | 'done' | 'esac') ;;
       sed)
         for part in "$@"; do
           case $part in -i* | --in-place* | -[!-]*i*) return 1 ;; esac
         done
         ;;
-      sort | awk)
-        # sort -o and gawk -i inplace write files.
-        case ${1##*/}:$seg in sort:*' -o'* | sort:*' --output'* | awk:*' -i'*) return 1 ;; esac
+      sort | awk | gawk | uniq)
+        # sort -o FILE, gawk -i inplace and uniq IN OUT write files.
+        n=0
+        for part in "${@:2}"; do
+          case ${1##*/}:$part in
+            sort:--output* | sort:-o* | sort:-[!-]*o* | awk:-i* | awk:--include* | gawk:-i* | gawk:--include*) return 1 ;;
+            uniq:-[fsw]) n=$((n - 1)) ;;
+            uniq:-*) ;;
+            uniq:*) n=$((n + 1)) ;;
+          esac
+        done
+        [ "$n" -lt 2 ] || return 1
         ;;
       command)
         # command rm x runs rm; only the lookups are read-only.
@@ -169,7 +178,8 @@ bash_tool() {
     elif [ -n "$croot_pins" ]; then
       case $cmd in
         *'>'* | *rm* | *mv* | *cp* | *tee* | *sed* | *perl* | *truncate* | *dd* | *ln* | *install* | \
-          *checkout* | *switch* | *restore* | *unlink* | *shred* | *cd* | *-C* | *-c* | *eval*) need=1 ;;
+          *checkout* | *switch* | *restore* | *unlink* | *shred* | *sort* | *awk* | *uniq* | \
+          *cd* | *-C* | *-c* | *eval*) need=1 ;;
       esac
     else
       # Without pins nearby, only a change of directory reaches pins or another

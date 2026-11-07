@@ -84,6 +84,53 @@ function inplace(j, perl,   k, o, c, n) {
   }
   return 0
 }
+# sortout D J: sort -o FILE, -oFILE, -no FILE, --output[=]FILE writes FILE.
+function sortout(d, j,   k, o, c, n) {
+  for (; j <= nw; j++) {
+    o = w[j]
+    if (o == "--") return
+    if (o ~ /^--output=/) { out("W", d, substr(o, 10)); continue }
+    if (o == "--output") { out("W", d, w[++j]); continue }
+    if (o ~ /^--/ || o !~ /^-./) continue
+    n = length(o)
+    for (k = 2; k <= n; k++) {
+      c = substr(o, k, 1)
+      if (c == "o") { if (k == n) out("W", d, w[++j]); else out("W", d, substr(o, k + 1)); break }
+      if (c ~ /[ktST]/) { if (k == n) j++; break }
+    }
+  }
+}
+# awkinplace D J: gawk -i inplace (or --include=inplace) rewrites every input file:
+# the words after the program, skipping option arguments and var=value assignments.
+function awkinplace(d, j,   k, o, ip, prog) {
+  for (k = j; k <= nw; k++) {
+    o = w[k]
+    if (o == "-i" || o == "--include") { if (w[k + 1] ~ /^inplace(\.awk)?$/) ip = 1; k++ }
+    else if (o ~ /^(-i|--include=)inplace(\.awk)?$/) ip = 1
+  }
+  if (!ip) return
+  prog = 1
+  for (; j <= nw; j++) {
+    o = w[j]
+    if (o == "--") continue
+    if (o ~ /^-[fvFiel]$/ || o == "--include" || o == "--file" || o == "--assign") { if (o == "-f" || o == "--file") prog = 0; j++; continue }
+    if (o ~ /^-/) { if (o ~ /^(-f|--file=)/) prog = 0; continue }
+    if (prog) { prog = 0; continue }
+    if (o ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue
+    out("W", d, o)
+  }
+}
+# uniqout D J: uniq IN OUT writes OUT.
+function uniqout(d, j,   n, o, ops) {
+  n = 0
+  for (; j <= nw; j++) {
+    o = w[j]
+    if (o ~ /^-[fsw]$/) { j++; continue }
+    if (o ~ /^-./) continue
+    ops[++n] = o
+  }
+  if (n >= 2) out("W", d, ops[2])
+}
 function git(d, j,   g, k, dd, sw, any) {
   g = d
   while (j <= nw && w[j] ~ /^-/) {
@@ -151,6 +198,9 @@ function endseg(   i, c, j, d, t) {
       else if (c == "mv") copyish(d, i + 1, 1)
       else if (c == "cp" || c == "ln" || c == "install") copyish(d, i + 1, 0)
       else if ((c == "sed" || c == "perl") && inplace(i + 1, c == "perl")) operands(d, i + 1, "W")
+      else if (c == "sort") sortout(d, i + 1)
+      else if (c == "awk" || c == "gawk") awkinplace(d, i + 1)
+      else if (c == "uniq") uniqout(d, i + 1)
       else if (c == "dd") { for (j = i + 1; j <= nw; j++) if (w[j] ~ /^of=/) out("W", d, substr(w[j], 4)) }
       else if (c == "sh" || c == "bash" || c == "zsh" || c == "dash" || c == "ksh") shell(i + 1)
       else if (c == "eval" && i < nw) {

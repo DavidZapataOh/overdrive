@@ -11,7 +11,7 @@ It denies only what it recognizes: edits through the file tools, and the shell f
 | `Edit`, `Write`, `MultiEdit` or `NotebookEdit` on a pinned test (listed in `.overdrive/run/pins` of the file's repository) | denied: `<path> is a pinned test. Tests change only before the red run. If the test itself is wrong, run: overdrive pin --release "<reason>" and redo red.` |
 | A file tool on `.overdrive/run/pins` while it exists | denied |
 | Any file-tool edit, or recognized shell write, in a repository whose pins file cannot be read, does not parse or fails its seal | denied until `overdrive pin --release "<reason>"` |
-| A shell command whose recognized write reaches a pinned test: redirections (`>`, `>>`, `>\|`, `&>`), `tee`, `sed -i`, `perl -i`, `rm`, `mv`, `cp`, `ln`, `install`, `truncate`, `dd of=`, `unlink`, `shred`, `git checkout`, `git restore`, `git rm`, `git mv` | denied; a directory or glob that covers a pinned test counts, including the repository itself, a folder above it and `/` |
+| A shell command whose recognized write reaches a pinned test: redirections (`>`, `>>`, `>\|`, `&>`), `tee`, `sed -i`, `perl -i`, `rm`, `mv`, `cp`, `ln`, `install`, `truncate`, `dd of=`, `unlink`, `shred`, `sort -o`/`--output`, `awk`/`gawk -i inplace`, `uniq IN OUT`, `git checkout`, `git restore`, `git rm`, `git mv` | denied; a directory or glob that covers a pinned test counts, including the repository itself, a folder above it and `/` |
 | `git switch`, or `git checkout` of a branch or commit (any operand that is not an existing path, or `-b`, `-B`, `--orphan`, `--detach`), in a repository with pins | denied: finish green and `overdrive pin --clear`, or release |
 | `git push` that would update the default branch: an explicit refspec (`main`, `+main`, `HEAD:main`, `heads/main`, `refs/heads/main`, a wildcard), a push with no refspec while `HEAD` is on it, `--all`, `--mirror`, `--delete` of it | denied, with or without `--force` |
 | A file tool call, or a shell command outside a small read-only allowlist, that goes ahead | touches `.overdrive/run/markers/<session_id>.changed` in every repository it runs in |
@@ -35,7 +35,7 @@ These still reach a pinned test, or the default branch, and are left to the gree
 - paths built at run time: variables, the output of command substitution, `xargs` input, `find -exec` or `-delete`, `cd -`;
 - programs that write the files they are given or that they choose: formatters and linters with fixes (`prettier --write`, `eslint --fix`), package scripts (`npm run`, `make`), interpreters (`python -c`, `node -e`, scripts), `patch`, `git apply`, `git stash`, `git reset --hard`, `git merge`, `git rebase`, `git pull`;
 - wrappers and shells not listed above, and nesting deeper than 32 strings;
-- read-only-looking commands that write a file they are given (`uniq IN OUT`, `awk` calling `system()`);
+- awk programs that write from inside the program (`system()`, `print > "file"`), and other interpreters;
 - symbolic links to a pinned file, and Unicode spellings of a name that differ from the pinned one;
 - a write into another repository through an absolute path, from a repository without pins;
 - `git push` refspecs are read as written: an upstream mapping (`push.default=upstream`, `remote.<name>.push`) that sends another branch to the default one is not seen, and in a repository on the reftable backend, whose refs cannot be read without git, a push with no refspec is not seen and the default branch falls back to `main`/`master`;
