@@ -369,6 +369,76 @@ json_extract_string() {
   _JSON_RAW=
 }
 
+# json_extract_strings JSON KEY...: what json_extract_string finds for each KEY, from
+# one split of JSON: JSON_VALUES[i] holds the value for the i-th KEY, unset when there
+# is none. The walk stops once every KEY is found, so keys near the start of a large
+# document (hook input fields) cost one linear split and a few steps.
+json_extract_strings() {
+  local LC_ALL=C p v prev='' st=0 i=0 n start=0 k j want=0 left
+  local -a P=() keys=()
+  JSON_VALUES=()
+  keys=("${@:2}")
+  left=${#keys[@]}
+  [ "$left" -gt 0 ] || return 0
+  IFS='"' read -r -d '' -a P <<< "$1" || true
+  n=${#P[@]}
+  for p in "${P[@]}"; do
+    i=$((i + 1))
+    case $st in
+      2)
+        # Inside the value: it ends at the first part not followed by an escaped quote.
+        case $p in
+          *[!\\]\\ | \\) continue ;;
+          *\\) ! _json_odd_tail "$p" || continue ;;
+        esac
+        # The here-string added a newline, so the last part is never followed by a quote.
+        [ "$i" -lt "$n" ] || break
+        _json_join "$start" $((i - start))
+        _json_decode "$_JSON_RAW"
+        _JSON_RAW=
+        JSON_VALUES[want]=$JSON_VALUE
+        left=$((left - 1))
+        [ "$left" -gt 0 ] || break
+        st=0
+        prev=$p
+        continue
+        ;;
+      1)
+        # The text between a key's closing quote and the next quote.
+        st=0
+        v=$p
+        case $v in [[:space:]]*) v=${v#"${v%%[![:space:]]*}"} ;; esac
+        case $v in
+          :*)
+            v=${v#:}
+            case $v in [[:space:]]*) v=${v#"${v%%[![:space:]]*}"} ;; esac
+            if [ -z "$v" ]; then
+              st=2
+              start=$i
+              continue
+            fi
+            ;;
+        esac
+        ;;
+    esac
+    # A part is a key candidate when the quote before it is not escaped.
+    if [ "$i" -gt 1 ] && ! { case $prev in *\\) _json_odd_tail "$prev" ;; *) false ;; esac; }; then
+      j=0
+      for k in "${keys[@]}"; do
+        if [ "$p" = "$k" ] && [ -z "${JSON_VALUES[j]+x}" ]; then
+          st=1
+          want=$j
+          break
+        fi
+        j=$((j + 1))
+      done
+    fi
+    prev=$p
+  done
+  JSON_VALUE=
+  return 0
+}
+
 # json_get_string KEY [JSON]: print the value; JSON defaults to stdin.
 json_get_string() {
   local json

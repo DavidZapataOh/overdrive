@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# PreToolUse guard: pinned tests stay untouched until green, the default branch is
+# never pushed to, and every session marks the repositories it changed.
+# It runs before every edit and shell command, so the common call (no pins, no push,
+# no file-writing command) uses builtins only. Pins cost one cksum to check the seal;
+# a shell command that pushes or may write a pinned file costs one awk to tokenize.
+# It always exits 0 and never sets onFailure: a broken guard lets the call through,
+# and the green evidence check catches what slipped past.
+
+set -f
+export LC_ALL=C
+
+plugin=${CLAUDE_PLUGIN_ROOT:-}
+if [ -z "$plugin" ]; then
+  case ${BASH_SOURCE[0]} in
+    */*) cd -P -- "${BASH_SOURCE[0]%/*}/.." 2>/dev/null && plugin=$PWD ;;
+    *) cd -P .. 2>/dev/null && plugin=$PWD ;;
+  esac
+fi
+# shellcheck source=../lib/json.sh
+. "$plugin/lib/json.sh" 2>/dev/null || exit 0
+# shellcheck source=../lib/path.sh
+. "$plugin/lib/path.sh" 2>/dev/null || exit 0
+
+PINS_FILE=.overdrive/run/pins
+US=$'\037'
+
+# guard: load the checks the fast path does not need.
+guard() {
+  # shellcheck source=../lib/guard.sh
+  [ -n "${_OD_GUARD_LOADED:-}" ] || . "$plugin/lib/guard.sh"
+}
+
+# mark ROOT: record that this session changed files in ROOT. The runtime folder is
+# created (and made to ignore itself) only the first time, the one call that forks.
+mark() {
+  local run=$1/.overdrive/run s
+  [ -n "$sid" ] || return 0
+  s=${sid//[!A-Za-z0-9._-]/_}
+  if [ ! -d "$run/markers" ]; then
+    mkdir -p "$run/markers" 2>/dev/null || return 0
+  fi
+  [ -f "$run/.gitignore" ] || { printf '*\n' > "$run/.gitignore"; } 2>/dev/null
+  { : > "$run/markers/$s.changed"; } 2>/dev/null
+  return 0
+}
+
+# absolute DIR WORD: set ABS to WORD resolved against DIR, normalized.
+# shellcheck disable=SC2088
+absolute() {
+  _od_posix_path "$2"
+  case $_OD_PATH in
+    /* | [A-Za-z]:*) ;;
+    '~') _OD_PATH=$HOME ;;
+    '~/'*) _OD_PATH=$HOME/${_OD_PATH#'~/'} ;;
+    *) _OD_PATH=$1/$_OD_PATH ;;
+  esac
+  _od_posix_path "$_OD_PATH"
+  _od_normalize_path "$_OD_PATH"
+  ABS=$_OD_PATH
+}
+
+file_tool() {
+  local path
+  json_extract_string file_path "$input" || json_extract_string notebook_path "$input" || return 0
+  path=$JSON_VALUE
+  _od_posix_path "$path"
+  case $_OD_PATH in
+    /* | [A-Za-z]:*) ;;
+    *) [ -n "$cwd" ] || return 0; absolute "$cwd" "$path"; _OD_PATH=$ABS ;;
+  esac
+  _od_find_root "$_OD_PATH" || return 0
+  croot=$_OD_ROOT
+  if [ -f "$croot/$PINS_FILE" ]; then
+    guard
+    check_target "$_OD_PATH" '' ''
+  fi
+  mark "$croot"
+}
+
+# read_only: true when the command plainly changes no file (a conservative allowlist).
+read_only() {
+  local seg segs part parts first=1 n IFS
+  # shellcheck disable=SC2016
+  case $cmd in *'$('* | *'`'* | *'<('* | *'>('*) return 1 ;; esac
+  case $cmd in
+    *'>'*)
+      IFS='>' read -r -d '' -a parts <<<"$cmd"
+      for part in "${parts[@]}"; do
+        if [ -n "$first" ]; then first=''; continue; fi
+        case $part in '' | '&'* | /dev/null* | ' /dev/null'*) ;; *) return 1 ;; esac
+      done
+      ;;
+  esac
+  IFS=$'\n;&|(){}' read -r -d '' -a segs <<<"$cmd"
+  IFS=$' \t'
+  for seg in "${segs[@]}"; do
+    # shellcheck disable=SC2086
+    set -- $seg
+    while [ "$#" -gt 0 ]; do
+      # Digits and redirections start a segment only where >& or &> was split above.
+      case $1 in
+        [A-Za-z_]*=* | '!' | time | then | do | else | if | while | until | [0-9]* | '>'* | '<'*) shift ;;
+        *) break ;;
+      esac
+    done
+    [ "$#" -gt 0 ] || continue
+    case ${1##*/} in
+      ls | cat | head | tail | grep | egrep | fgrep | rg | wc | pwd | echo | printf | which | type | \
+        stat | file | du | df | tree | less | diff | cmp | date | uname | whoami | id | printenv | \
+        cut | tr | jq | test | '[' | '[[' | ']]' | true | false | sleep | cd | \
+        basename | dirname | realpath | readlink | hostname | ps | exit | overdrive | 'fi' | 'done' | 'esac') ;;
+      sed)
+        for part in "$@"; do
+          case $part in -i* | --in-place* | -[!-]*i*) return 1 ;; esac
+        done
+        ;;
+      sort | awk | gawk | uniq)
+        # sort -o FILE, gawk -i inplace and uniq IN OUT write files.
+        n=0
+        for part in "${@:2}"; do
+          case ${1##*/}:$part in
+            sort:--output* | sort:-o* | sort:-[!-]*o* | awk:-i* | awk:--include* | gawk:-i* | gawk:--include*) return 1 ;;
+            uniq:-[fsw]) n=$((n - 1)) ;;
+            uniq:-*) ;;
+            uniq:*) n=$((n + 1)) ;;
+          esac
+        done
+        [ "$n" -lt 2 ] || return 1
+        ;;
+      command)
+        # command rm x runs rm; only the lookups are read-only.
+        case ${2-} in -v | -V) ;; *) return 1 ;; esac
+        ;;
+      find)
+        case $seg in *-delete* | *-exec* | *-ok* | *-fprint* | *-fls*) return 1 ;; esac
+        ;;
+      git)
+        shift
+        while [ "$#" -gt 0 ]; do
+          case $1 in -C | -c) shift 2 ;; -*) shift ;; *) break ;; esac
+        done
+        case ${1-} in
+          status | diff | log | show | rev-parse | ls-files | ls-tree | blame | describe | shortlog | \
+            grep | cat-file | reflog | show-ref | merge-base | rev-list | fetch | remote | branch | config | tag) ;;
+          *) return 1 ;;
+        esac
+        ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
+}
+
+bash_tool() {
+  local croot_pins='' need='' ro='' a roots=''
+  json_extract_string command "$input" || return 0
+  cmd=$JSON_VALUE
+  croot=''
+  if [ -n "$cwd" ]; then
+    absolute / "$cwd"
+    cwd=$ABS
+    if _od_find_root "$cwd"; then
+      croot=$_OD_ROOT
+      [ ! -f "$croot/$PINS_FILE" ] || croot_pins=1
+    fi
+  else
+    cwd=$PWD
+  fi
+  # A read-only command writes nothing and pushes nothing: no reading needed.
+  if read_only; then
+    ro=1
+  else
+    case $cmd in *push*) need=1 ;; esac
+    if [ -z "$croot" ]; then
+      # Outside a repository, any target or directory could be in one.
+      need=1
+    elif [ -n "$croot_pins" ]; then
+      case $cmd in
+        *'>'* | *rm* | *mv* | *cp* | *tee* | *sed* | *perl* | *truncate* | *dd* | *ln* | *install* | \
+          *checkout* | *switch* | *restore* | *unlink* | *shred* | *sort* | *awk* | *uniq* | \
+          *cd* | *-C* | *-c* | *eval*) need=1 ;;
+      esac
+    else
+      # Without pins nearby, only a change of directory reaches pins or another
+      # repository to mark.
+      case $cmd in *cd* | *-C* | *-c* | *eval*) need=1 ;; esac
+    fi
+  fi
+  [ -n "$ro" ] || [ -z "$croot" ] || roots=$croot$'\n'
+  if [ -n "$need" ]; then
+    guard
+    scan
+  fi
+  # Marked only once every check has passed: a denied command changes nothing.
+  while IFS= read -r a; do
+    [ -z "$a" ] || mark "$a"
+  done <<<"$roots"
+}
+
+# scan: check the records shell-words.awk prints for cmd, and add the repository of
+# every directory a mutating command runs in to roots.
+scan() {
+  local records rec f a dir
+  records=$(OD_CWD=$cwd awk -f "$plugin/lib/shell-words.awk" <<<"$cmd" 2>/dev/null) || records=''
+  while IFS= read -r rec; do
+    [ -n "$rec" ] || continue
+    IFS=$US read -r -a f <<<"$rec"
+    dir=${f[1]-}
+    case ${f[0]} in
+      D)
+        # Every repository the command runs in, once each.
+        if [ -n "$ro" ] || ! _od_find_root "$dir"; then continue; fi
+        case $'\n'$roots in *$'\n'"$_OD_ROOT"$'\n'*) ;; *) roots=$roots$_OD_ROOT$'\n' ;; esac
+        ;;
+      P) check_push "$dir" "${f[@]:2}" ;;
+      S) check_switch "$dir" "${f[@]:2}" ;;
+      W)
+        absolute "$dir" "${f[2]-}"
+        check_target "$ABS" 1 1
+        ;;
+      C)
+        absolute "$dir" "${f[2]-}"
+        a=$ABS
+        check_target "$a" '' 1
+        if [ -n "${f[3]-}" ]; then
+          check_target "$a/${f[3]##*/}" '' 1
+        fi
+        ;;
+    esac
+  done <<<"$records"
+}
+
+input=''
+IFS= read -r -d '' input || :
+json_extract_strings "$input" tool_name session_id cwd
+tool=${JSON_VALUES[0]-} sid=${JSON_VALUES[1]-} cwd='' cmd='' croot=''
+if [ -n "${JSON_VALUES[2]-}" ]; then
+  _od_posix_path "${JSON_VALUES[2]}"
+  cwd=$_OD_PATH
+fi
+
+case $tool in
+  Edit | Write | MultiEdit | NotebookEdit) file_tool ;;
+  Bash) bash_tool ;;
+esac
+exit 0
