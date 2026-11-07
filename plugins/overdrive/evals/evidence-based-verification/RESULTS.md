@@ -1,6 +1,6 @@
 # Evidence-based-verification: results summary
 
-Provenance. The two full-tier blocks below (Opus and Sonnet, 24 cases each, 3 runs per arm) were measured on 2026-11-07 before the grader anchoring, the success-only `ran-tests` counting and the excuse row, with the shipping description. A full tier runs only before release and when the skill's core instructions change, so the numbers in this section are smoke and were taken after those changes; the full-tier blocks are kept as they were measured.
+Provenance. The two full-tier blocks below (Opus and Sonnet, 24 cases each, 3 runs per arm) were measured on 2026-11-07 before the grader anchoring, the success-only `ran-tests` counting and the excuse row, with the shipping description. The smoke table that follows (one run, no baseline arm) is the only measurement on the current graders and SKILL.md; it cannot show that a grader discriminates, so the behavior tier needs a full run with its baseline arm before release. The full-tier blocks are kept as they were measured.
 
 ## Smoke, current tree (2026-11-07, Claude Code 2.1.319, claude-sonnet-5-5, one run, no baseline arm)
 
@@ -121,4 +121,4 @@ Description rounds 3 and 4 were tuned on behavior-case misses, and rounds 5 to 9
 | evidence-based-verification-trigger-write-tests | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.31 | negative: fired 0/3 |
 | evidence-based-verification-trigger-ya-quedo-verifica | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.34 | positive: fired 3/3 |
 
-Both runs: `tools/evals/run-suite.sh evidence-based-verification --tier full --model main|sonnet --concurrency 6`, on the committed SKILL.md and cases. The builder agent runs on Sonnet and follows this skill, so the suite is measured on both models.
+Both runs: `tools/evals/run-suite.sh evidence-based-verification --tier full --model main|sonnet --concurrency 6`, on the SKILL.md and cases of that date (before the changes named in the provenance paragraph). The builder agent runs on Sonnet and follows this skill, so the suite is measured on both models.
