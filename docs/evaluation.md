@@ -161,8 +161,8 @@ The gate is `under = 0` (no change classified below its label), `critical_recall
 
 | Corpus | Date | Commit | Rows | under | critical_recall | over | over_rate | Gate |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Synthetic | 2026-11-07 | `b066940` | 151 | 0 | 1.00 | 0 | 0.00 | met |
-| OSS | 2026-11-07 | `b066940` | 64 | 0 | 1.00 | 2 | 0.11 | met |
+| Synthetic | 2026-11-07 | `9db9831` | 159 | 0 | 1.00 | 0 | 0.00 | met |
+| OSS | 2026-11-07 | `9db9831` | 64 | 0 | 1.00 | 2 | 0.11 | met |
 
 The OSS rows a change of the coverage rules could affect (those that change at least one source file and one test file, or delete or rename a test file) were labeled again from the written policy by a labeler who never saw the classifier. Two OSS rows come out above their label:
 
@@ -177,4 +177,12 @@ Some floors are only visible to someone who reads what the code means. Labelers 
 | --- | --- | --- |
 | `vercel/next.js` `a61dab2` | `public-contract` | a public config key moves under `experimental` |
 
-The row still comes out critical through `untested-change`, but the named item is missing. Two rules cover such cases. The model may raise a lane, never lower it: when the change plainly touches a floor that no signal names, the model adds the item. A project names its own exported surface, session code and secret helpers in `.overdrive/risk-map.conf` (`symbol`, `path`, `keyword` rules), so the classifier catches them from then on.
+The row still comes out critical through `untested-change`, but the named item is missing.
+
+Test-file conventions the classifier does not read yet, so changes there may be over- or under-counted until a later release:
+
+- A test commented out with a block comment: only lines that start with `//`, `/*`, `*`, `#` or `<!--` are comments, so a case inside `/* … */` whose line starts otherwise still counts as a case.
+- `test.fixme(`, `it.todo(` and similar markers are not skips; adding one does not count as removing a case.
+- SwiftPM's `Tests/<Target>Tests/` mirrors `Sources/<Target>/` by target name, not by path, so a test there does not cover its source unless they share a directory.
+- .NET test projects (`*.Tests/`) mirror the product project by name, likewise; files there that are not named `*Test(s).cs` are not tests.
+- Kotest specs (`*Spec.kt`) are not recognized as tests. Two rules cover such cases. The model may raise a lane, never lower it: when the change plainly touches a floor that no signal names, the model adds the item. A project names its own exported surface, session code and secret helpers in `.overdrive/risk-map.conf` (`symbol`, `path`, `keyword` rules), so the classifier catches them from then on.
