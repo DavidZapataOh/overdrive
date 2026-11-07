@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# SessionStart: inject the risk router (core.md) as additionalContext.
+# Claude's first reply waits for this hook, so it uses builtins only: no command
+# substitution, no external commands. The event on stdin is not needed.
+
+root=${CLAUDE_PLUGIN_ROOT:-}
+if [ -z "$root" ]; then
+  # Run by hand: the plugin root is the parent of this script's directory.
+  case ${BASH_SOURCE[0]} in
+    */*) cd -P -- "${BASH_SOURCE[0]%/*}/.." 2>/dev/null && root=$PWD ;;
+    *) cd -P .. 2>/dev/null && root=$PWD ;;
+  esac
+fi
+
+core=
+# shellcheck source=../lib/json.sh
+if ! { IFS= read -r -d '' core < "$root/hooks/core.md" || [ -n "$core" ]; } 2>/dev/null ||
+  ! . "$root/lib/json.sh" 2>/dev/null; then
+  printf '%s\n' '{"systemMessage":"Overdrive could not load its session router (hooks/core.md); reinstall the plugin."}'
+  exit 0
+fi
+
+# Quoted replacement: a root containing & or \ is inserted literally on every bash.
+core=${core//"{{PLUGIN_ROOT}}"/"$root"}
+
+printf '%s' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"'
+json_escape "$core"
+printf '%s\n' '"}}'

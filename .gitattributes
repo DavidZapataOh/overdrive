@@ -1,2 +1,4 @@
 # Frozen label files are hashed byte for byte on every OS.
 tests/risk/corpus/** text eol=lf
+# Hooks ship to every OS; a CRLF checkout would break the shebang and the injected text.
+plugins/overdrive/hooks/** text eol=lf
