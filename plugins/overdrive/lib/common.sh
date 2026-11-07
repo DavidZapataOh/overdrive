@@ -230,3 +230,33 @@ od_active_ledger() {
   [ -f "$1/$rel" ] || return 1
   printf '%s\n' "$1/$rel"
 }
+
+# od_abs_path PATH: print PATH made absolute the way od_repo_root sees paths: Windows
+# spellings in /c/x form, relative paths prefixed with the physical cwd, and ., .. and
+# repeated slashes collapsed lexically.
+od_abs_path() {
+  _od_posix_path "$1"
+  case $_OD_PATH in /* | [A-Za-z]:*) ;; *) _OD_PATH=$(pwd -P)/$_OD_PATH ;; esac
+  _od_normalize_path "$_OD_PATH"
+  printf '%s\n' "$_OD_PATH"
+}
+
+# od_plan_dir PLAN [RUN]: print RUN/<stem>-<cksum>, the run directory of plan PLAN.
+# stem is PLAN's file name without a trailing .md, every byte outside [A-Za-z0-9._-]
+# turned into "-" (bytes, so the name does not depend on the locale); cksum is the
+# decimal first field of cksum over od_abs_path PLAN. The checksum keeps same-named
+# plans apart and plan directories clear of the run directory's own files. RUN
+# defaults to <repo around $PWD>/.overdrive/run. Creates nothing.
+od_plan_dir() {
+  local run=${2-} abs stem sum root LC_ALL=C
+  abs=$(od_abs_path "$1")
+  stem=${abs##*/}
+  stem=${stem%.md}
+  stem=${stem//[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]/-}
+  sum=$(printf '%s' "$abs" | cksum) || return 1
+  if [ -z "$run" ]; then
+    root=$(od_repo_root) || return 1
+    run=$root/.overdrive/run
+  fi
+  printf '%s/%s-%s\n' "$run" "$stem" "${sum%% *}"
+}

@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# overdrive ledger: the append-only record of a plan's execution, read to resume it.
+
+OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=../lib/common.sh
+. "$OVERDRIVE_HOME/lib/common.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: overdrive ledger init --plan FILE
+       overdrive ledger add [--plan FILE] LINE
+       overdrive ledger status [--plan FILE]
+       overdrive ledger path [--plan FILE]
+       overdrive ledger rulings [--plan FILE]
+
+The ledger of plan dir/<stem>.md is .overdrive/run/<stem>-<cksum>/ledger.md (stem limited
+to [A-Za-z0-9._-], cksum of the plan's absolute path); its first line is
+"# Overdrive ledger — plan: <absolute plan path>". init creates it (or reopens it when it
+belongs to the same plan) and makes it the active ledger, the one used when --plan is
+not given. Each added line is one of:
+  Task <N>: pending|in-progress|implemented|reviewing|fixing round <k>|complete|blocked [text]
+  Ruling: <what> — <why> — <cost if wrong>
+  Note: <text>
+  Preflight: <text>
+status prints the last state of every task in the plan or the ledger, then "next <N>",
+the first task not complete, or "next none".
+USAGE
+}
+
+root=$(od_repo_root) || od_die "not inside a git repository"
+run=$(od_run_dir "$root") || od_die "cannot create $root/.overdrive/run"
+header_prefix='# Overdrive ledger — plan: '
+
+# plan_ledger FILE: set plan_abs, plan_dir and ledger for a plan file.
+plan_ledger() {
+  [ -f "$1" ] || od_die "plan not found: $1" 66
+  plan_abs=$(od_abs_path "$1")
+  plan_dir=$(od_plan_dir "$1" "$run") || od_die "cannot resolve $1"
+  ledger=$plan_dir/ledger.md
+}
+
+# check_header: refuse a ledger that records another plan.
+check_header() {
+  local first=''
+  { IFS= read -r first || [ -n "$first" ]; } < "$ledger"
+  [ "$first" = "$header_prefix$plan_abs" ] ||
+    od_die "$ledger belongs to another plan: ${first#"$header_prefix"}" 65
+}
+
+# resolve PLAN: set ledger from --plan, or from the active-ledger pointer.
+resolve() {
+  if [ -n "$1" ]; then
+    plan_ledger "$1"
+    [ -f "$ledger" ] || od_die "no ledger for $1; run overdrive ledger init --plan $1" 66
+    check_header
+  else
+    ledger=$(od_active_ledger "$run") ||
+      od_die "no active ledger; run overdrive ledger init --plan FILE" 66
+  fi
+}
+
+valid_line() {
+  local l=$1 rest what why cost
+  local task_re='^Task [1-9][0-9]*: (pending|in-progress|implemented|reviewing|fixing round [1-9][0-9]*|complete|blocked)( .*)?$'
+  case $l in *$'\n'* | *$'\r'*) return 1 ;; esac
+  case $l in
+    'Task '*) [[ $l =~ $task_re ]] ;;
+    'Ruling: '*)
+      rest=${l#Ruling: }
+      case $rest in *' — '*' — '*) ;; *) return 1 ;; esac
+      what=${rest%% — *}
+      rest=${rest#* — }
+      why=${rest%% — *}
+      cost=${rest#* — }
+      case $cost in *' — '*) return 1 ;; esac
+      [ -n "${what//[[:space:]]/}" ] && [ -n "${why//[[:space:]]/}" ] && [ -n "${cost//[[:space:]]/}" ]
+      ;;
+    'Note: '* | 'Preflight: '*)
+      rest=${l#*: }
+      [ -n "${rest//[[:space:]]/}" ]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# shellcheck disable=SC2016
+status_awk='
+function state_of(s) {
+  if (match(s, /^fixing round [0-9]+/)) return substr(s, 1, RLENGTH)
+  sub(/ .*/, "", s)
+  return s
+}
+FILENAME == ENVIRON["PLAN"] {
+  if (match($0, /^#+[ \t]+Task[ \t]+[0-9]+/)) {
+    s = substr($0, 1, RLENGTH); sub(/^#+[ \t]+Task[ \t]+/, "", s)
+    if (!((s + 0) in st)) { st[s + 0] = "pending"; keys[++k] = s + 0 }
+  }
+  next
+}
+/^Task [0-9]+: / {
+  n = $2 + 0; s = $0; sub(/^Task [0-9]+: /, "", s)
+  if (!(n in st)) keys[++k] = n
+  st[n] = state_of(s)
+}
+END {
+  for (i = 2; i <= k; i++) {
+    x = keys[i]
+    for (j = i - 1; j >= 1 && keys[j] > x; j--) keys[j + 1] = keys[j]
+    keys[j + 1] = x
+  }
+  nxt = "none"
+  for (i = 1; i <= k; i++) {
+    printf "Task %d: %s\n", keys[i], st[keys[i]]
+    if (nxt == "none" && st[keys[i]] != "complete") nxt = keys[i]
+  }
+  print "next " nxt
+}
+'
+
+sub=${1-}
+[ $# -eq 0 ] || shift
+plan=''
+if [ "${1-}" = --plan ]; then
+  [ $# -ge 2 ] || { usage >&2; exit 64; }
+  plan=$2
+  shift 2
+fi
+
+case $sub in
+  init)
+    [ -n "$plan" ] && [ $# -eq 0 ] || { usage >&2; exit 64; }
+    plan_ledger "$plan"
+    mkdir -p "$plan_dir" || od_die "cannot create $plan_dir"
+    od_lock "$ledger.lock" || od_die "cannot lock $ledger"
+    if [ -f "$ledger" ]; then
+      (check_header) || { od_unlock "$ledger.lock"; exit 65; }
+    else
+      printf '%s%s\n' "$header_prefix" "$plan_abs" > "$ledger" ||
+        { od_unlock "$ledger.lock"; od_die "cannot write $ledger"; }
+    fi
+    od_unlock "$ledger.lock"
+    tmp=$run/active-ledger.$$.tmp
+    { printf '%s/ledger.md\n' "${plan_dir##*/}" > "$tmp" && mv -f "$tmp" "$run/active-ledger"; } ||
+      { rm -f "$tmp"; od_die "cannot write $run/active-ledger"; }
+    printf '%s\n' "$ledger"
+    ;;
+  add)
+    [ $# -eq 1 ] || { usage >&2; exit 64; }
+    valid_line "$1" || od_die "not a ledger line (see overdrive ledger --help): $1" 65
+    resolve "$plan"
+    od_append "$ledger" "$1" || exit 1
+    ;;
+  status)
+    [ $# -eq 0 ] || { usage >&2; exit 64; }
+    resolve "$plan"
+    first=''
+    { IFS= read -r first || [ -n "$first" ]; } < "$ledger"
+    PLAN=${first#"$header_prefix"}
+    export PLAN
+    if [ -f "$PLAN" ]; then
+      awk "$status_awk" "$PLAN" "$ledger"
+    else
+      printf 'overdrive: plan not found, listing ledger tasks only: %s\n' "$PLAN" >&2
+      awk "$status_awk" "$ledger"
+    fi
+    ;;
+  path)
+    [ $# -eq 0 ] || { usage >&2; exit 64; }
+    resolve "$plan"
+    printf '%s\n' "$ledger"
+    ;;
+  rulings)
+    [ $# -eq 0 ] || { usage >&2; exit 64; }
+    resolve "$plan"
+    grep '^Ruling: ' "$ledger" || true
+    ;;
+  -h | --help) usage ;;
+  *) usage >&2; exit 64 ;;
+esac
