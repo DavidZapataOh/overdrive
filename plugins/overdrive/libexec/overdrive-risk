@@ -3,7 +3,7 @@
 # Any failure to classify prints the critical lane and exits 3: a change is never
 # placed below critical because something could not be read.
 
-set -E -u -o pipefail
+set -u -o pipefail
 export LC_ALL=C
 # These would change the patch git prints; the classifier pins its own diff options.
 unset GIT_DIFF_OPTS GIT_EXTERNAL_DIFF
@@ -66,7 +66,9 @@ fail_closed() {
   printf 'next %s\nRisk: critical — classification-failed\n' "$next_critical"
   exit 3
 }
-# Every command whose failure is not handled where it runs ends here.
+# Every command of this script whose failure is not handled where it runs ends here. The
+# trap is not inherited (no errtrace): bash 3.2 would fire it inside command substitutions
+# whose status the caller checks, turning a reported failure into an internal one.
 trap 'fail_closed "internal error at line $LINENO"' ERR
 
 repo=''

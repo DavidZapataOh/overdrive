@@ -37,6 +37,23 @@ timed_risk() {
   done
 }
 
+# assert_budget LIMIT_MS WHAT REPO ARGS...: $ms is under LIMIT_MS; otherwise print where
+# one more run spends its time (bash 5 only: EPOCHREALTIME), slowest steps first.
+assert_budget() {
+  local limit=$1 what=$2 root
+  shift 2
+  echo "$what: ${ms} ms (budget $limit ms)"
+  [ "$ms" -ge "$limit" ] || return 0
+  root=$(dirname "$(dirname "$RUNNER")")
+  if [ -n "${EPOCHREALTIME:-}" ]; then
+    # shellcheck disable=SC2016
+    PS4='+ $EPOCHREALTIME ' bash -x "$root/plugins/overdrive/libexec/overdrive-risk" --repo "$@" 2>&1 >/dev/null |
+      awk '/^\++ [0-9]/ { t = $2 + 0; if (p) printf "%6.0f ms  %s\n", (t - p) * 1000, substr(prev, 1, 100); p = t; prev = $0 }' |
+      sort -rn | head -n 15
+  fi
+  return 1
+}
+
 # write_files DIR COUNT LINES: COUNT source files of LINES lines each, plus one test per
 # ten files, written by a single awk process.
 write_files() {
@@ -69,8 +86,7 @@ content "stripe\.charges\.create" money'
   timed_risk "$repo" --diff HEAD~1..HEAD
   assert_eq 0 "$rc" "exit code: $(cat err)"
   assert_line "$out" "item concurrency critical floor line src/lib/mod0500.ts:11"
-  echo "diff of 10,000 changed lines in 1,000 files: ${ms} ms (budget $(budget_ms) ms)"
-  [ "$ms" -lt "$(budget_ms)" ]
+  assert_budget "$(budget_ms)" "diff of 10,000 changed lines in 1,000 files" "$repo" --diff HEAD~1..HEAD
 
   # New files the working tree has not added yet are read as well.
   git -C "$repo" reset -q --hard HEAD~1
@@ -80,8 +96,7 @@ content "stripe\.charges\.create" money'
   timed_risk "$repo" --worktree
   assert_eq 0 "$rc" "exit code: $(cat err)"
   assert_line "$out" "item concurrency critical floor line src/fresh/mod0500.ts:11"
-  echo "worktree with 1,100 untracked files: ${ms} ms (budget $(budget_ms) ms)"
-  [ "$ms" -lt "$(budget_ms)" ]
+  assert_budget "$(budget_ms)" "worktree with 1,100 untracked files" "$repo" --worktree
 }
 
 test_many_files_stay_within_twice_the_budget() {
@@ -95,6 +110,5 @@ test_many_files_stay_within_twice_the_budget() {
   timed_risk "$repo" --diff HEAD~1..HEAD
   assert_eq 0 "$rc" "exit code: $(cat err)"
   assert_line "$out" "item public-contract critical floor path src/api/mod0001.ts"
-  echo "diff of 10,000 changed files: ${ms} ms (budget $(( $(budget_ms) * 2 )) ms)"
-  [ "$ms" -lt "$(( $(budget_ms) * 2 ))" ]
+  assert_budget "$(($(budget_ms) * 2))" "diff of 10,000 changed files" "$repo" --diff HEAD~1..HEAD
 }
