@@ -40,7 +40,7 @@ timed_risk() {
 # assert_budget LIMIT_MS WHAT REPO ARGS...: $ms is under LIMIT_MS; otherwise print where
 # one more run spends its time (bash 5 only: EPOCHREALTIME), slowest steps first.
 assert_budget() {
-  local limit=$1 what=$2 root
+  local limit=$1 what=$2 root start
   shift 2
   echo "$what: ${ms} ms (budget $limit ms)"
   [ "$ms" -ge "$limit" ] || return 0
@@ -51,6 +51,16 @@ assert_budget() {
       awk '/^\++ [0-9]/ { t = $2 + 0; if (p) printf "%6.0f ms  %s\n", (t - p) * 1000, substr(prev, 1, 100); p = t; prev = $0 }' |
       sort -rn | head -n 15
   fi
+  # How much of it is git reading the change, which the classifier cannot do without.
+  start=$(now_ms)
+  case $2 in
+    --diff) git -C "$1" diff -U0 "$3" >/dev/null ;;
+    *)
+      git -C "$1" diff -U0 HEAD >/dev/null
+      git -C "$1" ls-files -o -z --exclude-standard | (cd "$1" && xargs -0 cat) >/dev/null
+      ;;
+  esac
+  echo "git reading the same change: $(($(now_ms) - start)) ms"
   return 1
 }
 
