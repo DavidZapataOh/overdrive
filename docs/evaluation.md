@@ -161,10 +161,13 @@ The gate is `under = 0` (no change classified below its label), `critical_recall
 
 | Corpus | Date | Commit | Rows | under | critical_recall | over | over_rate | Gate |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Synthetic | 2026-11-07 | `9835c69` | 151 | 0 | 1.00 | 0 | 0.00 | met |
-| OSS | 2026-11-07 | `9835c69` | 64 | 0 | 1.00 | 7 | 0.30 | over_rate missed |
+| Synthetic | 2026-11-07 | `b066940` | 151 | 0 | 1.00 | 0 | 0.00 | met |
+| OSS | 2026-11-07 | `b066940` | 64 | 0 | 1.00 | 2 | 0.11 | met |
 
-The seven OSS rows classified above their label: five are `untested-change` under the coverage rules (a test covers a source only when it is named after it or sits next to it, in the same package), which are stricter than the rule the rows were labeled under (any test in the change, or a test with the same name anywhere in the repository): `next.js` `3ddfcac` and `e974969`, `trpc` `6894895` and `2b8a4f8`, `better-auth` `639b20f`. Two are `money` from the camelCase word `subscription` in a test file name (`httpSubscriptionLink.test.ts`, `useSubscription.test.tsx`), where the project uses the word for streaming subscriptions: `trpc` `f08ba07` and `22220b3`.
+The OSS rows a change of the coverage rules could affect (those that change at least one source file and one test file, or delete or rename a test file) were labeled again from the written policy by a labeler who never saw the classifier. Two OSS rows come out above their label:
+
+- `trpc` `f08ba07`: `money` from the camelCase word `subscription` in `httpSubscriptionLink.test.ts`, where the project uses the word for streaming subscriptions.
+- `better-auth` `639b20f`: `untested-change` for `packages/i18n/src/index.ts`. The package tests it in `i18n.test.ts`, which is not named after `index`.
 
 ### Known limits
 
@@ -172,9 +175,6 @@ Some floors are only visible to someone who reads what the code means. Labelers 
 
 | Row | Item | What only judgment sees |
 | --- | --- | --- |
-| `trpc/trpc` `df313f4` | `public-contract` | removes the exported `UniversalIncomingMessage` type and widens the Node HTTP request types |
-| `medusajs/medusa` `b890263` | `auth` | a new session store and `saveUninitialized` defaulting to false in the Express loader |
-| `trpc/trpc` `19da060` | `public-contract` | `createTRPCClient` returns `AsyncIterable` instead of `AsyncGenerator` |
 | `vercel/next.js` `a61dab2` | `public-contract` | a public config key moves under `experimental` |
 
-All four rows still come out critical through other signals (`untested-change`, `money`), but the named item is missing. Two rules cover these cases. The model may raise a lane, never lower it: when the change plainly touches a floor that no signal names, the model adds the item. A project names its own exported surface, session code and secret helpers in `.overdrive/risk-map.conf` (`symbol`, `path`, `keyword` rules), so the classifier catches them from then on.
+The row still comes out critical through `untested-change`, but the named item is missing. Two rules cover such cases. The model may raise a lane, never lower it: when the change plainly touches a floor that no signal names, the model adds the item. A project names its own exported surface, session code and secret helpers in `.overdrive/risk-map.conf` (`symbol`, `path`, `keyword` rules), so the classifier catches them from then on.
