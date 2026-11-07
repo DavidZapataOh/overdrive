@@ -59,20 +59,45 @@ test_no_agent_mentions_dispatching_agents_except_prohibition() {
   return 0
 }
 
+has() { # NAME STRING
+  case "$(body "$agents_dir/$1.md")" in *"$2"*) ;; *) echo "$1 lacks: $2" >&2; return 1 ;; esac
+}
+
 test_every_body_names_the_report_contract() {
   for n in $names; do
-    b=$(body "$agents_dir/$n.md")
-    for s in 'Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT' '15 lines' 'Ruling: <what> — <why> — <cost if wrong>'; do
-      case "$b" in *"$s"*) ;; *) echo "$n lacks: $s" >&2; return 1 ;; esac
-    done
+    has "$n" 'Status: DONE'
+    has "$n" 'Ruling: <what> — <why> — <cost if wrong>'
+    has "$n" 'Your first action is to read the'
+    has "$n" 'BLOCKED'
   done
+  for n in builder reviewer critical-reviewer final-reviewer; do has "$n" 'at most 15 lines'; done
+  has reviewer 'Status: DONE | BLOCKED'
+  has builder 'Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT'
+  has researcher 'Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT'
+  has researcher '2,000 tokens'
+  has researcher 'N of M'
+}
+
+test_agents_with_bash_only_write_own_output_files() {
+  # shellcheck disable=SC2016
+  for n in reviewer critical-reviewer final-reviewer researcher; do
+    has "$n" 'Bash may create your own output files under `.overdrive/run/`'
+    has "$n" 'never modify repository files'
+  done
+}
+
+test_critical_and_final_reviewers_use_ledger_and_evidence() {
+  has critical-reviewer 'overdrive evidence list'
+  has critical-reviewer 'once'
+  has final-reviewer 'Rulings made'
+  has final-reviewer 'overdrive ledger rulings'
 }
 
 test_reviewers_name_the_findings_format() {
   line='F<n> | P0..P3 | 0|25|50|75|100 | path:line | title | "verbatim quote" | failure mode | fix | plan-mandated:yes|no'
   for n in reviewer critical-reviewer final-reviewer; do
     b=$(body "$agents_dir/$n.md")
-    for s in "$line" '.overdrive/run/reviews/<range>.findings' 'overdrive findings check'; do
+    for s in "$line" '.overdrive/run/reviews/<base7>-<head7>.findings' 'overdrive findings check' 'F1 | P1 | 75 |' 'verbatim' 'Do not run the test suite'; do
       case "$b" in *"$s"*) ;; *) echo "$n lacks: $s" >&2; return 1 ;; esac
     done
   done
@@ -80,7 +105,7 @@ test_reviewers_name_the_findings_format() {
 
 test_builder_names_its_cli_and_stop_rules() {
   b=$(body "$agents_dir/builder.md")
-  for s in 'overdrive pin' 'overdrive evidence' 'BLOCKED'; do
+  for s in 'overdrive pin PATH...' 'overdrive evidence red -- CMD...' 'overdrive evidence green -- CMD...' 'overdrive pin --release "REASON"' 'overdrive pin --clear' '10 minutes'; do
     case "$b" in *"$s"*) ;; *) echo "builder lacks: $s" >&2; return 1 ;; esac
   done
 }
