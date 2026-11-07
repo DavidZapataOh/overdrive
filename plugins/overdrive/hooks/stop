@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# Stop: a turn that changed a repository closes with a Risk line the classifier backs.
+# A stated lane below the classifier's passes only when the line cites an active
+# decision in which the user lowered it.
+# A turn that changed nothing costs builtins only. A failed classification counts as
+# critical, so it blocks only a line that states less; a failure of the hook itself lets
+# the stop through, because a broken hook must never trap the session.
+
+export LC_ALL=C
+
+plugin=${CLAUDE_PLUGIN_ROOT:-}
+if [ -z "$plugin" ]; then
+  case ${BASH_SOURCE[0]} in
+    */*) cd -P -- "${BASH_SOURCE[0]%/*}/.." 2>/dev/null && plugin=$PWD ;;
+    *) cd -P .. 2>/dev/null && plugin=$PWD ;;
+  esac
+fi
+# shellcheck source=../lib/json.sh
+# shellcheck source=../lib/path.sh
+if ! . "$plugin/lib/json.sh" 2>/dev/null || ! . "$plugin/lib/path.sh" 2>/dev/null; then
+  printf '%s\n' '{"systemMessage":"Overdrive could not load its stop hook files; reinstall the plugin."}'
+  exit 0
+fi
+
+MISSING='Close this change with its Risk line: run overdrive risk --worktree (or --diff <base>...HEAD) and end with the Risk line it prints.'
+LANES=(direct standard critical)
+
+# classify ROOT: set NEED (lane rank), ITEMS, WHY (the failure, if any) and BASE from the
+# classifier over the working tree and everything committed since BASE: the remote
+# default branch when there is one (unpushed commits on it are part of the change too),
+# else the commit the session's change started from, as the marker recorded it.
+classify() {
+  local root=$1 refs name sym ohead='' omain='' omaster='' start='' range out rc=0 line lane=''
+  NEED=2 ITEMS=classification-failed WHY='' BASE=''
+  refs=$(git -C "$root" for-each-ref --format='%(refname) %(symref)' refs/remotes/origin/HEAD \
+    refs/remotes/origin/main refs/remotes/origin/master 2>/dev/null) || refs=''
+  while read -r name sym; do
+    case $name in
+      refs/remotes/origin/HEAD) ohead=$sym ;;
+      refs/remotes/origin/main) omain=$name ;;
+      refs/remotes/origin/master) omaster=$name ;;
+    esac
+  done <<<"$refs"
+  BASE=${ohead:-${omain:-$omaster}}
+  range=$BASE...HEAD
+  if [ -z "$BASE" ]; then
+    { IFS= read -r start || :; } < "$root/$marker" 2>/dev/null
+    start=${start%$'\r'}
+    case $start in
+      unborn)
+        # Started before the first commit: everything committed since is the change.
+        BASE=$(git -C "$root" hash-object -t tree --stdin </dev/null 2>/dev/null) || BASE=''
+        range=$BASE..HEAD
+        ;;
+      *[!0-9a-f]* | '') BASE='' ;;
+      *) [ "${#start}" -ge 40 ] && BASE=$start range=$start...HEAD ;;
+    esac
+    if [ -z "$BASE" ]; then
+      WHY="the session's marker in this repository records no starting commit"
+      return 0
+    fi
+  fi
+  out=$("$BASH" "$plugin/bin/overdrive" risk --repo "$root" --worktree --diff "$range" 2>&1) || rc=$?
+  ITEMS=''
+  while IFS= read -r line; do
+    case $line in
+      'lane direct') lane=0 ;;
+      'lane standard') lane=1 ;;
+      'lane critical') lane=2 ;;
+      'Risk: '*' — '*) ITEMS=${line#*' — '} ;;
+      'overdrive risk: classification failed: '*) WHY=${line#'overdrive risk: classification failed: '} ;;
+    esac
+  done <<<"$out"
+  if [ "$rc" -eq 0 ] && [ -n "$lane" ] && [ -n "$ITEMS" ]; then
+    NEED=$lane
+    return 0
+  fi
+  [ "$rc" -eq 3 ] && [ -n "$ITEMS" ] || ITEMS=classification-failed
+  if [ -z "$WHY" ]; then
+    WHY=${out%%$'\n'*}
+    WHY=${WHY:-the classifier exited with status $rc}
+  fi
+}
+
+# trim VALUE: set TRIMMED to VALUE without surrounding whitespace.
+trim() {
+  TRIMMED=${1#"${1%%[![:space:]]*}"}
+  TRIMMED=${TRIMMED%"${TRIMMED##*[![:space:]]}"}
+}
+
+# decision ROOT ID: read entry ID of ROOT's decisions log into D_TITLE, D_STATUS and
+# D_SOURCE. Fails when the log or the entry cannot be read.
+decision() {
+  local file=$1/.overdrive/decisions.md out line
+  D_TITLE='' D_STATUS='' D_SOURCE=''
+  [ -f "$file" ] || return 1
+  out=$("$BASH" "$plugin/bin/overdrive" decisions show "$2" "$file" 2>/dev/null) || return 1
+  while IFS= read -r line; do
+    line=${line%$'\r'}
+    case $line in
+      "## $2 — "*) [ -n "$D_TITLE" ] || D_TITLE=${line#"## $2 — "} ;;
+      '- Status:'*) trim "${line#- Status:}"; D_STATUS=$TRIMMED ;;
+      '- Source:'*) trim "${line#- Source:}"; D_SOURCE=$TRIMMED ;;
+    esac
+  done <<<"$out"
+  trim "$D_TITLE"
+  D_TITLE=$TRIMMED
+}
+
+# users_words SOURCE: true when SOURCE quotes someone other than the agent:
+# "<quote>" — <who>, <date>, where no whole word of the attribution names an agent.
+users_words() {
+  local who w
+  case $1 in '"'*'" — '?*', '?*) ;; *) return 1 ;; esac
+  who=${1##*'" — '}
+  shopt -s nocasematch
+  for w in ${who//[!A-Za-z0-9]/ }; do
+    case $w in
+      claude | assistant | agent | overdrive | model | ai) shopt -u nocasematch; return 1 ;;
+    esac
+  done
+  shopt -u nocasematch
+  return 0
+}
+
+# in_base ROOT ID: true when entry ID is already in the decisions log at BASE, so it
+# predates this change.
+in_base() {
+  local log
+  [ -n "$BASE" ] || return 1
+  log=$(git -C "$1" cat-file -p "$BASE:.overdrive/decisions.md" 2>/dev/null) || return 1
+  case $'\n'$log in *$'\n'"## $2 "* | *$'\n'"## $2"$'\n'* | *$'\n'"## $2"$'\r'*) return 0 ;; esac
+  return 1
+}
+
+input=''
+IFS= read -r -d '' input || :
+json_extract_strings "$input" session_id cwd
+sid=${JSON_VALUES[0]-}
+[ -n "$sid" ] || exit 0
+cwd=$PWD
+[ -z "${JSON_VALUES[1]-}" ] || cwd=${JSON_VALUES[1]}
+continuing=''
+! json_get_bool stop_hook_active "$input" >/dev/null || continuing=1
+
+s=${sid//[!A-Za-z0-9._-]/_}
+marker=.overdrive/run/markers/$s.changed
+list=''
+[ -z "${CLAUDE_PLUGIN_DATA:-}" ] || list=$CLAUDE_PLUGIN_DATA/sessions/$s.roots
+roots=()
+seen=$'\n'
+prune=''
+
+# add_root DIR: check DIR once.
+add_root() {
+  case $seen in *$'\n'"$1"$'\n'*) return 0 ;; esac
+  seen=$seen$1$'\n'
+  roots+=("$1")
+}
+
+# The repositories this session changed: those PreToolUse listed for it (siblings,
+# nested repositories and worktrees included), the one around cwd, and those right
+# below cwd, since a session can start in a plain folder that holds its repositories.
+if [ -n "$list" ] && [ -f "$list" ]; then
+  while IFS= read -r r || [ -n "$r" ]; do
+    [ -n "$r" ] || continue
+    if [ -f "$r/$marker" ]; then add_root "$r"; else prune=1; fi
+  done < "$list"
+fi
+if _od_find_root "$cwd" && [ -f "$_OD_ROOT/$marker" ]; then add_root "$_OD_ROOT"; fi
+cwd=${_OD_PATH%/}
+for m in "$cwd"/*/"$marker"; do
+  [ -f "$m" ] || continue
+  m=${m%/"$marker"}
+  [ ! -e "$m/.git" ] || add_root "$m"
+done
+
+# prune_list: drop the listed roots whose marker is gone. The list is moved aside first,
+# so a root PreToolUse appends meanwhile lands in a fresh list instead of being lost.
+prune_list() {
+  local tmp=$list.$$ r keep='' kept=$'\n'
+  [ -n "$prune" ] && [ -f "$list" ] || return 0
+  mv -f -- "$list" "$tmp" 2>/dev/null || return 0
+  while IFS= read -r r || [ -n "$r" ]; do
+    [ -n "$r" ] && [ -f "$r/$marker" ] || continue
+    case $kept in *$'\n'"$r"$'\n'*) continue ;; esac
+    kept=$kept$r$'\n'
+    keep=$keep$r$'\n'
+  done < "$tmp"
+  [ -z "$keep" ] || { printf '%s' "$keep" >> "$list"; } 2>/dev/null
+  rm -f -- "$tmp" 2>/dev/null
+}
+
+if [ "${#roots[@]}" -eq 0 ]; then
+  prune_list
+  exit 0
+fi
+
+# A Claude Code too old to send the closing message cannot be checked.
+json_extract_string last_assistant_message "$input" || exit 0
+msg=$JSON_VALUE
+
+# The governing Risk line is the last one outside code fences: a quoted classification
+# inside a fence, or an earlier draft, does not speak for the close.
+stated=-1
+id=''
+case $msg in
+  *'Risk: '*)
+    infence='' fch='' flen=0
+    while IFS= read -r line || [ -n "$line" ]; do
+      line=${line%$'\r'}
+      t=${line#"${line%%[! 	]*}"}
+      if [ -n "$infence" ]; then
+        case $fch in '`') run=${t%%[!\`]*} ;; *) run=${t%%[!~]*} ;; esac
+        rest=${t#"$run"}
+        trim "$rest"
+        [ "${#run}" -lt "$flen" ] || [ -n "$TRIMMED" ] || infence=''
+        continue
+      fi
+      case $t in
+        '```'*) fch='`' run=${t%%[!\`]*} infence=1 flen=${#run}; continue ;;
+        '~~~'*) fch='~' run=${t%%[!~]*} infence=1 flen=${#run}; continue ;;
+        'Risk: direct — '*) r=0 ;;
+        'Risk: standard — '*) r=1 ;;
+        'Risk: critical — '*) r=2 ;;
+        *) continue ;;
+      esac
+      [ "$t" = "$line" ] || continue
+      stated=$r id=''
+      case $line in
+        *'(lowered by user, D-'[0-9][0-9][0-9][0-9]*')'*)
+          id=${line#*'(lowered by user, '}
+          id=${id%%')'*}
+          case ${id#D-} in *[!0-9]*) id='' ;; esac
+          ;;
+      esac
+    done <<<"$msg"
+    ;;
+esac
+
+if [ "$stated" -lt 0 ]; then
+  [ -n "$continuing" ] || {
+    printf '{"decision":"block","reason":"'
+    json_escape "$MISSING"
+    printf '"}\n'
+  }
+  prune_list
+  exit 0
+fi
+
+reason=''
+notice=''
+for root in "${roots[@]}"; do
+  classify "$root"
+  r=''
+  if [ "$stated" -lt "$NEED" ]; then
+    r="Risk line says ${LANES[$stated]} but the diff classifies as ${LANES[$NEED]} ($ITEMS). Raise the lane, or cite the user's explicit decision as \"(lowered by user, D-NNNN)\"."
+    [ -z "$WHY" ] || r="$r The classifier failed: $WHY."
+    if [ -n "$id" ]; then
+      if ! decision "$root" "$id" || [ "$D_STATUS" != active ]; then
+        r="$r $id is not an active decision in .overdrive/decisions.md."
+      elif ! in_base "$root" "$id" && ! users_words "$D_SOURCE"; then
+        # An entry written during this change counts only as the user's own words.
+        r="$r $id is new in this change and its Source is not the user's quoted words (\"<quote>\" — <who>, <date>), so it cannot lower the lane."
+      else
+        notice=$notice${notice:+$'\n'}"Overdrive: $root lowered from ${LANES[$NEED]} to ${LANES[$stated]} by $id — $D_TITLE."
+        r=''
+      fi
+    fi
+  fi
+  if [ -z "$r" ]; then
+    rm -f -- "$root/$marker" 2>/dev/null
+    prune=1
+    continue
+  fi
+  [ "${#roots[@]}" -eq 1 ] || r="$root: $r"
+  reason=$reason${reason:+$'\n'}$r
+done
+prune_list
+
+[ -z "$continuing" ] || reason=''
+if [ -n "$reason" ]; then
+  printf '{"decision":"block","reason":"'
+  json_escape "$reason"
+  if [ -n "$notice" ]; then
+    printf '","systemMessage":"'
+    json_escape "$notice"
+  fi
+  printf '"}\n'
+elif [ -n "$notice" ]; then
+  printf '{"systemMessage":"'
+  json_escape "$notice"
+  printf '"}\n'
+fi
+exit 0
