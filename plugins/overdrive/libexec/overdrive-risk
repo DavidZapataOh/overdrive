@@ -178,6 +178,7 @@ if [ "${#paths[@]}" -gt 0 ]; then
   physical=''
   for p in "${paths[@]}"; do
     _od_posix_path "$p"
+    _od_normalize_path "$_OD_PATH"
     p=$_OD_PATH
     case $p in
       /*)
@@ -189,8 +190,7 @@ if [ "${#paths[@]}" -gt 0 ]; then
         fi
         ;;
     esac
-    _od_normalize_path "$p"
-    named+=("$_OD_PATH")
+    named+=("$p")
   done
   signals_changes "$gitdir" "$work" paths "${named[@]}" >> "$work/records" ||
     fail_closed "cannot record the named paths"

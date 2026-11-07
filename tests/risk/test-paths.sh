@@ -311,6 +311,8 @@ test_paths_mode_without_git_changes() {
   # Absolute paths inside the repository are made relative to its root.
   risk "$repo" --paths "$repo/src/checkout/x.ts" --staged
   assert_line "$out" "item money critical floor path src/checkout/x.ts"
+  risk "$repo" --paths "$(dirname "$repo")//$(basename "$repo")/./src/checkout/x.ts"
+  assert_line "$out" "item money critical floor path src/checkout/x.ts"
   # Either spelling of a repository reached through a symlink.
   if ! windows_fs; then
     ln -s "$repo" link
