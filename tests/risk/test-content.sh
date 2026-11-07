@@ -271,6 +271,16 @@ test_untracked_files_are_scanned_but_ignored_ones_are_not() {
   assert_eq "" "$(git -C "$repo" ls-files -- 'src/new dir')"
 }
 
+# hidden_or_read ITEM_LINE: the file's content was either read (ITEM_LINE is reported) or
+# hidden from the patch and reported as unscanned. Git versions differ on whether a -diff
+# attribute hides a file's lines in every mode; either way nothing passes unread.
+hidden_or_read() {
+  if ! printf '%s\n' "$out" | grep -qxF "item unscanned-content critical computed path src/app.ts"; then
+    assert_line "$out" "$1"
+  fi
+  assert_no_line "$out" "^lane (direct|standard)$"
+}
+
 test_text_marked_binary_is_unscanned_content() {
   local repo bare
   repo=$(content_repo)
@@ -279,13 +289,12 @@ test_text_marked_binary_is_unscanned_content() {
   commit_all "$repo" attributes
   printf 'const m = new Mutex();\n' >> "$repo/src/app.ts"
   risk "$repo" --worktree
-  assert_line "$out" "item unscanned-content critical computed path src/app.ts"
-  assert_eq "Risk: critical — unscanned-content" "$(risk_line)"
+  hidden_or_read "item concurrency critical floor line src/app.ts:2"
   git -C "$repo" commit -q -am mutex
   bare=$PWD/bare.git
   git clone -q --bare "$repo" "$bare"
   risk "$bare" --diff HEAD~1..HEAD
-  assert_line "$out" "item unscanned-content critical computed path src/app.ts"
+  hidden_or_read "item concurrency critical floor line src/app.ts:2"
 
   # Attributes from .git/info/attributes hide content the same way.
   git -C "$repo" rm -q .gitattributes
@@ -293,14 +302,15 @@ test_text_marked_binary_is_unscanned_content() {
   printf '* -diff\n' > "$repo/.git/info/attributes"
   printf 'DROP TABLE users;\n' >> "$repo/src/app.ts"
   risk "$repo" --worktree
-  assert_line "$out" "item unscanned-content critical computed path src/app.ts"
+  hidden_or_read "item data-migration critical floor line src/app.ts:3"
   rm "$repo/.git/info/attributes"
 
-  # So does a single NUL byte in a source file.
+  # A NUL byte makes every git take a source file as binary.
   git -C "$repo" checkout -q -- src/app.ts
   printf 'const k = 1;\000\n' >> "$repo/src/app.ts"
   risk "$repo" --worktree
   assert_line "$out" "item unscanned-content critical computed path src/app.ts"
+  assert_eq "Risk: critical — unscanned-content" "$(risk_line)"
 
   # Known binary formats are not content to read.
   git -C "$repo" checkout -q -- src/app.ts
