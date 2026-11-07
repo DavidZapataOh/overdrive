@@ -92,3 +92,14 @@ od_abs_path() {
   _od_normalize_path "$_OD_PATH"
   printf '%s\n' "$_OD_PATH"
 }
+
+# _od_refs_sum ROOT: set _OD_REFS to a checksum of ROOT's branches, tags and stash. A
+# session can commit on a new branch and switch back, or stash its work, leaving HEAD and
+# the worktree as they were; the refs still show it.
+_od_refs_sum() {
+  local refs
+  refs=$(git -C "$1" for-each-ref --format='%(refname) %(objectname)' refs/heads refs/tags refs/stash 2>/dev/null) ||
+    return 1
+  _OD_REFS=$(printf '%s\n' "$refs" | cksum) || return 1
+  _OD_REFS=${_OD_REFS%% *}
+}

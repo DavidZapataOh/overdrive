@@ -87,9 +87,11 @@ test_plugin_root_substituted() {
   out=$(run_hook "$root")
   context_of "$out"
   case $JSON_VALUE in *'{{'*) echo "placeholder left: $JSON_VALUE" >&2; return 1 ;; esac
+  # The root is spelled out once, and both the CLI and the user-only skills hang off it.
+  # shellcheck disable=SC2016  # backquotes are literal Markdown
   case $JSON_VALUE in
-    *"$root/skills/<name>/SKILL.md"*) ;;
-    *) echo "no user-only skill path" >&2; return 1 ;;
+    *"R = \`$root\`"*'`R/bin/overdrive`'*'R/skills/<name>/SKILL.md'*) ;;
+    *) echo "no absolute root for the CLI and the user-only skills" >&2; return 1 ;;
   esac
 }
 
@@ -170,6 +172,7 @@ test_core_covers_routing_rules() {
     'Questions and explanations are read-only' '--diff <base>...HEAD' '--repo' \
     'irreversible actions, destructive actions, the user'"'"'s accounts, money or secrets, a product decision only the user can make' \
     'If you were dispatched with a brief, follow the brief instead of this routing.' \
+    'A reply that says work is done or ready, gives a go-ahead or status line, relays a report, or answers yes/no about a vendor, price or law first loads overdrive:evidence-based-verification, in every lane.' \
     risk-triage intent-discovery decision-planning test-driven-development risk-scaled-execution \
     parallel-execution risk-scaled-review root-cause-debugging deep-research decision-log \
     compound-learning evidence-based-verification release-gates skill-evaluation; do

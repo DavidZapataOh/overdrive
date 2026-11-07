@@ -42,6 +42,7 @@ usage_error() {
 next_critical='Full TDD plan approved by the user; per-task critical review and final review.'
 
 notes=''
+next_first=''
 
 # add_note TEXT: a note line for the output, kept in the order added.
 add_note() {
@@ -136,7 +137,16 @@ lib=${OVERDRIVE_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib
 # shellcheck source=../lib/signals.sh
 . "$lib/signals.sh" || fail_closed "cannot load the library"
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive-risk.XXXXXX") || fail_closed "cannot create a work directory"
+# A sandboxed shell can hand out a TMPDIR nobody may write to. /tmp comes next, then
+# the repository's self-ignoring run directory, writable wherever the change can be made.
+if ! work=$(mktemp -d "${TMPDIR:-/tmp}/overdrive-risk.XXXXXX" 2>/dev/null) &&
+  ! work=$(mktemp -d /tmp/overdrive-risk.XXXXXX 2>/dev/null); then
+  top=$(od_repo_root "${repo:-$PWD}") ||
+    fail_closed "cannot create a work directory: TMPDIR and /tmp refused it and no repository was found"
+  run=$(od_run_dir "$top" 2>&1) || fail_closed "cannot create a work directory: ${run%%"$_OD_NL"*}"
+  # mktemp prints only the path on success, so its output is the path or the reason.
+  work=$(mktemp -d "$run/risk.XXXXXX" 2>&1) || fail_closed "cannot create a work directory: ${work%%"$_OD_NL"*}"
+fi
 trap 'rm -rf "$work"' EXIT
 
 # git_error: the first line git wrote on stderr, for the failure reason.
@@ -236,7 +246,15 @@ else
     fi
     maps+=("$work/map.$blob")
   done < "$work/found"
-  [ "${#maps[@]}" -gt 0 ] || add_note 'risk-map missing'
+  # The note says who acts on it: a direct change loads no skill on its own account.
+  if [ "${#maps[@]}" -eq 0 ]; then
+    if [ -n "$top" ] && [ -f "$top/.overdrive/run/risk-map.proposed" ]; then
+      add_note 'risk-map missing; a proposal waits for approval in .overdrive/run/risk-map.proposed'
+    else
+      add_note 'risk-map missing; propose one with overdrive:risk-triage'
+      next_first='Load overdrive:risk-triage and propose the risk map, then: '
+    fi
+  fi
 fi
 
 rc=0
@@ -331,7 +349,7 @@ signals_path_items "$work/records" "$work/rules" "$work/listing" > "$work/items"
 # Item lines are ordered critical first, then standard, by item, keeping evidence in the
 # order the changes were read; the Risk line lists each item once in the same order.
 # The same evidence reached twice (two modes, two maps) is printed once.
-NOTES=$notes NEXT_CRITICAL=$next_critical LC_ALL=C awk -F '\t' '
+NOTES=$notes NEXT_CRITICAL=$next_critical NEXT_FIRST=$next_first LC_ALL=C awk -F '\t' '
   BEGIN {
     next_text["direct"] = "Work inline; test first if testable; verify with evidence."
     next_text["standard"] = "Short decision plan; TDD where testable; one review at the end of the slice."
@@ -360,7 +378,8 @@ NOTES=$notes NEXT_CRITICAL=$next_critical LC_ALL=C awk -F '\t' '
     }
     k = split(ENVIRON["NOTES"], note, "\n")
     for (i = 1; i <= k; i++) print "note " note[i]
-    print "next " next_text[lane]
+    # Above direct the skill loads anyway; a direct change needs telling.
+    print "next " (lane == "direct" ? ENVIRON["NEXT_FIRST"] : "") next_text[lane]
     print "Risk: " lane " — " risk
   }
 ' "$work/items" "$work/content" > "$work/out" || fail_closed "cannot print the classification"

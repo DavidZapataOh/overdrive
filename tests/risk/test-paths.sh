@@ -257,8 +257,17 @@ test_map_missing_is_noted() {
   repo=$(make_repo)
   write_file "$repo" README.md 'x'
   risk "$repo" --worktree
-  assert_line "$out" "note risk-map missing"
+  # The note names who acts on it, because a direct change loads no skill by itself.
+  assert_line "$out" "note risk-map missing; propose one with overdrive:risk-triage"
+  # The next step leads with it: a direct change loads no skill unless told to.
+  assert_line "$out" "next Load overdrive:risk-triage and propose the risk map, then: Work inline; test first if testable; verify with evidence."
+  # Proposed once: while the proposal waits, the note points at it instead.
+  write_file "$repo" .overdrive/run/risk-map.proposed 'pathtoken ledger money'
+  risk "$repo" --worktree
+  assert_line "$out" "note risk-map missing; a proposal waits for approval in .overdrive/run/risk-map.proposed"
   assert_line "$out" "next Work inline; test first if testable; verify with evidence."
+  risk "$repo" --intent 'fix the typo' --paths README.md
+  assert_line "$out" "note risk-map missing; a proposal waits for approval in .overdrive/run/risk-map.proposed"
 }
 
 test_invalid_project_map_fails_closed() {

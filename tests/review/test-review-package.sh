@@ -87,6 +87,8 @@ EOS
   local body
   body=$(cat "$file")
   assert_line "$body" "Range: $base..$head"
+  # Reviewers run the CLI by this absolute path: bin/ is not on their PATH.
+  assert_line "$body" "Overdrive CLI: $(cd "$PWD/fp/bin" && pwd -P)/overdrive"
   assert_line "$body" "Brief: $(cd "$repo/docs" && pwd -P)/brief.md"
   assert_line "$body" 'Lane: standard'
   assert_line "$body" 'lane standard'
