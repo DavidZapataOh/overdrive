@@ -166,3 +166,42 @@ test_relative_link_after_punctuation_is_checked() {
   out=$(tool p 2>&1) && return 1
   assert_line "$out" "skills/alpha/SKILL.md: links to missing references/gone.md"
 }
+
+# mk_case DIR TIER NAME TAGS GRADER_TYPE...: an eval case with one grader per type.
+mk_case() {
+  local dir=$1/plugins/x/evals/tdd/$2/$3 tags=$4 type n=0
+  shift 4
+  mkdir -p "$dir/graders"
+  printf -- '---\nmax_turns: 3\ntags: %s\n---\nPrompt.\n' "$tags" > "$dir/prompt.md"
+  for type in "$@"; do
+    n=$((n + 1))
+    printf -- '---\ntype: %s\n---\nrubric\n' "$type" > "$dir/graders/g$n.md"
+  done
+}
+
+test_smoke_case_with_free_graders_passes() {
+  mkdir -p p
+  mk_case p behavior tdd-behavior-a '[tdd-behavior, tdd-smoke]' regex tool_used
+  tool p/plugins/x
+}
+
+test_smoke_case_with_a_judge_grader_fails() {
+  mkdir -p p
+  mk_case p behavior tdd-behavior-a '[tdd-behavior, tdd-smoke]' regex llm
+  out=$(tool p/plugins/x 2>&1) && return 1
+  assert_line "$out" "evals/tdd/behavior/tdd-behavior-a: smoke case uses a paid grader (llm)"
+}
+
+test_smoke_case_with_a_baseline_grader_in_case_yaml_fails() {
+  mkdir -p p
+  mk_case p behavior tdd-behavior-a '[tdd-smoke]' regex
+  printf 'schema_version: "1.1"\nname: tdd-behavior-a\ngraders:\n  - name: ref\n    type: baseline\n' > p/plugins/x/evals/tdd/behavior/tdd-behavior-a/case.yaml
+  out=$(tool p/plugins/x 2>&1) && return 1
+  assert_line "$out" "evals/tdd/behavior/tdd-behavior-a: smoke case uses a paid grader (baseline)"
+}
+
+test_case_not_tagged_smoke_may_use_a_judge() {
+  mkdir -p p
+  mk_case p behavior tdd-behavior-a '[tdd-behavior]' llm
+  tool p/plugins/x
+}

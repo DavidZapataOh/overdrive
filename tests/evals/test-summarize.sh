@@ -77,13 +77,37 @@ test_summarize_trigger_accuracy_passes_at_the_floor() {
   has 'Trigger accuracy (train): none'
 }
 
-test_summarize_ignores_runs_that_errored_before_grading() {
-  trigger_case tdd-trigger-bugfix positive 2 3 > c1
+test_summarize_counts_an_errored_run_as_incomplete() {
+  trigger_case tdd-trigger-bugfix positive 3 3 > c1
   jq '.arms.with[2] |= (.score = 0 | .error = "rate limited" | .graders = [])' c1 > c1b
   doc c1b > suite.json
   out=$(tool --skill tdd suite.json)
-  has 'positive: fired 2/2'
-  has 'Trigger accuracy (validation): 1/1 (100%), floor 90%: PASS'
+  has 'positive: fired 2/2, 2/3 runs graded'
+  has 'Trigger accuracy (validation): 0/1 (0%), floor 90%: FAIL'
+  has 'Cases with errored runs: 1 (tdd-trigger-bugfix)'
+}
+
+test_summarize_reports_no_errored_runs() {
+  behavior_case tdd-behavior-red-first 1 0.5 > c1
+  doc c1 > suite.json
+  out=$(tool --skill tdd suite.json)
+  has 'Cases with errored runs: none'
+}
+
+test_summarize_flags_any_negative_delta_even_when_it_rounds_to_zero() {
+  behavior_case tdd-behavior-red-first 0.996 1 > c1
+  doc c1 > suite.json
+  out=$(tool --skill tdd suite.json)
+  has '| tdd-behavior-red-first | behavior | 1.00 | 1.00 | -0.00 | 1 | $1.10 | REGRESSION |'
+  has 'Cases with negative delta: 1 (tdd-behavior-red-first)'
+}
+
+test_summarize_rejects_an_unverified_claude_code_version() {
+  behavior_case tdd-behavior-red-first 1 0.5 > c1
+  doc c1 | jq '.claudeVersion = "2.2.0"' > suite.json
+  out=$(tool --skill tdd suite.json 2>&1) && return 1
+  has 'verified against Claude Code 2.1.319'
+  assert_exit 1 tool --skill tdd suite.json
 }
 
 test_summarize_reports_negative_delta() {
@@ -123,6 +147,9 @@ test_summarize_reads_a_recorded_document() {
   has '- Claude Code: 2.1.319'
   has '| spike-probe | behavior | 1.00 | 0.67 | +0.33 | 1 | $0.0032 |  |'
   has 'Cases with negative delta: none'
+  has '| neg | trigger | 1.00 | 1.00 | 0.00 | 2 | $0.0052 | negative: fired 0/2 |'
+  has 'Trigger accuracy (validation): 1/1 (100%), floor 90%: PASS'
+  has 'Trigger accuracy (train): none'
 }
 
 test_summarize_single_arm_documents() {

@@ -30,6 +30,9 @@ permissions:
 
 jobs:
   plan:
+    # Pull requests from forks never receive secrets, and an eval run executes the branch's own
+    # scaffold scripts and hooks, so only branches of this repository are evaluated.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -86,8 +89,10 @@ jobs:
         with:
           node-version: 22
       - name: Install Claude Code
+        # The result format the eval tools read is verified for one version, pinned in models.env.
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash
+          . tools/evals/models.env
+          curl -fsSL https://claude.ai/install.sh | bash -s -- "$OD_EVAL_CLAUDE_VERSION"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install the shell sandbox
         # Cases that grant Bash run under the OS sandbox, which needs these packages, and Ubuntu 24.04

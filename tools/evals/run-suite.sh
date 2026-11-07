@@ -78,7 +78,8 @@ esac
 # shellcheck disable=SC2206 # tool grants are single words or Tool(pattern) without spaces
 [ -z "$allow" ] || args+=(--allow-tools $allow)
 
-claude "${args[@]}"
+# The summary is the only thing on stdout: CI appends it to the job summary.
+claude "${args[@]}" >&2
 rc=$?
 if [ ! -s "$json" ]; then
   echo "run-suite: claude plugin eval wrote no result (exit $rc)" >&2
@@ -88,6 +89,12 @@ fi
 
 summary=$(bash "$here/summarize.sh" --skill "$skill" --tier "$tier" --model "$model_id" ${judge:+--judge "$judge"} "$json") || exit 1
 printf '%s\n' "$summary"
+
+# A run that errored (timeout, rate limit) is not evidence, whatever the command exited with.
+if [ "$rc" -eq 0 ] && [ "$(jq '[.cases[].arms.with[] | select(.error != null)] | length' "$json")" -gt 0 ]; then
+  echo "run-suite: some runs ended with an error; treating the suite as failed" >&2
+  rc=1
+fi
 
 if [ "$tier" = full ] && [ "$(jq -r '.partial' "$json")" != true ]; then
   printf '%s\n' "$summary" > "$root/$plugin/evals/$skill/RESULTS.md"

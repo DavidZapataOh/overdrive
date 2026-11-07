@@ -8,6 +8,7 @@
 # FAKE_KEPT     when set, write a document with this many with-arm runs, each with a kept
 #               sandbox directory holding a trace like the real one
 # FAKE_NO_RESULT  omit the final result record from the traces
+# FAKE_STDOUT  text written to stdout, like the progress the real command prints
 # FAKE_EXIT     exit status (default 0)
 
 printf '%s ' "$@" >> "${FAKE_LOG:?}"
@@ -49,4 +50,5 @@ elif [ -n "${FAKE_RESULT-}" ] && [ -n "$json" ]; then
   cp "$FAKE_RESULT" "$json"
 fi
 
+[ -z "${FAKE_STDOUT-}" ] || printf '%s\n' "$FAKE_STDOUT"
 exit "${FAKE_EXIT:-0}"

@@ -66,9 +66,6 @@ if [ ! -s "$result" ]; then
   exit 1
 fi
 
-out_dir=$root/tests/pressure/$skill/$scenario/runs
-mkdir -p "$out_dir" || exit 1
-rm -f "$out_dir/$arm"-*.md
 
 final_message() {
   local text
@@ -78,6 +75,20 @@ final_message() {
   fi
   printf '%s\n' "$text"
 }
+
+runs_tsv=$work/runs.tsv
+if ! jq -r '.cases[0].arms.with[] | [.tracePath // "", .error // ""] | @tsv' "$result" > "$runs_tsv"; then
+  echo "pressure: no case ran: $skill/$scenario matched nothing in the result" >&2
+  exit 1
+fi
+if [ ! -s "$runs_tsv" ]; then
+  echo "pressure: $skill/$scenario produced no runs" >&2
+  exit 1
+fi
+
+out_dir=$root/tests/pressure/$skill/$scenario/runs
+mkdir -p "$out_dir" || exit 1
+rm -f "$out_dir/$arm"-*.md
 
 n=0
 while IFS=$'\t' read -r trace err; do
@@ -97,7 +108,7 @@ while IFS=$'\t' read -r trace err; do
         ;;
     esac
   fi
-done < <(jq -r '.cases[0].arms.with[] | [.tracePath // "", .error // ""] | @tsv' "$result")
+done < "$runs_tsv"
 
 printf 'pressure: wrote %d run(s) to %s\n' "$n" "$out_dir"
 [ "$rc" -ge 2 ] && exit "$rc"

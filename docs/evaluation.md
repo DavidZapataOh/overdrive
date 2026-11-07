@@ -2,6 +2,8 @@
 
 Every skill is measured with `claude plugin eval` before it ships: does Claude pick the skill when it should (trigger), does it behave better with the skill than without it (behavior), and does it hold under pressure to cut corners (pressure). This page covers how the suites are laid out, how to run them, and what was verified about the runner itself.
 
+Everything below was verified against Claude Code 2.1.319. CI installs exactly that version (`OD_EVAL_CLAUDE_VERSION` in `tools/evals/models.env`) and `summarize.sh` refuses results from any other version until the result format is re-verified and the pin is updated.
+
 Reference: [Test plugins with evals](https://code.claude.com/docs/en/plugin-evals) (Claude Code 2.1.319). Every key used in a case below is taken from that page.
 
 ## Layout
@@ -29,7 +31,7 @@ The directory name is the case name. `--case` matches only the case name, never 
 | `<skill>-smoke` | the cases that use free graders only (`regex`, `tool_used`, `tool_order`, `file_exists`) |
 | `train` or `validation` | trigger cases, added by `tools/evals/split-trigger-set.sh` |
 
-The tags line in `prompt.md` must be a flow list (`tags: [tdd-trigger, tdd-smoke]`).
+The tags line in `prompt.md` must be a flow list (`tags: [tdd-trigger, tdd-smoke]`). `tools/check-skills.sh` fails a `*-smoke` case that has an `llm` or `baseline` grader.
 
 ### Trigger cases
 
@@ -96,7 +98,7 @@ tools/evals/run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] 
 | `full` | trigger and behavior cases, three runs per arm with and without the plugin, `--threshold 0.9`, judge model pinned | $25 |
 | `pressure` | each scenario with the plugin, five runs, final messages kept | $15 per scenario |
 
-`full` writes `plugins/overdrive/evals/<skill>/RESULTS.md` unless the run was partial: date, Claude Code version, pinned model IDs, trigger accuracy for `train` and `validation` (floor 90% on validation), per-case score, baseline score, delta and cost, and a `REGRESSION` note on every case with a negative delta. The release rules for a skill are in the plan; the summary only reports them.
+`full` writes `plugins/overdrive/evals/<skill>/RESULTS.md` unless the run was partial: date, Claude Code version, pinned model IDs, trigger accuracy for `train` and `validation` (floor 90% on validation), per-case score, baseline score, delta and cost, a `REGRESSION` note on every case with a negative delta, and a list of cases with errored runs. A case whose runs did not all grade counts as an incorrect trigger case, and `run-suite.sh` exits 1 when any run errored. The release rules for a skill are in the plan; the summary only reports them.
 
 Pressure scenarios are read by hand. `tools/evals/pressure.sh SKILL SCENARIO --arm with|without` writes each run's final message to `tests/pressure/<skill>/<scenario>/runs/<arm>-<n>.md`. The `without` arm runs the same scenario under an empty plugin, because the CLI cannot run a baseline arm alone.
 
@@ -104,7 +106,7 @@ Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for
 
 ### Models
 
-`tools/evals/models.env` pins full model IDs from the [models overview](https://platform.claude.com/docs/en/about-claude/models/overview) (checked 2026-11-06; dateless IDs are pinned snapshots):
+`tools/evals/models.env` pins full model IDs from the [models overview](https://platform.claude.com/docs/en/about-claude/models/overview) (checked 2026-11-07 UTC; dateless IDs are pinned snapshots):
 
 | Variable | Value | Used for |
 | --- | --- | --- |
@@ -116,11 +118,11 @@ The judge is Sonnet rather than the CLI default (Haiku). The `llm` graders decid
 
 ## CI
 
-`.github/workflows/evals.yml` runs the smoke tier on a pull request for each skill whose files changed (a change to shared plugin code, the fixtures or the eval tools selects every skill with cases), and the full tier on a `v*` tag, weekly, and on demand. Without `ANTHROPIC_API_KEY` (not yet configured, and always absent on forks) the workflow ends green with a notice annotation and a step summary saying the evals were skipped. Results are uploaded as artifacts.
+`.github/workflows/evals.yml` runs the smoke tier on a pull request for each skill whose files changed (same-repository branches only; a change to shared plugin code, the fixtures or the eval tools selects every skill with cases), and the full tier on a `v*` tag, weekly, and on demand. Without `ANTHROPIC_API_KEY` (not yet configured, and always absent on forks) the workflow ends green with a notice annotation and a step summary saying the evals were skipped. Results are uploaded as artifacts.
 
 ## What was verified about the runner
 
-Spike on Claude Code 2.1.319, 2026-11-07, with a throwaway plugin copy outside the repository (cost under $0.03 in total, model `claude-haiku-5-5`). The recorded result document is `tests/evals/fixtures/aggregate-result.recorded.json`, with local paths replaced by placeholders.
+Spike on Claude Code 2.1.319, 2026-11-07 (UTC, from the recorded result), with a throwaway plugin copy outside the repository (cost under $0.03 in total, model `claude-haiku-5-5`). The recorded result document is `tests/evals/fixtures/aggregate-result.recorded.json`, with local paths replaced by placeholders.
 
 **Scaffold scripts can source `_lib/fixtures.sh` by relative path.** `$0` is the absolute path of the script inside the case directory of the plugin, so `$(dirname "$0")/../../../_lib/fixtures.sh` resolves from `evals/<skill>/<tier>/<case>/`. The script runs in the empty workspace (`.../home/cwd`) and needs `--scaffold`.
 
@@ -137,6 +139,6 @@ Spike on Claude Code 2.1.319, 2026-11-07, with a throwaway plugin copy outside t
 
 A `tool_used: Skill` grader is excluded from the score (`scored: false`) in a two-arm run only when the case has other graders; alone, it is scored normally.
 
-**Plugin hooks run in the with-arm; `bin/` is not on the Bash tool's `PATH`.** A `SessionStart` hook ran with the plugin loaded (`hook_started` and `hook_response` records in the trace), its `additionalContext` reached the model, and the same prompt in the baseline arm did not see it. The hook ran in the workspace with `CLAUDE_PLUGIN_ROOT` set, but `overdrive` was not on its `PATH`. With `Bash` granted, `command -v overdrive` found nothing and `CLAUDE_PLUGIN_ROOT` was not set in the tool's shell. Skills and cases that run the CLI therefore need `${CLAUDE_PLUGIN_ROOT}/bin/overdrive` in skill text, where the variable is substituted, and not the bare command name.
+**Plugin hooks run in the with-arm; `bin/` is not on the Bash tool's `PATH`.** A `SessionStart` hook ran with the plugin loaded (`hook_started` and `hook_response` records in the trace), its `additionalContext` reached the model, and the same prompt in the baseline arm did not see it. The hook ran in the workspace with `CLAUDE_PLUGIN_ROOT` set, but `overdrive` was not on its `PATH`. With `Bash` granted, `command -v overdrive` found nothing and `CLAUDE_PLUGIN_ROOT` was not set in the tool's shell. Consequence: skills call the CLI by absolute path (`${CLAUDE_PLUGIN_ROOT}/bin/overdrive`, substituted in skill content) and the session-start router text uses the substituted root, never the bare command name.
 
 The plugin in this repository has no hooks yet; the hook probe used a temporary one in the throwaway copy.

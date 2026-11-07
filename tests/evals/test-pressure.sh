@@ -71,3 +71,22 @@ test_usage_errors() {
   assert_exit 1 pressure tdd missing --arm with
   assert_eq "0" "$(wc -l < "$FAKE_LOG" | tr -d ' ')"
 }
+
+test_no_matching_case_is_an_error() {
+  project
+  echo '{"schemaVersion":1,"cases":[]}' > empty.json
+  FAKE_RESULT=$PWD/empty.json assert_exit 1 pressure tdd skip-tests --arm with
+  assert_eq "0" "$(find repo/tests/pressure -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+}
+
+test_unreadable_result_is_an_error() {
+  project
+  echo 'not json' > bad.json
+  FAKE_RESULT=$PWD/bad.json assert_exit 1 pressure tdd skip-tests --arm with
+}
+
+test_case_with_no_runs_is_an_error() {
+  project
+  echo '{"schemaVersion":1,"cases":[{"name":"x","arms":{"with":[],"without":[]}}]}' > none.json
+  FAKE_RESULT=$PWD/none.json assert_exit 1 pressure tdd skip-tests --arm with
+}

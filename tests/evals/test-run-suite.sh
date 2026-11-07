@@ -110,3 +110,21 @@ test_usage_errors() {
   assert_exit 1 suite unknown --tier smoke
   assert_eq "0" "$(wc -l < "$FAKE_LOG" | tr -d ' ')"
 }
+
+test_only_the_summary_reaches_stdout() {
+  project
+  out=$(FAKE_STDOUT='progress noise' suite tdd --tier smoke 2>/dev/null)
+  case $out in *noise*) echo "claude output leaked into stdout" >&2; return 1 ;; esac
+  case $out in *'# Eval results: tdd'*) ;; *) echo "no summary" >&2; return 1 ;; esac
+}
+
+test_errored_runs_fail_the_run_even_when_claude_exits_zero() {
+  project
+  jq '.cases[0].arms.with[0].error = "timed out after 300s"' "$recorded" > errored.json
+  FAKE_RESULT=$PWD/errored.json assert_exit 1 suite tdd --tier smoke
+}
+
+test_models_env_records_the_verified_claude_code_version() {
+  . "$root/tools/evals/models.env"
+  assert_eq "2.1.319" "$OD_EVAL_CLAUDE_VERSION"
+}
