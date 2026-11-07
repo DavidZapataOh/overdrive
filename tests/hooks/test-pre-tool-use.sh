@@ -114,14 +114,40 @@ test_guard_fast_path_without_pins() {
   assert_allows "$(file_event Edit "$repo/src/a.ts" "$repo")"
   assert_allows "$(bash_event 'npm test' "$repo")"
   assert_allows "$(bash_event 'sed -i.bak s/a/b/ tests/x.test.sh' "$repo")"
-  # No forks: with PATH unusable, any external command would fail to resolve.
+  # No forks once the session has marked the repository (every call after its first):
+  # with PATH unusable, any external command would fail to resolve.
   mkdir -p "$repo/.overdrive/run/markers"
-  rm -f "$repo/.overdrive/run/markers/"*
+  printf 'start\n' > "$repo/.overdrive/run/markers/fast.changed"
+  printf 'start\n' > "$repo/.overdrive/run/markers/fast2.changed"
   out=$(file_event Edit "$repo/src/a.ts" "$repo" fast | PATH=/nonexistent "$BASH" "$(plugin_dir)/hooks/pre-tool-use" 2>&1)
   assert_eq '' "$out"
-  [ -f "$repo/.overdrive/run/markers/fast.changed" ] || { echo "no marker" >&2; return 1; }
   out=$(bash_event 'npm test' "$repo" fast2 | PATH=/nonexistent "$BASH" "$(plugin_dir)/hooks/pre-tool-use" 2>&1)
   assert_eq '' "$out"
+  assert_eq start "$(cat "$repo/.overdrive/run/markers/fast.changed")" "marker rewritten"
+}
+
+test_marker_records_start_and_session_roots() {
+  local repo head data m
+  repo=$(main_repo)
+  commit_file "$repo" src/a.ts 'a'
+  head=$(git -C "$repo" rev-parse HEAD)
+  data=$PWD/data
+  m=$repo/.overdrive/run/markers/sess-R.changed
+  CLAUDE_PLUGIN_DATA=$data assert_allows "$(file_event Edit "$repo/src/a.ts" "$repo" sess-R)"
+  # The commit the change started from, so committed work stays visible at Stop.
+  assert_eq "$head" "$(cat "$m")" "start commit"
+  assert_eq "$repo" "$(cat "$data/sessions/sess-R.roots")" "session roots"
+  # Later calls neither move the start nor list the repository again.
+  commit_file "$repo" src/b.ts 'b'
+  CLAUDE_PLUGIN_DATA=$data assert_allows "$(bash_event 'npm run build' "$repo" sess-R)"
+  assert_eq "$head" "$(cat "$m")" "start commit after a commit"
+  assert_eq "$repo" "$(cat "$data/sessions/sess-R.roots")" "session roots after a second call"
+  # A repository without commits starts unborn.
+  repo=$PWD/unborn
+  git init -q "$repo"
+  CLAUDE_PLUGIN_DATA=$data assert_allows "$(file_event Write "$repo/a.txt" "$repo" sess-R)"
+  assert_eq unborn "$(cat "$repo/.overdrive/run/markers/sess-R.changed")" "unborn start"
+  assert_eq "$repo" "$(sed -n 2p "$data/sessions/sess-R.roots")" "second root"
 }
 
 test_denies_edit_of_pinned_test() {

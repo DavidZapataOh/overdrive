@@ -31,17 +31,25 @@ guard() {
   [ -n "${_OD_GUARD_LOADED:-}" ] || . "$plugin/lib/guard.sh"
 }
 
-# mark ROOT: record that this session changed files in ROOT. The runtime folder is
-# created (and made to ignore itself) only the first time, the one call that forks.
+# mark ROOT: record that this session changed files in ROOT. Only the session's first
+# call in ROOT forks: it records the commit the change starts from, so the Stop hook
+# also classifies what gets committed meanwhile, and lists ROOT in the session's roots
+# so the Stop hook finds it from any cwd.
 mark() {
-  local run=$1/.overdrive/run s
+  local run=$1/.overdrive/run s head data=${CLAUDE_PLUGIN_DATA:-}
   [ -n "$sid" ] || return 0
   s=${sid//[!A-Za-z0-9._-]/_}
+  [ ! -f "$run/markers/$s.changed" ] || return 0
   if [ ! -d "$run/markers" ]; then
     mkdir -p "$run/markers" 2>/dev/null || return 0
   fi
   [ -f "$run/.gitignore" ] || { printf '*\n' > "$run/.gitignore"; } 2>/dev/null
-  { : > "$run/markers/$s.changed"; } 2>/dev/null
+  head=$(git -C "$1" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null) || head=unborn
+  { printf '%s\n' "$head" > "$run/markers/$s.changed"; } 2>/dev/null || return 0
+  if [ -n "$data" ]; then
+    [ -d "$data/sessions" ] || mkdir -p "$data/sessions" 2>/dev/null
+    { printf '%s\n' "$1" >> "$data/sessions/$s.roots"; } 2>/dev/null
+  fi
   return 0
 }
 

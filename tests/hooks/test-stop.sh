@@ -60,11 +60,19 @@ lower_reason() {
   printf 'Risk line says %s but the diff classifies as %s (%s). Raise the lane, or cite the user'"'"'s explicit decision as "(lowered by user, D-NNNN)".' "$1" "$2" "$3"
 }
 
-# mark REPO [SID]: what the PreToolUse hook leaves after an edit in REPO.
+# mark REPO [SID]: what the PreToolUse hook leaves after the session's first edit in
+# REPO: the commit the change starts from.
 mark() {
+  local head
   mkdir -p "$1/.overdrive/run/markers"
   printf '*\n' > "$1/.overdrive/run/.gitignore"
-  : > "$1/.overdrive/run/markers/${2:-sess-1}.changed"
+  head=$(git -C "$1" rev-parse -q --verify 'HEAD^{commit}') || head=unborn
+  printf '%s\n' "$head" > "$1/.overdrive/run/markers/${2:-sess-1}.changed"
+}
+
+# lowered ROOT FROM TO ID TITLE: the notice an accepted lowering prints.
+lowered() {
+  printf '{"systemMessage":"%s"}' "$(jstr "Overdrive: $1 lowered from $2 to $3 by $4 — $5.")"
 }
 
 marked() { [ -f "$1/.overdrive/run/markers/${2:-sess-1}.changed" ]; }
@@ -215,10 +223,159 @@ test_allows_user_lowering_with_active_decision() {
   pushed "$repo"
   auth_change "$repo"
   mark "$repo"
-  assert_allows "$(stop_event 'TTL shortened.
-Risk: direct — none (lowered by user, D-0001)' "$repo")"
+  # The user sees every lowering the hook accepts.
+  assert_eq "$(lowered "$repo" critical direct D-0001 'Ship the session TTL as direct')" \
+    "$(stop "$(stop_event 'TTL shortened.
+Risk: direct — none (lowered by user, D-0001)' "$repo")")"
   marked "$repo" && { echo "marker kept after a pass" >&2; return 1; }
-  return 0
+  # A decision added in this change counts only as the user's quoted words.
+  printf '\n%s\n' '## D-0004 — Auth refactor is standard
+
+- Date: 2026-11-07
+- Scope: src/auth
+- Decision: Treat it as standard.
+- Source: "standard is fine for this refactor" — founder, 2026-11-07
+- Why: Asked for speed.
+- Cost if wrong: Auth bug ships.
+- Status: active' >> "$repo/.overdrive/decisions.md"
+  mark "$repo"
+  assert_eq "$(lowered "$repo" critical standard D-0004 'Auth refactor is standard')" \
+    "$(stop "$(stop_event 'Risk: standard — none (lowered by user, D-0004)' "$repo")")"
+}
+
+test_rejects_self_certified_lowering() {
+  local repo
+  repo=$(main_repo)
+  decisions "$repo"
+  git -C "$repo" add -A
+  git -C "$repo" commit -q -m decisions
+  pushed "$repo"
+  # An active entry written in this change by the agent itself, not the user.
+  printf '\n%s\n' '## D-0004 — Auth refactor is direct
+
+- Date: 2026-11-07
+- Scope: src/auth
+- Decision: Treat it as direct.
+- Source: Ruling — builder, 2026-11-07
+- Why: Small.
+- Cost if wrong: Auth bug ships.
+- Status: active' >> "$repo/.overdrive/decisions.md"
+  auth_change "$repo"
+  mark "$repo"
+  assert_blocks "$(stop_event 'Risk: direct — none (lowered by user, D-0004)' "$repo")" \
+    "$(lower_reason direct critical 'auth, untested-change') D-0004 is new in this change and its Source is not the user's quoted words (\"<quote>\" — <who>, <date>), so it cannot lower the lane."
+  # Committed but not yet in the base: still new in this change.
+  git -C "$repo" add .overdrive/decisions.md
+  git -C "$repo" commit -q -m 'self-certify'
+  assert_blocks "$(stop_event 'Risk: direct — none (lowered by user, D-0004)' "$repo")" \
+    'D-0004 is new in this change' contains
+  marked "$repo" || { echo "marker removed on a block" >&2; return 1; }
+}
+
+test_governing_line_is_the_last_outside_fences() {
+  local repo
+  repo=$(main_repo)
+  decisions "$repo"
+  git -C "$repo" add -A
+  git -C "$repo" commit -q -m decisions
+  pushed "$repo"
+  auth_change "$repo"
+  mark "$repo"
+  # A quoted classification inside a fence does not speak for the closing line.
+  assert_blocks "$(stop_event 'The classifier said:
+```
+Risk: critical — auth, untested-change
+```
+Risk: direct — none' "$repo")" "$(lower_reason direct critical 'auth, untested-change')"
+  assert_blocks "$(stop_event 'Risk: critical — auth
+~~~~
+Risk: critical — auth
+~~~~
+Risk: standard — auth' "$repo")" "$(lower_reason standard critical 'auth, untested-change')"
+  # An earlier line, even outside a fence, is superseded by the last one.
+  assert_blocks "$(stop_event 'Risk: critical — auth, untested-change
+Then trimmed it.
+Risk: direct — none' "$repo")" "$(lower_reason direct critical 'auth, untested-change')"
+  # The decision id is read from the governing line only.
+  assert_blocks "$(stop_event 'Risk: direct — none (lowered by user, D-0001)
+Risk: direct — none' "$repo")" "$(lower_reason direct critical 'auth, untested-change')"
+  # A Risk line only inside a fence is no Risk line.
+  assert_blocks "$(stop_event '```text
+Risk: critical — auth
+```' "$repo")" "$MISSING"
+  marked "$repo" || { echo "marker removed on a block" >&2; return 1; }
+  assert_allows "$(stop_event '```
+Risk: direct — none
+```
+Risk: critical — auth, untested-change' "$repo")"
+}
+
+test_committed_work_visible_without_remote_default() {
+  local repo
+  # No remote at all: the start the marker recorded is the base.
+  repo=$(make_repo)
+  git -C "$repo" branch -q -M main
+  mark "$repo"
+  auth_change "$repo"
+  git -C "$repo" add -A
+  git -C "$repo" commit -q -m 'shorter ttl'
+  assert_eq '' "$(git -C "$repo" status --porcelain)"
+  assert_blocks "$(stop_event 'Risk: direct — none' "$repo")" "$(lower_reason direct critical 'auth, untested-change')"
+  # A remote whose default is develop, without origin/HEAD.
+  repo=$(make_repo)
+  git -C "$repo" branch -q -M develop
+  git -C "$repo" update-ref refs/remotes/origin/develop HEAD
+  git -C "$repo" checkout -q -b feature
+  mark "$repo"
+  auth_change "$repo"
+  git -C "$repo" add -A
+  git -C "$repo" commit -q -m 'shorter ttl'
+  assert_blocks "$(stop_event 'Risk: direct — none' "$repo")" "$(lower_reason direct critical 'auth, untested-change')"
+  assert_allows "$(stop_event 'Risk: critical — auth, untested-change' "$repo")"
+  # A marker without a readable start cannot be classified, so it is critical.
+  printf 'garbage\n' > "$repo/.overdrive/run/markers/sess-1.changed"
+  assert_blocks "$(stop_event 'Risk: standard — none' "$repo")" 'classifies as critical' contains
+}
+
+# edit_in EVENT_CWD FILE DATA: the session edits FILE from EVENT_CWD, through the real
+# PreToolUse hook, and the edit lands.
+edit_in() {
+  printf '{"session_id":"sess-1","transcript_path":"/t.jsonl","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"%s","content":"x"}}' \
+    "$(jstr "$1")" "$(jstr "$2")" |
+    CLAUDE_PLUGIN_ROOT="$(plugin_dir)" CLAUDE_PLUGIN_DATA=$3 "$(plugin_dir)/hooks/pre-tool-use" >/dev/null
+  mkdir -p "$(dirname "$2")"
+  printf 'export const ttl = 1\n' > "$2"
+}
+
+test_finds_repos_through_session_roots() {
+  local top data a b deep wt
+  top=$PWD/top
+  data=$PWD/data
+  mkdir -p "$top"
+  a=$(main_repo); mv "$a" "$top/a"; a=$top/a
+  b=$(main_repo); mv "$b" "$top/b"; b=$top/b
+  mkdir -p "$top/x"
+  deep=$(main_repo); mv "$deep" "$top/x/deep"; deep=$top/x/deep
+  # A subagent's worktree inside the repository, with the parent's session id.
+  wt=$a/.claude/worktrees/w
+  git -C "$a" worktree add -q -b w "$wt"
+  # A sibling reached with cd ../b, a repo two levels down, and the nested worktree.
+  edit_in "$a" "$b/src/auth/s.ts" "$data"
+  edit_in "$top" "$deep/src/auth/s.ts" "$data"
+  edit_in "$wt" "$wt/src/auth/s.ts" "$data"
+  if ! { marked "$b" && marked "$deep" && marked "$wt"; }; then echo "pre-tool-use did not mark" >&2; return 1; fi
+  CLAUDE_PLUGIN_DATA=$data assert_blocks "$(stop_event 'Done.' "$a")" "$MISSING"
+  CLAUDE_PLUGIN_DATA=$data assert_blocks "$(stop_event 'Risk: standard — auth' "$a")" "$b: $(lower_reason standard critical 'auth, untested-change')" contains
+  CLAUDE_PLUGIN_DATA=$data assert_blocks "$(stop_event 'Risk: standard — auth' "$a")" "$deep: " contains
+  CLAUDE_PLUGIN_DATA=$data assert_blocks "$(stop_event 'Risk: standard — auth' "$a")" "$wt: " contains
+  CLAUDE_PLUGIN_DATA=$data assert_allows "$(stop_event 'Risk: critical — auth, untested-change' "$a")"
+  if marked "$b" || marked "$deep" || marked "$wt"; then echo "markers kept after a pass" >&2; return 1; fi
+  # Roots whose markers are gone are pruned.
+  assert_eq '' "$(cat "$data/sessions/sess-1.roots" 2>/dev/null)" "pruned roots"
+  # Without the data directory, the cwd scan still finds a repository below cwd.
+  edit_in "$top" "$b/src/auth/t.ts" "$data"
+  rm -f "$data/sessions/sess-1.roots"
+  assert_blocks "$(stop_event 'Done.' "$top")" "$MISSING"
 }
 
 test_rejects_lowering_with_superseded_decision() {
@@ -323,7 +480,7 @@ test_registered_with_a_timeout() {
 }
 
 test_latency_under_400ms_with_classifier() {
-  local repo i t0 t1 best='' root event
+  local repo i t0 t1 times='' median root event
   # A shared developer machine is too noisy for a wall-clock budget.
   if [ -z "${CI:-}" ] || [ "$(uname -s)" != Linux ]; then
     echo "notice: latency budget is asserted on Linux CI only; skipped"
@@ -355,8 +512,10 @@ test_latency_under_400ms_with_classifier() {
     CLAUDE_PLUGIN_ROOT=$root "$root/hooks/stop" <<<"$event" >/dev/null
     t1=${EPOCHREALTIME/[.,]/}
     echo "run $i: $((t1 - t0)) us" >&2
-    if [ -z "$best" ] || [ $((t1 - t0)) -lt "$best" ]; then best=$((t1 - t0)); fi
+    times="$times$((t1 - t0))
+"
   done
   marked "$repo" && { echo "the classified stop did not pass" >&2; return 1; }
-  [ "$best" -lt 400000 ] || { echo "best ${best} us over 400 ms" >&2; return 1; }
+  median=$(printf '%s' "$times" | sort -n | sed -n 3p)
+  [ "$median" -lt 400000 ] || { echo "median ${median} us over 400 ms" >&2; return 1; }
 }
