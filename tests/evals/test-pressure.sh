@@ -102,3 +102,9 @@ test_fewer_recorded_runs_than_requested_fail_the_command() {
   FAKE_KEPT=2 assert_exit 1 pressure tdd skip-tests --arm with --runs 3
   assert_eq "Final message 2" "$(cat $runs/with-2.md)"
 }
+
+test_reports_the_run_cost_and_duration() {
+  project
+  out=$(FAKE_KEPT=2 pressure tdd skip-tests --arm with --runs 2)
+  assert_line "$out" "pressure: cost \$0, 1 s"
+}

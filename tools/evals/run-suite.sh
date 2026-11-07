@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N]
-#                     [--root DIR] [--allow-tools TOOL...]
+#                     [--concurrency N] [--root DIR] [--allow-tools TOOL...]
 #
 # smoke     one run, no baseline, free graders only (cases tagged SKILL-smoke)
 # full      trigger and behavior cases, three runs per arm, writes the skill's RESULTS.md
@@ -14,19 +14,20 @@ here=$(cd "$(dirname "$0")" && pwd)
 . "$here/models.env"
 
 usage() {
-  echo "usage: run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--root DIR] [--allow-tools TOOL...]" >&2
+  echo "usage: run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--root DIR] [--allow-tools TOOL...]" >&2
   exit 64
 }
 
 [ "$#" -ge 1 ] || usage
 skill=$1
 shift
-tier='' model=main cost='' root=$(cd "$here/../.." && pwd) allow=''
+tier='' model=main cost='' jobs='' root=$(cd "$here/../.." && pwd) allow=''
 while [ "$#" -gt 0 ]; do
   case $1 in
     --tier) tier=${2-}; shift 2 || usage ;;
     --model) model=${2-}; shift 2 || usage ;;
     --max-cost-usd) cost=${2-}; shift 2 || usage ;;
+    --concurrency) jobs=${2-}; shift 2 || usage ;;
     --root) root=${2-}; shift 2 || usage ;;
     --allow-tools)
       shift
@@ -40,6 +41,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case $tier in smoke | full | pressure) ;; *) usage ;; esac
+case $jobs in '' | [1-8]) ;; *) usage ;; esac
 model_id=$(od_model_id "$model") || usage
 
 plugin=plugins/overdrive
@@ -76,6 +78,8 @@ case $tier in
       --judge-model "$judge" --json "$json" --tag "$skill-trigger" "$skill-behavior")
     ;;
 esac
+# Parallel runs share one rate limit; the CLI accepts 1 to 8.
+[ -z "$jobs" ] || args+=(--concurrency "$jobs")
 # shellcheck disable=SC2206 # tool grants are single words or Tool(pattern) without spaces
 [ -z "$allow" ] || args+=(--allow-tools $allow)
 

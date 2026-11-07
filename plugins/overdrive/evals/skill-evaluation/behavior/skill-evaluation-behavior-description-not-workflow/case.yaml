@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: skill-evaluation-behavior-description-not-workflow
+context:
+  scaffold_script: scaffold.sh

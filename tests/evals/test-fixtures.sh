@@ -67,3 +67,14 @@ test_missing_arguments_fail() {
   assert_exit 1 scaffold 'fx_node_project'
   assert_exit 1 scaffold 'fx_commit'
 }
+
+test_plugin_writes_a_manifest_and_skills_directory() {
+  scaffold 'fx_plugin acme-tools "Release helpers"'
+  assert_eq "acme-tools" "$(jq -r .name ws/.claude-plugin/plugin.json)"
+  assert_eq "Release helpers" "$(jq -r .description ws/.claude-plugin/plugin.json)"
+  [ -d ws/skills ] || { echo "skills/ missing" >&2; return 1; }
+}
+
+test_plugin_requires_a_name() {
+  assert_exit 1 scaffold 'fx_plugin'
+}

@@ -117,6 +117,7 @@ while IFS=$'\t' read -r trace err; do
 done < "$runs_tsv"
 
 printf 'pressure: wrote %d run(s) to %s\n' "$n" "$out_dir"
+jq -r '"pressure: cost $\(.costUsd // 0), \(.durationSeconds // 0) s"' "$result"
 [ "$rc" -ge 2 ] && exit "$rc"
 if [ "$bad" -gt 0 ] || [ "$n" -lt "$runs" ]; then
   printf 'pressure: %d of %d requested run(s) recorded, %d errored\n' "$n" "$runs" "$bad" >&2

@@ -58,7 +58,7 @@ input_match: '"skill"\s*:\s*"(?:[\w-]+:)?tdd"'
 
 A negative case (the skill must stay out of the way) adds `min: 0`, `max: 0` and `arm: both`. The summarizer recognizes a negative case by `max: 0`.
 
-Run `tools/evals/split-trigger-set.sh plugins/overdrive/evals/<skill>/trigger` after adding cases. A case goes to `train` for 60 of every 100 checksums of its name, so adding or removing cases never moves another one. Description edits are tuned on `train`; `validation` is the number that counts.
+Run `tools/evals/split-trigger-set.sh plugins/overdrive/evals/<skill>/trigger` after adding cases. The `skill-evaluation` skill ships the same script as `scripts/split-trigger-set`; CI fails if the two copies differ. A case goes to `train` for 60 of every 100 checksums of its name, so adding or removing cases never moves another one. Description edits are tuned on `train`; `validation` is the number that counts.
 
 ### Behavior and pressure cases
 
@@ -79,6 +79,7 @@ fx_commit "Add refund stub"
 | `fx_git_repo` | `git init` on `main` in the current directory, with a local identity |
 | `fx_node_project NAME` | `package.json` with `"test": "node --test"`; nothing is installed |
 | `fx_file PATH CONTENT` | the file, with its directories |
+| `fx_plugin NAME [DESCRIPTION]` | a Claude Code plugin at the workspace root: `.claude-plugin/plugin.json` and an empty `skills/` |
 | `fx_commit MSG` | stage everything and commit (an empty commit is allowed) |
 | `fx_risk_map RULE...` | `.overdrive/risk-map.conf`, one rule per argument |
 | `fx_decisions ENTRY...` | `.overdrive/decisions.md`, one complete `## D-NNNN` entry per argument |
@@ -89,7 +90,7 @@ Give each case one grader on the result and one on the steps taken. Prefer `rege
 ## Running
 
 ```bash
-tools/evals/run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--allow-tools TOOL...]
+tools/evals/run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--allow-tools TOOL...]
 ```
 
 | Tier | What runs | Default ceiling |
@@ -100,7 +101,7 @@ tools/evals/run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] 
 
 `full` writes `plugins/overdrive/evals/<skill>/RESULTS.md` unless the run was partial: date, Claude Code version, pinned model IDs, trigger accuracy for `train` and `validation` (floor 90% on validation), per-case score, baseline score, delta and cost, a `REGRESSION` note on every case with a negative delta, and a list of cases with errored runs. A case whose runs did not all grade counts as an incorrect trigger case, and `run-suite.sh` exits 1 when any run errored. The release rules for a skill are in the plan; the summary only reports them.
 
-Pressure scenarios are read by hand. `tools/evals/pressure.sh SKILL SCENARIO --arm with|without` writes each run's final message to `tests/pressure/<skill>/<scenario>/runs/<arm>-<n>.md`. The `without` arm runs the same scenario under an empty plugin, because the CLI cannot run a baseline arm alone.
+Pressure scenarios are read by hand. `tools/evals/pressure.sh SKILL SCENARIO --arm with|without` writes each run's final message to `tests/pressure/<skill>/<scenario>/runs/<arm>-<n>.md` and prints the cost and duration of the batch. New skills are built with the `skill-evaluation` skill (`/overdrive:skill-evaluation <name>`); `scripts/new-pressure-case SKILL SCENARIO` in that skill scaffolds `scenario.md` and the pressure case. The `without` arm runs the same scenario under an empty plugin, because the CLI cannot run a baseline arm alone.
 
 Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for cases that grant `Bash`, `bubblewrap` and `socat` (the run is refused without a sandbox) and a `PATH` without unreadable directories.
 

@@ -73,6 +73,12 @@ test_allow_tools_are_passed_last() {
   esac
 }
 
+test_concurrency_is_passed_through() {
+  project
+  suite tdd --tier full --concurrency 4 > /dev/null
+  assert_call_has "--concurrency 4"
+}
+
 test_cost_ceiling_can_be_overridden() {
   project
   suite tdd --tier full --max-cost-usd 4 > /dev/null
@@ -109,6 +115,7 @@ test_usage_errors() {
   assert_exit 64 suite tdd
   assert_exit 64 suite tdd --tier nightly
   assert_exit 64 suite tdd --tier full --model gpt
+  assert_exit 64 suite tdd --tier full --concurrency many
   assert_exit 1 suite unknown --tier smoke
   assert_eq "0" "$(wc -l < "$FAKE_LOG" | tr -d ' ')"
 }
