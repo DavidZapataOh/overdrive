@@ -289,7 +289,8 @@ REPORT
 mkdir -p "${out%/*}" || od_die "cannot create ${out%/*}" 1
 tmp=$out.tmp.$$
 {
-  printf '# Brief\n\n## Task\n\n%s\n\n' "$task_text"
+  # Agents get no PATH entry for bin/, so the brief carries the command's absolute path.
+  printf '# Brief\n\nOverdrive CLI: %s/bin/overdrive\n\n## Task\n\n%s\n\n' "$OVERDRIVE_HOME" "$task_text"
   if [ -z "$has_text" ]; then
     printf '## Global Constraints\n\n%s\n\n' "${constraints:-The plan has no Global Constraints section.}"
   fi

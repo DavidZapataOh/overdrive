@@ -115,3 +115,11 @@ test_no_agent_references_plans_or_tasks() {
     if grep -qiE 'sprint|plan task|task [0-9]' "$agents_dir/$n.md"; then echo "$n has a forbidden reference" >&2; return 1; fi
   done
 }
+
+# bin/ is not on an agent's PATH, so an agent that runs the CLI takes its path from the brief.
+test_cli_users_take_the_path_from_the_brief() {
+  for n in $names; do
+    body "$agents_dir/$n.md" | grep -q '`overdrive [a-z]' || continue
+    has "$n" '`Overdrive CLI:`'
+  done
+}
