@@ -93,4 +93,28 @@ if [ -d "$plugin/skills" ]; then
   done
 fi
 
+# Smoke cases run on every pull request without a judge: a paid grader there would bill each run.
+check_smoke_cases() {
+  local evals=$plugin/evals dir rel file kind
+  [ -d "$evals" ] || return 0
+  while IFS= read -r file; do
+    dir=$(dirname "$file")
+    rel=${dir#"$evals"/}
+    case $rel in _* | results/*) continue ;; esac
+    awk '
+      FNR == 1 && FILENAME ~ /prompt\.md$/ { fm = ($0 == "---") ; next }
+      FILENAME ~ /prompt\.md$/ && fm && $0 == "---" { fm = 0; next }
+      FILENAME ~ /prompt\.md$/ && !fm { next }
+      /^[[:space:]]*tags:.*-smoke/ || /^[[:space:]]+-[[:space:]]+[A-Za-z0-9-]*-smoke[[:space:]]*$/ { found = 1 }
+      END { exit found ? 0 : 1 }
+    ' "$file" || continue
+    for kind in llm baseline; do
+      if grep -qE "^[[:space:]-]*type:[[:space:]]*${kind}[[:space:]]*\$" "$dir/case.yaml" "$dir"/graders/*.md 2>/dev/null; then
+        fail "evals/$rel" "smoke case uses a paid grader ($kind)"
+      fi
+    done
+  done < <(find "$evals" \( -name prompt.md -o -name case.yaml \) -type f | LC_ALL=C sort)
+}
+check_smoke_cases
+
 exit "$failed"

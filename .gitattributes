@@ -5,3 +5,4 @@ tests/risk/corpus/** text eol=lf
 plugins/overdrive/** text eol=lf
 tests/** text eol=lf
 tools/** text eol=lf
+.github/workflows/*.yml text eol=lf
