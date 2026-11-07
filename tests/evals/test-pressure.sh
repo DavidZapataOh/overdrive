@@ -34,7 +34,7 @@ test_with_arm_writes_each_final_message_and_removes_kept_sandboxes() {
 
 test_default_is_five_runs() {
   project
-  FAKE_KEPT=1 pressure tdd skip-tests --arm with > /dev/null
+  FAKE_KEPT=5 pressure tdd skip-tests --arm with > /dev/null
   assert_file_contains "$FAKE_LOG" ' --runs 5 '
 }
 
@@ -89,4 +89,16 @@ test_case_with_no_runs_is_an_error() {
   project
   echo '{"schemaVersion":1,"cases":[{"name":"x","arms":{"with":[],"without":[]}}]}' > none.json
   FAKE_RESULT=$PWD/none.json assert_exit 1 pressure tdd skip-tests --arm with
+}
+
+test_an_errored_run_fails_the_command_but_keeps_the_evidence() {
+  project
+  FAKE_RUN_ERROR='timed out after 300s' FAKE_KEPT=2 assert_exit 1 pressure tdd skip-tests --arm with --runs 2
+  assert_file_contains $runs/with-1.md '^RUN ERROR: timed out after 300s$'
+}
+
+test_fewer_recorded_runs_than_requested_fail_the_command() {
+  project
+  FAKE_KEPT=2 assert_exit 1 pressure tdd skip-tests --arm with --runs 3
+  assert_eq "Final message 2" "$(cat $runs/with-2.md)"
 }

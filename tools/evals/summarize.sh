@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: summarize.sh [--skill NAME] [--tier TIER] [--model ID] [--judge ID] RESULT.json
+# Usage: summarize.sh [--skill NAME] [--tier TIER] [--model ID] [--judge ID] [--expect-runs N] RESULT.json
 # Renders the aggregate-result.json written by `claude plugin eval --json` as Markdown.
 
 set -u
@@ -9,19 +9,21 @@ here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=models.env
 . "$here/models.env"
 
-skill='' tier='' model='' judge=''
+skill='' tier='' model='' judge='' expect=0
 while [ "$#" -gt 0 ]; do
   case $1 in
     --skill) skill=${2-}; shift 2 || break ;;
     --tier) tier=${2-}; shift 2 || break ;;
     --model) model=${2-}; shift 2 || break ;;
     --judge) judge=${2-}; shift 2 || break ;;
+    --expect-runs) expect=${2-}; shift 2 || break ;;
     -*) echo "summarize: unknown option: $1" >&2; exit 64 ;;
     *) break ;;
   esac
 done
+case $expect in '' | *[!0-9]*) echo "summarize: --expect-runs needs a number" >&2; exit 64 ;; esac
 if [ "$#" -ne 1 ]; then
-  echo "usage: summarize.sh [--skill NAME] [--tier TIER] [--model ID] [--judge ID] RESULT.json" >&2
+  echo "usage: summarize.sh [--skill NAME] [--tier TIER] [--model ID] [--judge ID] [--expect-runs N] RESULT.json" >&2
   exit 64
 fi
 file=$1
@@ -43,7 +45,7 @@ buckets=$(
     jq -Rn '[inputs | split(" ") | { (.[0]): .[1] }] | add // {}'
 )
 
-jq -r --argjson buckets "$buckets" --arg skill "$skill" --arg tier "$tier" --arg model "$model" --arg judge "$judge" '
+jq -r --argjson buckets "$buckets" --arg skill "$skill" --arg tier "$tier" --arg model "$model" --arg judge "$judge" --argjson expect "$expect" '
   def rounded($places): (. * $places | round) / $places;
   def pad2: tostring | if length < 2 then "0" + . else . end;
   def f2:
@@ -55,7 +57,8 @@ jq -r --argjson buckets "$buckets" --arg skill "$skill" --arg tier "$tier" --arg
   def usd:
     if . >= 0.01 then "$" + f2
     else (. * 10000 | round) as $c | "$0.\($c | tostring | ("0000" + .)[-4:])" end;
-  def pct($c; $n): (100 * $c / $n | round | tostring) + "%";
+  . as $doc
+  | def pct($c; $n): (100 * $c / $n | round | tostring) + "%";
 
   def tier_of:
     if (.dir | test("/trigger/")) then "trigger"
@@ -66,7 +69,12 @@ jq -r --argjson buckets "$buckets" --arg skill "$skill" --arg tier "$tier" --arg
   def has_delta: two_arm and ((.aggregates.delta // null) != null);
   # The tolerance only absorbs floating-point noise from subtracting equal means.
   def regressed: has_delta and (.aggregates.delta < -1e-9);
-  def errored_runs: [.arms.with[] | select(.error != null)] | length;
+  # A run that was never recorded counts as errored, in both arms when a baseline was requested.
+  def short($arm; $want): [$want - ($arm | length), 0] | max;
+  def errored_runs:
+    ([.arms.with[] | select(.error != null)] | length) + ([.arms.without[] | select(.error != null)] | length)
+    + short(.arms.with; $expect)
+    + (if $doc.suite.ablation == "with-without" then short(.arms.without; $expect) else 0 end);
   def incomplete: errored_runs > 0;
   def case_cost: [.arms.with[], .arms.without[]] | map((.costUsd // 0) + (.judgeCostUsd // 0)) | add // 0;
   def trigger_stats:
@@ -78,11 +86,10 @@ jq -r --argjson buckets "$buckets" --arg skill "$skill" --arg tier "$tier" --arg
         | ($runs | length) as $n
         | ($runs | map(select(.)) | length) as $fired
         | { neg: $neg, n: $n, fired: $fired, none: false,
-            correct: ($n > 0 and ($n == (.arms.with | length)) and (if $neg then $fired / $n < 0.5 else $fired / $n > 0.5 end)) }
+            correct: ($n > 0 and ($n == (.arms.with | length)) and ($n >= $expect) and (if $neg then $fired / $n < 0.5 else $fired / $n > 0.5 end)) }
       end;
 
-  . as $doc
-  | [ .cases[] | . + { tier: tier_of, base: (.dir | split("/") | last) } ] as $cases
+  [ .cases[] | . + { tier: tier_of, base: (.dir | split("/") | last) } ] as $cases
   | [ $cases[] | select(.tier == "trigger")
       | . + { trig: trigger_stats }
       | . + { bucket: ($buckets[.base] // "validation") } ] as $triggers
@@ -121,8 +128,8 @@ jq -r --argjson buckets "$buckets" --arg skill "$skill" --arg tier "$tier" --arg
         | (if $c.tier == "trigger" then ($triggers[] | select(.name == $c.name) | .trig) else null end) as $t
         | ( [ (if $t == null then empty
                elif $t.none then "no Skill grader"
-               else "\(if $t.neg then "negative" else "positive" end): fired \($t.fired)/\($t.n)\(if $c | incomplete then ", \($t.n)/\($c.arms.with | length) runs graded" else "" end)" end),
-              (if ($c | incomplete) and $t == null then "\($c | errored_runs)/\($c.arms.with | length) runs errored" else empty end),
+               else "\(if $t.neg then "negative" else "positive" end): fired \($t.fired)/\($t.n)\(if $c | incomplete then ", \($t.n)/\([$expect, ($c.arms.with | length)] | max) runs graded" else "" end)" end),
+              (if ($c | incomplete) and $t == null then "\($c | errored_runs) runs errored or missing" else empty end),
               (if ($c | regressed) then "REGRESSION" else empty end)
             ] | join("; ") ) as $notes
         | "| \($c.name) | \($c.tier) | \(($c.aggregates.score // 0) | f2) | \(if ($c | two_arm) and (($c.aggregates.scoreWithout // null) != null) then ($c.aggregates.scoreWithout | f2) else "n/a" end) | \(if ($c | has_delta) then ($c.aggregates.delta | signed) else "n/a" end) | \($c.arms.with | length) | \($c | case_cost | usd) | \($notes) |" )

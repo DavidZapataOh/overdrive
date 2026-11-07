@@ -9,6 +9,7 @@
 #               sandbox directory holding a trace like the real one
 # FAKE_NO_RESULT  omit the final result record from the traces
 # FAKE_STDOUT  text written to stdout, like the progress the real command prints
+# FAKE_RUN_ERROR  error string recorded on every kept run
 # FAKE_EXIT     exit status (default 0)
 
 printf '%s ' "$@" >> "${FAKE_LOG:?}"
@@ -42,7 +43,9 @@ if [ -n "${FAKE_KEPT-}" ] && [ -n "$json" ]; then
     } > "$kept/out/trace.jsonl"
     chmod 000 "$kept/sealed"
     chmod 500 "$kept"
-    runs="$runs${runs:+,}{\"score\":1,\"error\":null,\"tracePath\":\"$kept/out/trace.jsonl\",\"graders\":[]}"
+    err=null
+    [ -z "${FAKE_RUN_ERROR-}" ] || err="\"$FAKE_RUN_ERROR\""
+    runs="$runs${runs:+,}{\"score\":1,\"error\":$err,\"tracePath\":\"$kept/out/trace.jsonl\",\"graders\":[]}"
     i=$((i + 1))
   done
   printf '{"schemaVersion":1,"claudeVersion":"2.1.319","startedAt":"2026-11-07T00:00:00.000Z","durationSeconds":1,"costUsd":0,"partial":false,"cases":[{"name":"x","dir":"evals/tdd/pressure/x","graders":[],"arms":{"with":[%s],"without":[]},"aggregates":{"score":1}}],"aggregates":{"casesTotal":1,"casesPassed":1,"overallScore":1}}\n' "$runs" > "$json"

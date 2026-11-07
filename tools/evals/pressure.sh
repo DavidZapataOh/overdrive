@@ -91,12 +91,18 @@ mkdir -p "$out_dir" || exit 1
 rm -f "$out_dir/$arm"-*.md
 
 n=0
+bad=0
 while IFS=$'\t' read -r trace err; do
   n=$((n + 1))
+  [ -z "$err" ] || bad=$((bad + 1))
   dest=$out_dir/$arm-$n.md
   if [ -n "$trace" ] && [ -f "$trace" ]; then
-    final_message "$trace" > "$dest"
+    {
+      [ -z "$err" ] || printf 'RUN ERROR: %s\n\n' "$err"
+      final_message "$trace"
+    } > "$dest"
   else
+    [ -n "$err" ] || bad=$((bad + 1))
     printf 'RUN ERROR: %s\n' "${err:-no trace was kept}" > "$dest"
   fi
   if [ -n "$trace" ]; then
@@ -112,4 +118,8 @@ done < "$runs_tsv"
 
 printf 'pressure: wrote %d run(s) to %s\n' "$n" "$out_dir"
 [ "$rc" -ge 2 ] && exit "$rc"
+if [ "$bad" -gt 0 ] || [ "$n" -lt "$runs" ]; then
+  printf 'pressure: %d of %d requested run(s) recorded, %d errored\n' "$n" "$runs" "$bad" >&2
+  exit 1
+fi
 exit 0

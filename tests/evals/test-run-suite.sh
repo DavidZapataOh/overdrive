@@ -12,7 +12,9 @@ project() {
   mkdir -p repo/plugins/overdrive/evals/tdd/trigger repo/plugins/overdrive/evals/tdd/pressure/skip-tests \
     repo/plugins/overdrive/evals/tdd/pressure/rush-fix fakebin
   cp "$root/tests/evals/fake-claude" fakebin/claude
-  export FAKE_LOG=$PWD/calls.log FAKE_SNAPSHOT=$PWD/snapshot.log FAKE_RESULT=$recorded
+  # The recorded document has one run per arm; a full suite asks for three.
+  jq '.suite.ablation = "with-without" | .cases[].arms |= map_values(. + . + .)' "$recorded" > full.json
+  export FAKE_LOG=$PWD/calls.log FAKE_SNAPSHOT=$PWD/snapshot.log FAKE_RESULT=$PWD/full.json
   : > "$FAKE_LOG"
   PATH=$PWD/fakebin:$PATH
 }
@@ -36,7 +38,7 @@ test_models_env_pins_full_model_ids() {
 
 test_smoke_runs_one_arm_one_run_with_free_graders_only() {
   project
-  out=$(suite tdd --tier smoke)
+  out=$(FAKE_RESULT=$recorded suite tdd --tier smoke)
   assert_call_has "plugin eval plugins/overdrive --trust-plugin --scaffold --no-publish --ablation none --runs 1 --max-cost-usd 2 --model claude-opus-5-5 --json $PWD/repo/plugins/overdrive/evals/results/tdd-smoke.json --tag tdd-smoke"
   assert_eq "1" "$(wc -l < "$FAKE_LOG" | tr -d ' ')"
   case $out in *'# Eval results: tdd'*) ;; *) echo "no summary printed" >&2; return 1 ;; esac
@@ -79,7 +81,7 @@ test_cost_ceiling_can_be_overridden() {
 
 test_pressure_runs_every_scenario_five_times_with_the_plugin() {
   project
-  FAKE_KEPT=1 suite tdd --tier pressure > /dev/null
+  FAKE_KEPT=5 suite tdd --tier pressure > /dev/null
   assert_eq "2" "$(wc -l < "$FAKE_LOG" | tr -d ' ')"
   assert_call_has "--runs 5 --keep-temp"
   assert_file_contains "$FAKE_LOG" '--case rush-fix '
@@ -113,7 +115,7 @@ test_usage_errors() {
 
 test_only_the_summary_reaches_stdout() {
   project
-  out=$(FAKE_STDOUT='progress noise' suite tdd --tier smoke 2>/dev/null)
+  out=$(FAKE_RESULT=$recorded FAKE_STDOUT='progress noise' suite tdd --tier smoke 2>/dev/null)
   case $out in *noise*) echo "claude output leaked into stdout" >&2; return 1 ;; esac
   case $out in *'# Eval results: tdd'*) ;; *) echo "no summary" >&2; return 1 ;; esac
 }
@@ -127,4 +129,16 @@ test_errored_runs_fail_the_run_even_when_claude_exits_zero() {
 test_models_env_records_the_verified_claude_code_version() {
   . "$root/tools/evals/models.env"
   assert_eq "2.1.319" "$OD_EVAL_CLAUDE_VERSION"
+}
+
+test_a_broken_baseline_run_fails_the_suite() {
+  project
+  jq '.cases[0].arms.without[0].error = "rate limited"' full.json > broken.json
+  FAKE_RESULT=$PWD/broken.json assert_exit 1 suite tdd --tier full
+}
+
+test_unrecorded_runs_fail_the_suite() {
+  project
+  # The recorded document holds one run per arm; a full suite asks for three.
+  FAKE_RESULT=$recorded assert_exit 1 suite tdd --tier full
 }

@@ -64,12 +64,13 @@ json=$results_dir/$skill-$tier.json
 rm -f "$json"
 
 args=(plugin eval "$plugin" --trust-plugin --scaffold --no-publish)
-judge=''
+judge='' expect=1
 case $tier in
   smoke)
     args+=(--ablation none --runs 1 --max-cost-usd "${cost:-2}" --model "$model_id" --json "$json" --tag "$skill-smoke")
     ;;
   full)
+    expect=3
     judge=$OD_EVAL_JUDGE
     args+=(--ablation with-without --runs 3 --threshold 0.9 --max-cost-usd "${cost:-25}" --model "$model_id"
       --judge-model "$judge" --json "$json" --tag "$skill-trigger" "$skill-behavior")
@@ -87,13 +88,15 @@ if [ ! -s "$json" ]; then
   exit 1
 fi
 
-summary=$(bash "$here/summarize.sh" --skill "$skill" --tier "$tier" --model "$model_id" ${judge:+--judge "$judge"} "$json") || exit 1
+summary=$(bash "$here/summarize.sh" --skill "$skill" --tier "$tier" --model "$model_id" --expect-runs "$expect" ${judge:+--judge "$judge"} "$json") || exit 1
 printf '%s\n' "$summary"
 
-# A run that errored (timeout, rate limit) is not evidence, whatever the command exited with.
-if [ "$rc" -eq 0 ] && [ "$(jq '[.cases[].arms.with[] | select(.error != null)] | length' "$json")" -gt 0 ]; then
-  echo "run-suite: some runs ended with an error; treating the suite as failed" >&2
-  rc=1
+# A run that errored or never got recorded (either arm) is not evidence, whatever the command exited with.
+if [ "$rc" -eq 0 ]; then
+  case $summary in
+    *'Cases with errored runs: none'*) ;;
+    *) echo "run-suite: some runs errored or are missing; treating the suite as failed" >&2; rc=1 ;;
+  esac
 fi
 
 if [ "$tier" = full ] && [ "$(jq -r '.partial' "$json")" != true ]; then

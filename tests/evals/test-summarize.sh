@@ -166,3 +166,42 @@ test_summarize_usage_errors() {
   echo '{"schemaVersion": 2}' > v2.json
   assert_exit 1 tool v2.json
 }
+
+test_summarize_flags_runs_that_were_never_recorded() {
+  behavior_case tdd-behavior-red-first 1 0.5 > c1
+  doc c1 > suite.json
+  out=$(tool --skill tdd --expect-runs 3 suite.json)
+  has 'Cases with errored runs: 1 (tdd-behavior-red-first)'
+  out=$(tool --skill tdd --expect-runs 1 suite.json)
+  has 'Cases with errored runs: none'
+}
+
+test_summarize_flags_missing_baseline_runs_only_when_a_baseline_was_requested() {
+  behavior_case tdd-behavior-red-first 1 0.5 > c1
+  jq '.arms.without = []' c1 > c1b
+  doc c1b > suite.json
+  out=$(tool --skill tdd --expect-runs 1 suite.json)
+  has 'Cases with errored runs: none'
+  jq '.suite.ablation = "with-without"' suite.json > both.json
+  out=$(tool --skill tdd --expect-runs 1 both.json)
+  has 'Cases with errored runs: 1 (tdd-behavior-red-first)'
+}
+
+test_summarize_flags_errors_in_the_baseline_arm() {
+  behavior_case tdd-behavior-red-first 1 0.5 > c1
+  jq '.arms.without[0].error = "rate limited"' c1 > c1b
+  doc c1b > suite.json
+  out=$(tool --skill tdd suite.json)
+  has 'Cases with errored runs: 1 (tdd-behavior-red-first)'
+}
+
+test_summarize_requires_a_numeric_expect_runs() {
+  assert_exit 64 tool --expect-runs x "$recorded"
+}
+
+test_trigger_case_with_too_few_runs_is_incorrect() {
+  trigger_case tdd-trigger-bugfix positive 3 3 > c1
+  doc c1 > suite.json
+  out=$(tool --skill tdd --expect-runs 5 suite.json)
+  has 'Trigger accuracy (validation): 0/1 (0%), floor 90%: FAIL'
+}
