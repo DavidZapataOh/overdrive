@@ -382,3 +382,47 @@ test_json_raw_control_characters_in_input_do_not_break_lookup() {
     assert_eq ok "$JSON_VALUE"
   done
 }
+
+test_json_extract_strings_matches_single_lookups() {
+  load_json
+  local doc k i want
+  local -a docs=(
+    '{"session_id":"s1","cwd":"/a b/á","tool_name":"Edit","tool_input":{"file_path":"C:\\x\\\"q\".ts","old_string":"\"cwd\": \"no\""}}'
+    '{"a":{"cwd":"inner"},"cwd":"outer","tool_name":7,"x":"tool_name","tool_name":"Bash"}'
+    '{"k":"a\"cwd\":\"x\"","cwd" : "y" ,"session_id":"\u00e9\n"}'
+    '{"a":"x\\","cwd":"z","tool_name":"","session_id":"\\\\"}'
+    '{ "cwd": {"cwd": 1}, "tool_name": true }'
+    'not json'
+  )
+  for doc in "${docs[@]}"; do
+    json_extract_strings "$doc" tool_name cwd session_id missing
+    i=0
+    for k in tool_name cwd session_id missing; do
+      if json_extract_string "$k" "$doc"; then
+        want=set:$JSON_VALUE
+      else
+        want='unset'
+      fi
+      if [ -n "${JSON_VALUES[i]+x}" ]; then
+        assert_eq "$want" "set:${JSON_VALUES[i]}" "$k in $doc"
+      else
+        assert_eq "$want" unset "$k in $doc"
+      fi
+      i=$((i + 1))
+    done
+  done
+}
+
+test_json_extract_strings_stops_early_on_large_input() {
+  load_json
+  local big doc t0 t1
+  big=$(printf '"x\\" %.0s' $(seq 20000))
+  doc='{"session_id":"s","cwd":"/r","tool_name":"Write","tool_input":{"content":"'$big'","file_path":"/f"}}'
+  t0=$SECONDS
+  json_extract_strings "$doc" tool_name session_id cwd
+  t1=$SECONDS
+  assert_eq Write "${JSON_VALUES[0]}"
+  assert_eq s "${JSON_VALUES[1]}"
+  assert_eq /r "${JSON_VALUES[2]}"
+  [ $((t1 - t0)) -le 2 ] || { echo "took $((t1 - t0)) s" >&2; return 1; }
+}
