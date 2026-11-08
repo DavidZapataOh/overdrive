@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Sourced by the behavior scaffolds: a small SaaS repository whose rules name the research tools.
+# shellcheck source=../_lib/fixtures.sh
 . "$(dirname "$0")/../../../_lib/fixtures.sh" || exit 1
 
 research_project() {
