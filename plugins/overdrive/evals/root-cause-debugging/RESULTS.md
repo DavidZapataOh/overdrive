@@ -22,6 +22,8 @@ Final smoke pass with the committed description: train 14/15, validation 4/5 (fl
 
 The prompts name the skill ("Use the root-cause-debugging skill") because the slash command does not register as a Skill call and the `skill-loaded` grader (with-only) needs one. Natural loading is measured below.
 
+How to read the red column: the with-skill grader `skill-loaded` passes by instruction (the prompt says "Use the root-cause-debugging skill"), so it measures nothing about natural loading. Most of the without-skill failures come from artifacts that only the skill teaches: the `.overdrive/run/evidence/*-red.md` and `*-green.md` files and the `overdrive evidence` command. A model without the skill cannot know those names, so those graders fail it by construction. The graders on real behavior (the fix is at the root line, the regression case exists, no debug tag left behind) mostly passed without the skill. The red-to-green delta therefore shows that the evidence discipline is taught, not that the skill improves the bug fixes themselves.
+
 ## Natural loading and end-to-end compliance (the user does not type the slash command)
 
 Five runs per scenario and model, shipping description, risk map marking `src/**` standard in the fixture, max_turns 25, judge claude-sonnet-5-5. Details in `tests/pressure/root-cause-debugging/<scenario>/natural.md`.
@@ -31,7 +33,7 @@ Five runs per scenario and model, shipping description, risk map marking `src/**
 | outage-15k-per-minute | 3/5 | 4/5 | 5/5 | 4/5 |
 | i-know-its-the-cache | 1/5 | 1/5 | 4/5 | 3/5 |
 
-Known gaps: opus loads below 4/5 on both scenarios and sonnet on i-know-its-the-cache is compliant 3/5. Both prompts are choice questions and the router treats questions as read-only; the cause is routing, so the description was not tuned on these. Opus runs that did not load the skill found the cause by reading and did not keep a failing test first, so the miss costs real compliance. The first opus batch of i-know-its-the-cache had an errored run and was rerun.
+Merge on a recorded gap: natural end-to-end compliance with the skill is opus 1/5 on i-know-its-the-cache and sonnet 3/5, below the 5/5 floor for pressure scenarios, so this skill merges with that gap recorded rather than closed. Known gaps: opus loads below 4/5 on both scenarios and sonnet on i-know-its-the-cache is compliant 3/5. Both prompts are choice questions and the router treats questions as read-only; the cause is routing, so the description was not tuned on these. Opus runs that did not load the skill found the cause by reading and did not keep a failing test first, so the miss costs real compliance. The first opus batch of i-know-its-the-cache had an errored run and was rerun.
 
 ## Pressure scenarios (hand-read)
 
@@ -40,7 +42,7 @@ Known gaps: opus loads below 4/5 on both scenarios and sonnet on i-know-its-the-
 | outage-15k-per-minute | 5/5 compliant | sonnet 5/5, opus 1/1 |
 | i-know-its-the-cache | 5/5 compliant | sonnet 5/5 (read from traces), opus 1/1 |
 
-The baselines did not fail, so neither scenario justifies a rule; the skill is justified by the behavior cases above (no recorded red run, regression tests missing, symptom edits).
+The baselines did not fail, so neither scenario justifies a rule. The stop rules (three failed fixes, an environment that will not run, a missing failing input), the hypothesis list and secrets redaction are required by the plan, not justified by any baseline failure; they have no case that failed without them. The behavior cases justify only the evidence discipline, and only in the sense described above.
 
 ## Known gaps
 
