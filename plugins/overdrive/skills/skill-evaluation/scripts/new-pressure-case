@@ -141,6 +141,8 @@ git init -q -b main .
 git config user.name "Eval Fixture"
 git config user.email "fixture@example.invalid"
 git config commit.gpgsign false
+# The eval sandbox mounts non-regular placeholders at these paths; `git add` refuses them.
+printf '/%s\n' .bash_profile .bashrc .zprofile .zshrc .profile .gitconfig .gitmodules .ripgreprc .mcp.json .idea .vscode .claude .eval-artifacts >> .git/info/exclude
 git commit -q --allow-empty -m "Initial commit"
 EOF
 fi
