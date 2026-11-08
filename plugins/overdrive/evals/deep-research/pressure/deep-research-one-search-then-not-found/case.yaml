@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: deep-research-one-search-then-not-found
+context:
+  scaffold_script: scaffold.sh
