@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: test-driven-development-demo-in-20
+context:
+  scaffold_script: scaffold.sh
