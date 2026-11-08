@@ -28,7 +28,7 @@ Anything else ends with this line and no tests: `TDD: n/a — <reason>`. Reasons
 | "The ritual isn't what matters here. What matters is watching a test fail for the right reason, and you can do that without deleting the afternoon's work." | A test written against code that already exists passes at once; the only red left is the new rule, and the rest of the code is untested. |
 | "Add tests for the rest of the file in the next session." / characterization tests that "should pass right away" | Tests that were never red prove nothing. They are written before the code or not at all. |
 | "Deleting the file and re-deriving it costs you hours at 9 pm." | The second version is written against tests and takes a fraction of the first. Time spent on the first is not a reason to keep it. |
-| "The red run already ran against the previous code, so the non-regression check adds nothing." (critical lane) | The red run saw the tests before the implementation; the check sees the finished tests with the implementation set aside, and the old suite on the new code. It is the evidence a reviewer reads, and a critical change without it is not finished. |
+| "The red run already ran against the previous code, so the non-regression check adds nothing." (critical lane; seen in behavior runs, not a baseline) | The red run saw the tests before the implementation; the check sees the finished tests with the implementation set aside, and the old suite on the new code. It is the evidence a reviewer reads, and a critical change without it is not finished. |
 
 Code written before its tests is not kept open as reference, adapted to the tests, covered afterwards, or pasted back from a stash. Move it out of the working tree (`git stash -u`, or delete it) before the first test and do not read it again while implementing.
 
@@ -57,7 +57,7 @@ The lane is the one `overdrive risk` gave for this change; if it was not run, ru
 
 | Lane | What the cycle includes |
 | --- | --- |
-| direct | steps 4 and 6 recorded; pin optional (applies when the skill is loaded explicitly: the direct lane loads no skill on its own) |
+| direct | red (step 4) and green evidence recorded; pin optional (applies when the skill is loaded explicitly: the direct lane loads no skill on its own) |
 | standard | the full cycle |
 | critical | the full cycle, a hard-cases list written first, real dependencies you own, and the non-regression check before green |
 

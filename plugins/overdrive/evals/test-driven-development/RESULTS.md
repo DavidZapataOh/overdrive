@@ -16,7 +16,7 @@ Final smoke pass with the committed description: should-trigger 10/10 fired, sho
 | Case | Runs passing all graders |
 | --- | --- |
 | test-before-code (Bash-only tools; test file written before src/text.js, red evidence file exists) | 3/3 |
-| pinned-test-not-edited-in-green (no Edit, Write or Bash write to the pinned test) | 1/3, the other two failed only the final-message grader |
+| pinned-test-not-edited-in-green (no Edit, Write or Bash write to the pinned test) | 3/3 after the message grader moved to assistant text blocks (R77); 1/3 before, failing only on the final message |
 | config-change-is-tdd-na | 3/3 |
 | critical-has-non-regression (stash or worktree in a Bash call before the green evidence call) | 3/3 |
 
@@ -48,7 +48,7 @@ Cost of the natural arm: about $4.8 per full pass.
 
 - Direct-lane routing is unmeasured: the direct lane loads no skill, so every trigger and behavior fixture holds a risk map that puts `src/**` in the standard lane; the direct-lane depth in the skill applies only when it is loaded explicitly.
 - The full tier (three runs per arm, both models, baseline arm) has not run; every number here is smoke.
-- pinned-test-not-edited-in-green: the message grader reads `last_message`, and when the model skips classification the Stop hook makes it answer again, so the last message sometimes omits the test (1/3 in the final pass; the not-edited graders passed 3/3).
+- pinned-test-not-edited-in-green: the message grader reads every assistant text block in the trace, because the Stop hook can ask for a second reply after the report (controller rerun 3/3, $0.26).
 
 ## Cost
 
