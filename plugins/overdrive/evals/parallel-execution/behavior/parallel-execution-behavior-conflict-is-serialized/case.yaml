@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: parallel-execution-behavior-conflict-is-serialized
+context:
+  scaffold_script: scaffold.sh
