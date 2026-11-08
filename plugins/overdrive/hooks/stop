@@ -22,7 +22,7 @@ if ! . "$plugin/lib/json.sh" 2>/dev/null || ! . "$plugin/lib/path.sh" 2>/dev/nul
   exit 0
 fi
 
-MISSING='Close this change with its Risk line: run overdrive risk --worktree (or --diff <base>...HEAD) and end with the Risk line it prints.'
+MISSING="Close this change with its Risk line: run $plugin/bin/overdrive risk --worktree (or --diff <base>...HEAD) and end with the Risk line it prints."
 LANES=(direct standard critical)
 
 # classify ROOT: set NEED (lane rank), ITEMS, WHY (the failure, if any) and BASE from the
@@ -31,7 +31,7 @@ LANES=(direct standard critical)
 # else the commit the session's change started from, as the marker recorded it.
 classify() {
   local root=$1 refs name sym ohead='' omain='' omaster='' start='' range out rc=0 line lane=''
-  NEED=2 ITEMS=classification-failed WHY='' BASE=''
+  NEED=2 ITEMS=classification-failed WHY='' BASE='' MAPLESS=''
   refs=$(git -C "$root" for-each-ref --format='%(refname) %(symref)' refs/remotes/origin/HEAD \
     refs/remotes/origin/main refs/remotes/origin/master 2>/dev/null) || refs=''
   while read -r name sym; do
@@ -68,6 +68,7 @@ classify() {
       'lane standard') lane=1 ;;
       'lane critical') lane=2 ;;
       'Risk: '*' — '*) ITEMS=${line#*' — '} ;;
+      'note risk-map missing; propose one'*) MAPLESS=1 ;;
       'overdrive risk: classification failed: '*) WHY=${line#'overdrive risk: classification failed: '} ;;
     esac
   done <<<"$out"
@@ -238,7 +239,36 @@ case $msg in
     ;;
 esac
 
+# unchanged ROOT: true when the session left ROOT exactly as its first marked call found
+# it: no file tool wrote there (an ignored .env shows in no status), the same HEAD, the
+# same branches, tags and stash, and nothing modified or untracked. The guard marks a
+# repository on any command it cannot prove read-only, so a marker alone is no change.
+unchanged() {
+  local start='' refs='' head status
+  [ ! -e "$1/${marker%.changed}.edited" ] || return 1
+  { IFS= read -r start && IFS= read -r refs; } < "$1/$marker" 2>/dev/null || return 1
+  start=${start%$'\r'} refs=${refs%$'\r'}
+  head=$(git -C "$1" rev-parse -q --verify 'HEAD^{commit}' 2>/dev/null) || head=unborn
+  [ -n "$start" ] && [ "$head" = "$start" ] || return 1
+  _od_refs_sum "$1" && [ "$refs" = "refs $_OD_REFS" ] || return 1
+  status=$(git -C "$1" status --porcelain 2>/dev/null) || return 1
+  [ -z "$status" ]
+}
+
 if [ "$stated" -lt 0 ]; then
+  changed=0
+  for root in "${roots[@]}"; do
+    if unchanged "$root"; then
+      rm -f -- "$root/$marker" "$root/${marker%.changed}.edited" 2>/dev/null
+      prune=1
+    else
+      changed=1
+    fi
+  done
+  if [ "$changed" -eq 0 ]; then
+    prune_list
+    exit 0
+  fi
   [ -n "$continuing" ] || {
     printf '{"decision":"block","reason":"'
     json_escape "$MISSING"
@@ -268,8 +298,17 @@ for root in "${roots[@]}"; do
       fi
     fi
   fi
+  # The project map is proposed once, in the first change that finds none; the
+  # proposal file then turns the classifier's note into a reminder.
+  if [ -z "$r" ] && [ -n "$MAPLESS" ] && [ ! -e "$root/${marker%.changed}.map-asked" ] &&
+    ! unchanged "$root"; then
+    # Asked once per session: a continuation drops the block, and asking again on every
+    # later turn would trap the session.
+    { : > "$root/${marker%.changed}.map-asked"; } 2>/dev/null
+    r="This repository has no risk map yet. Load overdrive:risk-triage, write the proposed map to .overdrive/run/risk-map.proposed with the Write tool as its risk-map proposal reference says, show it in your reply, and end with the Risk line again."
+  fi
   if [ -z "$r" ]; then
-    rm -f -- "$root/$marker" 2>/dev/null
+    rm -f -- "$root/$marker" "$root/${marker%.changed}.edited" 2>/dev/null
     prune=1
     continue
   fi

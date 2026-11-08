@@ -94,6 +94,8 @@ if [ "${#allow[@]}" -eq 0 ] && [ -f "$grants" ]; then
 fi
 [ "${#allow[@]}" -eq 0 ] || args+=(--allow-tools "${allow[@]}")
 
+od_prepare_env || exit 1
+
 # The summary is the only thing on stdout: CI appends it to the job summary.
 claude "${args[@]}" >&2
 rc=$?

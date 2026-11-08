@@ -36,7 +36,7 @@ test_risk_line_format_exact() {
   assert_eq "auth auth money money dependencies" \
     "$(printf '%s\n' "$out" | awk '$1 == "item" { print $2 }' | paste -s -d ' ' -)"
   assert_line "$out" "item dependencies standard floor path package.json"
-  assert_line "$out" "note risk-map missing"
+  assert_line "$out" "note risk-map missing; propose one with overdrive:risk-triage"
 }
 
 test_risk_line_none() {
