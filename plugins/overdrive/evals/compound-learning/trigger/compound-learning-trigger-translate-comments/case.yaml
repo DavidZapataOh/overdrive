@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: compound-learning-trigger-translate-comments
+context:
+  scaffold_script: scaffold.sh
