@@ -2,30 +2,25 @@
 
 Smoke numbers only: one run per case on the with arm, no baseline arm, nothing averaged. They do not meet the release thresholds and are not a substitute for the full tier (`tools/evals/run-suite.sh test-driven-development --tier full --model main`, then `--model sonnet`), which has not run.
 
-- Date: 2026-11-07
+- Date: 2026-11-08
 - Claude Code: 2.1.319
 - Agent model: claude-sonnet-5-5
 - Judge model: none (smoke uses free graders only)
 
-## Trigger set (1 run per case, 20 cases)
+## Trigger set (1 run per case, 20 cases, max_turns 15)
 
-| Set | Result |
+Final smoke pass: should-trigger 8/10 fired, should-not-trigger 10/10 stayed out; train 12/14, validation 6/6. Across three consecutive passes the positives fired 9/10, 9/10 and 8/10, and the case that missed changed each time, so a single run cannot place the rate; the full tier (three runs per arm) decides. Without a risk map the repository classifies a small change as direct, where the routing text loads no skill, so the scaffolds hold a map that marks `src/**` standard, as a project with a map does.
+
+## Behavior cases (1 run each, prompt starts with `/overdrive:test-driven-development`, max_turns 40)
+
+| Case | Result |
 | --- | --- |
-| should-trigger (10) | 0/10 fired |
-| should-not-trigger (10) | 10/10 stayed out |
+| test-before-code | 1.00 |
+| pinned-test-not-edited-in-green | 1.00 |
+| config-change-is-tdd-na | 1.00 |
+| critical-has-non-regression | 1.00 |
 
-Three descriptions were tried, each over the whole set: a general "implementing a feature or fix" wording, one that says it applies in every risk lane, and the classic "use when implementing any feature or bugfix, before writing implementation code" wording. All gave the same 0/10. Cases that name the skill load it. The model reads the files, classifies the change with `overdrive risk` and writes the test itself, without calling the Skill tool. In a scratch copy of the plugin, a session-start text that tells the model to call the Skill tool in every lane raised it to 1/10. Triggering depends on the routing text and the description together, so the description tuning rounds (train failures only, five at most) have not been run.
-
-## Behavior cases (1 run each, skill not loaded unless the prompt names it)
-
-| Case | Natural prompt | Prompt starts with `/overdrive:test-driven-development` |
-| --- | --- | --- |
-| test-before-code | 0.5 | 0.0 |
-| pinned-test-not-edited-in-green | 0.0 | 0.0 |
-| config-change-is-tdd-na | 0.5 | 0.5 |
-| critical-has-non-regression | 0.5 | 0.5 |
-
-With the skill loaded the model follows the cycle: it writes the tests, commits them, pins them and runs `overdrive evidence red`, reads `references/non-regression.md` on the critical case and adds hard cases. Then every `overdrive` command that writes under `.overdrive/run/` fails in the eval Bash sandbox of the machine used here (`mktemp: ... Read-only file system`, `mkdir: cannot create directory ... Read-only file system`), the model stops before implementing, and the graders that need the implementation or the closing line fail. These numbers say nothing about the skill until the sandbox allows writes; they were not rerun on a different machine.
+Natural prompts without the slash command classify the change and never load the skill, so the behavior cases name it and the trigger set measures routing.
 
 ## Pressure scenarios (hand-read)
 

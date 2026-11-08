@@ -11,6 +11,7 @@ td_cli() {
 td_text_project() {
   fx_git_repo
   fx_node_project textkit
+  fx_risk_map 'path src/** public-contract standard'
   fx_file src/text.js 'function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

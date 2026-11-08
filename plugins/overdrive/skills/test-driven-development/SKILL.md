@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Use when implementing any feature or bugfix, before writing implementation code, in a repo with a runnable test command. Covers one-line fixes and rushed changes. Not for debugging a failure, reviewing tests or setting up a test runner.
+description: Use when about to edit code so that a function, endpoint or rule behaves differently — a new function, a bug report (wrong output, an input that is rejected or mishandled), a small or one-line fix, a rushed change — in a repo with a runnable test command. Not for debugging a failure, reviewing tests, explaining TDD or setting up a test runner.
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/overdrive *)
 ---
 
@@ -35,12 +35,12 @@ Code written before its tests is not kept open as reference, adapted to the test
 
 Run it once per behavior: a small group of tests for one behavior, then its code, then the next behavior. Writing every test first and every implementation after is horizontal slicing and tests imagined behavior.
 
-1. Write the tests through the public interface, the way a caller uses it, from the spec or the request.
+1. Write the tests through the public interface, the way a caller uses it, from the spec or the request. In the critical lane, list the hard cases first (references/by-lane.md) and cover each one.
 2. Commit the tests alone.
 3. `${CLAUDE_PLUGIN_ROOT}/bin/overdrive pin <test files>`
 4. `${CLAUDE_PLUGIN_ROOT}/bin/overdrive evidence red -- <test command>`. The failure must be the missing behavior: read it. A syntax error, a missing import or a typo is not red; fix that and run again.
 5. Implement the least that passes.
-6. `${CLAUDE_PLUGIN_ROOT}/bin/overdrive evidence green -- <full test command>`
+6. In the critical lane, run the non-regression check first ([references/non-regression.md](references/non-regression.md)): the new tests fail on the previous code, the old suite passes on the new code. Then `${CLAUDE_PLUGIN_ROOT}/bin/overdrive evidence green -- <full test command>`
 7. Refactor with the suite green and run green again.
 8. `${CLAUDE_PLUGIN_ROOT}/bin/overdrive pin --clear`, then commit the implementation.
 

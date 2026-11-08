@@ -1,9 +1,9 @@
 ---
 type: tool_order
 before:
-  tool: Write
-  input_match: '"file_path"\s*:\s*"[^"]*\.test\.js"'
+  tool: Bash
+  input_match: 'evidence red'
 after:
-  tool: Edit
-  input_match: '"file_path"\s*:\s*"[^"]*src/text\.js"'
+  tool: Bash
+  input_match: 'evidence green'
 ---

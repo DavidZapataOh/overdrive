@@ -6,6 +6,7 @@
 td_trigger_repo() {
   fx_git_repo
   fx_node_project shop
+  fx_risk_map 'path src/** public-contract standard'
   fx_file src/text.js 'function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
