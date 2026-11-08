@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: risk-scaled-execution-behavior-config-tasks-run-inline
+context:
+  scaffold_script: scaffold.sh
