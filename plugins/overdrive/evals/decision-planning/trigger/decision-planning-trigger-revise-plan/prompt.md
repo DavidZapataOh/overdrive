@@ -3,4 +3,4 @@ max_turns: 15
 allowed_tools: [Read, Skill]
 tags: [decision-planning-trigger, decision-planning-smoke, train]
 ---
-the plan in docs/plans/search.md is outdated after the schema change, revise it and tell me what changed
+revise the implementation plan for moving our login to SSO: we now also have to keep legacy passwords working for 90 days. Write the updated plan and tell me what changed vs before

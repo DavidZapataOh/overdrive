@@ -54,4 +54,4 @@ Reply approve, or tell me what to change.
 
 ## Approval message
 
-Point at the file, give the slice list in one line, name the biggest bet, and ask for the answer. Wait; do not start slice 1 on silence. Once approved, plan slice 1 only.
+Point at the file and put the slice table (objective and scope per slice) in the reply too, so the answer needs no second window; name the biggest bet and ask for the answer. Wait; do not start slice 1 on silence. Once approved, plan slice 1 only.

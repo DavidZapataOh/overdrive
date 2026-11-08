@@ -43,8 +43,19 @@ Five runs per scenario and model, shipping description, `hooks/core.md` from mai
 
 | Scenario | Sonnet loaded | Sonnet compliant | Opus loaded | Opus compliant |
 | --- | --- | --- | --- | --- |
-| plan-everything-100 | 5/5 | 5/5 | 5/5 | 1/5 judge, 5/5 on the choice by hand |
-| start-coding-i-trust-you | 0/5 | 5/5 | 0/5 | 4/5 |
+| plan-everything-100 | 5/5 | 5/5 | 5/5 | 4/5 strict judge after fix round 1 (was 1/5) |
+| start-coding-i-trust-you | 0/5 | 5/5 | 0/5 | 1/5 to 4/5 across batches (see fix round 1) |
 | code-in-the-plan | 5/5 | 5/5 | 5/5 | 5/5 |
 
 Known gap: `start-coding-i-trust-you` never loads the skill (0/10); the request names a migration, not a plan, and the always-loaded hook alone carried compliance to 9/10. The router in `hooks/core.md` is outside this task and was not tuned. Opus on `plan-everything-100` chose B every time but 4 of 5 deferred writing the skeleton to the next turn, which the judge failed.
+
+## Fix round 1 (sonnet unless stated; main merged)
+
+- **Hand-off:** the standard template now always carries `### Task N:` headings with `Create:`, `Modify:`, `Test:` lines. A plan from the old template gave `ledger status` `next none` and `brief --task 1` failed; `tests/skills/test-decision-planning-templates.sh` fills the template and runs the real `overdrive ledger init`, `ledger status` and `brief` (RED with the old template, GREEN now). The behavior case checks the same shape with a regex on the written plan (`### Task 1:` plus Create/Modify and Test lines), because graders cannot run the CLI.
+- **Graders:** approval and risk-line regexes match inside one assistant text string, never a line that also holds Write content. `skeleton-first` and `critical-waits-approval` gained `tool_order` (skill loaded before the plan is written, with-only) and a Bash-write grader for `src/` and `test/`; `skeleton-first` checks the cost, bets, assumptions and Not covered sections. New `respects-show-plans-default` (`show-plans critical`, standard task) must not ask for approval; both show-plans cases assert `project.conf` was read from the trace.
+- **Smoke, sonnet, final batch ($2.27):** 25 of 26 cases, trigger 20/20 (train 11/11, validation 9/9), behavior 1.00 on 5 of 6; `respects-show-plans-default` 0.40 because the skill did not load. Across 5 reruns of that case: 3 of 5 at 1.00, 2 of 5 at 0.40 (no skill load, plan without task headings). The negative property held in 5 of 5: it never asked for approval. `respects-show-plans-all`: 5 of 5 at 1.00. Known gap: on sonnet a small "plan this change" request loads the skill about 3 times in 5.
+- **Trigger revise-plan:** the case needed a reworded prompt (the old one named a file that does not exist); on sonnet it loads 3 of 5 after the description gained "revise a plan" and "however small".
+- **Pressure with-skill, 5 runs each on sonnet:** plan-everything-100 5/5, start-coding-i-trust-you 5/5, code-in-the-plan 5/5 (one failure in an earlier batch of 5, run 3 picked A; fixed with one sentence in rule 5). One opus run per scenario with the slash command: 3 of 3 compliant.
+- **Natural, opus, strict judge (headline):** plan-everything-100 loaded 5/5, compliant 4/5; start-coding-i-trust-you loaded 0/5, compliant 1/5 (known gap, batch-to-batch variation from 1/5 to 4/5); code-in-the-plan 5/5 loaded and 5/5 compliant (same opus batch). Hand-read agreement numbers are not counted as compliance.
+- **Without arm for behavior cases:** pending, per the cost rule it runs only in the pre-release full tier.
+- Cost of this round: about $13.

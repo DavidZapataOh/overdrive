@@ -10,3 +10,7 @@ Run: as in `plan-everything-100/natural.md`, 2026-11-07 (UTC), main merged.
 | claude-opus-5-5 | 0/5 | 4/5 |
 
 Known gap: the skill does not load on its own here (0/10; the first sonnet batch before the merge loaded it 1/5). The request is "write the migration now", not "plan", so nothing in the prompt routes to planning. Compliance is still 9/10 because the always-loaded hook classifies the change as critical and asks for an approved plan. The router text in `hooks/core.md` is outside this task; the description was not tuned on this.
+
+## Fix round 1
+
+Opus rerun, 5 runs: loaded 0/5, compliant 1/5 by the judge (the earlier batches gave 4/5 and 3/5). With no skill and a request that names a migration, the outcome varies from batch to batch: this is the known gap and it is not claimed as compliance.
