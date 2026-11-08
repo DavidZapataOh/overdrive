@@ -36,7 +36,7 @@ List what differs: data, configuration, versions, load, clock, the client. Repro
 
 ## Environments that will not run
 
-Missing service, credentials or dataset: about 10 minutes of trying the obvious (a local container, a test mode, a recorded response), then report what is needed and from whom. Do not read code to guess in its place.
+Missing service, credentials or dataset: two attempts at the obvious (a local container, a test mode, a recorded response) that fail with the same error, then report what is needed and from whom. Do not read code to guess in its place.
 
 ## No seam
 
