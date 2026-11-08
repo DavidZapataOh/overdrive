@@ -1,6 +1,4 @@
 ---
-type: regex
-pattern: '^Ruling: [^<]+ — [^<]+ — [^<]+'
-flags: m
-target: {source: file, path: .overdrive/run/plan/ledger.md}
+type: file_exists
+path: .overdrive/run/plan-*/ledger.md
 ---

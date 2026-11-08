@@ -1,6 +1,6 @@
 ---
 name: risk-scaled-execution
-description: Executing a written implementation plan or its next slice, task by task. Use when asked to execute, build, continue or resume a plan, including an approved plan to implement in full while the user is away.
+description: Executing a written implementation plan or any slice of it (the next slice, tasks N to M), task by task, in any language. Use when asked to execute, build, continue or resume a plan, including an approved plan to implement in full while the user is away.
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/overdrive *) Bash(git *)
 ---
 
@@ -29,7 +29,7 @@ Runs a plan task by task. Process scales with each task's lane; the rules below 
 
 Critical tasks need the plan approved by the user before they start. Ask for it once, then keep building every independent non-critical task while you wait. [references/approval-while-building.md](references/approval-while-building.md)
 
-Critical review and fix loop: the reviewer writes findings; rounds 1 and 2 resume the same builder with the findings file; round 3 is a fresh builder with `model: opus`; if findings remain, that is a ledgered ruling or a stop condition, never a fourth round. [references/fix-loop.md](references/fix-loop.md)
+Critical review and fix loop: the reviewer writes findings; rounds 1 and 2 resume the same builder with the findings file; round 3 is a fresh builder with `model: opus`; if findings remain, that is a ledgered ruling or a stop condition, never a fourth round. Stop an agent only when it loops (same check fails 3 attempts in a row, or 3 fix rounds without fewer failures); builders never wait on CI, you watch it in the background. [references/fix-loop.md](references/fix-loop.md)
 
 ## Slice
 

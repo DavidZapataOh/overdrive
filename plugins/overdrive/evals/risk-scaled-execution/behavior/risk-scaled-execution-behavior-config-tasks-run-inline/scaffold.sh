@@ -30,10 +30,10 @@ Pin Node to major version 22 (file content `22`).
 
 JSON with `"singleQuote": true` and `"semi": true`.
 
-### Task 4: Attributes
+### Task 4: Ignore rules
 
 **Files:**
-- Create: `.gitattributes`
+- Create: `.gitignore`
 
-One line: `* text=auto eol=lf`.'
+Two lines: `node_modules/` and `dist/`.'
 fx_commit "Add config plan"

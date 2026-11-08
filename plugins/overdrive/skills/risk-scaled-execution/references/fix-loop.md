@@ -13,4 +13,10 @@ After a critical task is `implemented`:
    - The finding is P0 on money, data, secrets or tenant isolation and cannot be fixed within the plan: stop condition; ask the user, naming the finding and the decision needed.
 6. A finding labeled `plan-mandated:yes` is a defect in the plan: Ruling for how you diverge, never silently follow it.
 
+## Loops and CI
+
+Progress is the only limit; there is no turn cap. Stop an agent only when it loops: the same test or check fails 3 consecutive attempts, or 3 fix rounds pass without the failing count dropping. The stopped builder's report lists every attempt, why each failed and the current state. Continue with a fresh builder briefed from that report plus the committed code; if that one loops too, it is a ledgered ruling or a stop condition (step 5).
+
+Builders push and hand back; they never wait for or poll CI. The controller watches CI in the background and dispatches a fix with the failing log excerpt.
+
 Never argue a finding down because the author's report explains it; severity follows the failure mode. Never edit the reviewer's findings file.
