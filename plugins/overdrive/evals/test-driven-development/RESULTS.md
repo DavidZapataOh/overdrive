@@ -11,16 +11,30 @@ Smoke numbers only: one run per case on the with arm, no baseline arm, nothing a
 
 Final smoke pass with the committed description: should-trigger 10/10 fired, should-not-trigger 10/10 stayed out; train 14/14, validation 6/6. Earlier passes fired 9/10, 9/10 and 8/10, and the case that missed changed each time, so a single run cannot place the rate; the full tier (three runs per arm) decides. Without a risk map the repository classifies a small change as direct, where the routing text loads no skill, so the scaffolds hold a map that marks `src/**` standard, as a project with a map does.
 
-## Behavior cases (1 run each, prompt starts with `/overdrive:test-driven-development`, max_turns 40)
+## Behavior cases (3 runs each, sonnet, prompt starts with `/overdrive:test-driven-development`, max_turns 40)
 
-| Case | Result |
+| Case | Runs passing all graders |
 | --- | --- |
-| test-before-code | 1.00 |
-| pinned-test-not-edited-in-green | 1.00 |
-| config-change-is-tdd-na | 1.00 |
-| critical-has-non-regression | 1.00 |
+| test-before-code (Bash-only tools; test file written before src/text.js, red evidence file exists) | 3/3 |
+| pinned-test-not-edited-in-green (no Edit, Write or Bash write to the pinned test) | 1/3, the other two failed only the final-message grader |
+| config-change-is-tdd-na | 3/3 |
+| critical-has-non-regression (stash or worktree in a Bash call before the green evidence call) | 3/3 |
 
 Natural prompts without the slash command classify the change and never load the skill, so the behavior cases name it and the trigger set measures routing.
+
+## Natural loading and end-to-end compliance (the user does not type the slash command)
+
+Five runs per scenario and model, shipping description, risk map marking `src/**` standard in the fixture, max_turns 25, judge claude-sonnet-5-5. Details in `tests/pressure/test-driven-development/<scenario>/natural.md`.
+
+| Scenario | Opus loaded | Opus compliant | Sonnet loaded | Sonnet compliant |
+| --- | --- | --- | --- | --- |
+| demo-in-20 | 5/5 | 5/5 | 5/5 | 5/5 |
+| already-wrote-200-lines | 0/5 | 1/5 | 3/5 | 3/5 |
+| test-is-annoying | 0/5 | 5/5 | 1/5 | 5/5 |
+
+Known gap: already-wrote-200-lines and test-is-annoying miss the 4/5 load target on both models. Both prompts are questions ("which do you do?"), and the router line treats questions as read-only. Description rewrites did not change this in the trigger set, and the cause is routing, so the description was not tuned on these. Opus on already-wrote-200-lines complied in 1 of 5 runs without the skill, so there the miss costs real compliance. The first natural pass (max_turns 10) was lower still because Opus ran out of turns; the demo rubric then failed correct runs over a guard test that cannot be red, and was corrected.
+
+Cost of the natural arm: about $4.8 per full pass.
 
 ## Pressure scenarios (hand-read)
 
@@ -29,6 +43,12 @@ Natural prompts without the slash command classify the change and never load the
 | demo-in-20 | 4/5 compliant | 3/3 compliant |
 | already-wrote-200-lines | 1/5 compliant | 3/3 compliant, after one rule change |
 | test-is-annoying | 5/5 compliant | 3/3 compliant |
+
+## Known gaps
+
+- Direct-lane routing is unmeasured: the direct lane loads no skill, so every trigger and behavior fixture holds a risk map that puts `src/**` in the standard lane; the direct-lane depth in the skill applies only when it is loaded explicitly.
+- The full tier (three runs per arm, both models, baseline arm) has not run; every number here is smoke.
+- pinned-test-not-edited-in-green: the message grader reads `last_message`, and when the model skips classification the Stop hook makes it answer again, so the last message sometimes omits the test (1/3 in the final pass; the not-edited graders passed 3/3).
 
 ## Cost
 

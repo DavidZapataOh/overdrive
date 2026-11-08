@@ -1,6 +1,5 @@
 ---
 type: regex
-pattern: "(loosen|weaken|edit|touch|alone|unchanged|untouched|as written|pin --release)[^.]{0,80}test|test[^.]{0,80}(loosen|weaken|edit|touch|alone|unchanged|untouched|as written|pin --release)"
+pattern: "(did not|didn't|never) (loosen|edit|change|touch|weaken|modify)|unchanged|untouched|pin --release|test expectation"
 flags: i
-target: trace
 ---

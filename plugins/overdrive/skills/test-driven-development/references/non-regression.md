@@ -7,10 +7,12 @@ Start with the implementation in the working tree, uncommitted, and the tests co
 1. **New tests are red on the previous code.** Put the implementation aside, run the new tests, restore it:
 
    ```bash
-   git stash push -- <impl paths>
+   git stash push -u -- <impl paths>
    <test command for the new test files>      # must fail
    git stash pop
    ```
+
+   `-u` matters: a new implementation file is untracked, and without it the stash leaves that file in place, so the new tests pass "on the previous code" and prove nothing. Run this in its own command, before the green evidence, so the order shows in the record.
 
    Where a stash is not possible (the implementation is already committed), use a worktree at the tests commit:
 
