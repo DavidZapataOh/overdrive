@@ -39,7 +39,7 @@ Lens: <lens>. Review only for what the lens looks for; report anything else you 
 Write your findings to <package path without .md>-<lens>.findings
 ```
 
-Then run `OD findings check` on each file and `OD findings merge` on all of them.
+Before merging, confirm that each lens has its own file and that no two lenses share a path: `ls` the expected names. A missing file is a reviewer that has not reported. Then run `OD findings check` on each file and `OD findings merge` on all of them.
 
 ## Cost rules
 

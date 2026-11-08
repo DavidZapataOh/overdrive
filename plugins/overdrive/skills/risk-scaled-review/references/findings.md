@@ -49,4 +49,5 @@ Severity: P0 breaks money, data, security or tenant isolation; P1 is wrong behav
 
 - P0 and P1 decide the verdict. P2 and P3 are notes unless a fix is cheap.
 - The merged file goes where the user asked, else beside the package. Reviewer files stay untouched.
+- The file holds finding lines only; a note about the review starts with `#`.
 - With no findings, the file exists and is empty.
