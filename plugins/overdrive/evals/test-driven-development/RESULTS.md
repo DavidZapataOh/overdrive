@@ -9,7 +9,7 @@ Smoke numbers only: one run per case on the with arm, no baseline arm, nothing a
 
 ## Trigger set (1 run per case, 20 cases, max_turns 15)
 
-Final smoke pass: should-trigger 8/10 fired, should-not-trigger 10/10 stayed out; train 12/14, validation 6/6. Across three consecutive passes the positives fired 9/10, 9/10 and 8/10, and the case that missed changed each time, so a single run cannot place the rate; the full tier (three runs per arm) decides. Without a risk map the repository classifies a small change as direct, where the routing text loads no skill, so the scaffolds hold a map that marks `src/**` standard, as a project with a map does.
+Final smoke pass with the committed description: should-trigger 10/10 fired, should-not-trigger 10/10 stayed out; train 14/14, validation 6/6. Earlier passes fired 9/10, 9/10 and 8/10, and the case that missed changed each time, so a single run cannot place the rate; the full tier (three runs per arm) decides. Without a risk map the repository classifies a small change as direct, where the routing text loads no skill, so the scaffolds hold a map that marks `src/**` standard, as a project with a map does.
 
 ## Behavior cases (1 run each, prompt starts with `/overdrive:test-driven-development`, max_turns 40)
 
