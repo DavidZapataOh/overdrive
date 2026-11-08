@@ -1,6 +1,6 @@
 ---
 name: decision-log
-description: Recording decisions ("we decided", "anota esta decisión"); dispatching or briefing a subagent; and before finishing or sending a plan, copy, research, PR text or an answer assembled from subagent reports, even one cut to fit a budget. Checks work against project rules and past decisions.
+description: Recording decisions ("we decided", "anota esta decisión"); dispatching or briefing a subagent; and before finishing or sending a plan, copy, research, PR text or an answer assembled from subagent reports, even one cut to fit a budget.
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/overdrive *)
 ---
 

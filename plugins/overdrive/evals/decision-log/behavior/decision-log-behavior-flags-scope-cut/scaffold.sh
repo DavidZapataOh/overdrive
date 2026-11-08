@@ -13,7 +13,7 @@ fx_decisions '## D-0001 — Measurement covers four engines
 fx_file docs/plan.md '# Measurement plan
 
 ## Engines
-ChatGPT, Gemini, Google and Perplexity.
+TODO
 
 ## Monthly cost per customer
 | Engines | COP per month |

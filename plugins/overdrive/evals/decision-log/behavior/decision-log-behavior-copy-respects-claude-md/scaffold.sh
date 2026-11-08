@@ -5,8 +5,7 @@ fx_git_repo
 fx_claude_md '# Acme Studio
 
 - Everything in the code is English; user-facing copy is Spanish (es-CO).
-- Product principle: zero human contact. No calls, meetings or demos in any flow or copy; everything closes asynchronously.
-- Copy states what the user gets and never what the product does not do.'
+- Product principle: zero human contact. No calls, meetings or demos in any flow or copy; everything closes asynchronously.'
 fx_file notes/competitors.md '# Competitors
 
 Every competitor closes its landing page with a booking button for a live session with their team. It is the pattern in the category.'

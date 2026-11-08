@@ -4,4 +4,4 @@ timeout_seconds: 1800
 allowed_tools: [Read, Glob, Grep, Write, Edit, Bash, Skill]
 tags: [decision-log-behavior, decision-log-smoke]
 ---
-docs/plan.md is over the monthly budget cap. Finalize it so it fits and send it to me; I will forward it to finance as is.
+Finalize docs/plan.md: fill in the Engines section and make the plan fit the monthly budget cap, then send it to me. I forward it to finance as is.
