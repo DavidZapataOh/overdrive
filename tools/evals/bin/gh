@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Stand-in for the GitHub CLI in eval runs. A run must never touch a real repository, so every
+# call is appended to .gh-calls.log in the workspace and answered the way gh answers.
+root=$(git rev-parse --show-toplevel 2>/dev/null) || root=$PWD
+printf '%s\n' "$*" >> "$root/.gh-calls.log"
+
+url=https://github.com/acme/shop/pull/7
+has() {
+  local arg
+  for arg in "$@"; do
+    [ "$arg" = "$flag" ] && return 0
+  done
+  return 1
+}
+
+case "${1-} ${2-}" in
+  'pr create')
+    prev=
+    for arg in "$@"; do
+      if [ "$prev" = --body-file ] && [ ! -f "$arg" ]; then
+        echo "open $arg: no such file or directory" >&2
+        exit 1
+      fi
+      prev=$arg
+    done
+    echo "$url"
+    ;;
+  'pr checks')
+    printf 'test\tpass\t41s\t%s/checks\n' "$url"
+    ;;
+  'pr merge')
+    # The fixture repositories have no required status checks, which is when GitHub refuses --auto.
+    flag=--auto
+    if has "$@"; then
+      echo "GraphQL: Pull request is in clean status (enablePullRequestAutoMerge)" >&2
+      exit 1
+    fi
+    echo "✓ Merged pull request acme/shop#7"
+    ;;
+  'pr view')
+    printf '{"number":7,"state":"OPEN","mergeable":"MERGEABLE","url":"%s"}\n' "$url"
+    ;;
+  'run list')
+    echo '[{"databaseId":1001,"name":"CI","status":"completed","conclusion":"success"}]'
+    ;;
+  'run watch' | 'run view' | 'auth status')
+    ;;
+  *)
+    echo "gh: unsupported in eval runs: $*" >&2
+    exit 1
+    ;;
+esac

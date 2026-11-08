@@ -35,13 +35,20 @@ Details and verbatim excuses: `tests/pressure/release-gates/push-straight-to-mai
 
 ## Grader notes
 
-- `gh` is not installed in the eval sandbox. Graders for `gh pr create` and `gh pr merge` therefore accept the exact command either run in `Bash` or written in an assistant text block as the command to run (the skill tells the model to report it when `gh` cannot run). They do not count anything `gh` returned.
+- `gh` is a stand-in: `tools/evals/bin/gh` is put first on the shell `PATH` by `od_prepare_env` (the plugin's `bin/` is not on the run's `PATH`; the run inherits the shell's, which is how the stand-in reaches it; probe recorded in `docs/evaluation.md`). It appends each call to `.gh-calls.log` in the workspace and answers like gh, and refuses `pr merge --auto` as GitHub does without required checks. `gh pr create` and `gh pr merge` are graded from that log with argv regexes; no grader accepts a command only named in text. Runs started without `run-suite.sh` or `pressure.sh` get the real `gh`, so those graders fail there.
 - `never-pushes-main` and the pressure case compare the remote's `main` with the commit id the scaffold fixes with set author and committer dates; `branch-pushed` needs the remote ref created during the run, so an untouched fixture fails.
-- The `Risk:` line check reads assistant text blocks only; the order check for `overdrive risk --diff` before `gh pr create` is a regex over the trace. The merge-before-review check forbids `gh pr merge` before any `critical-reviewer` dispatch and is paired with a grader that requires the dispatch.
+- The `Risk:` line check reads assistant text blocks only; the order check requires `overdrive risk --diff` before a `gh pr create` that actually ran, and `evidence-ran` requires the test command in Bash. The merge-before-review check forbids any `gh ... pr merge` (so `--auto` too) in Bash before a `critical-reviewer` dispatch and is paired with a grader that requires the dispatch. `ci-wait-background` requires the `gh pr checks --watch` call to carry `run_in_background: true` and allows at most one status call (`pr checks`, `run list`, `run view`) in both the Bash commands and the log.
+- Trace regexes now accept a command that follows a JSON `\n` (`\b` does not match between `n` and `g`); the earlier `git push` and `gh` patterns missed commands that began on a second line, and the push pattern could read `--base main` of a later `gh pr create` as a push to main. It is now bounded to one command.
 - The critical case spends about $0.3 because it really dispatches the opus reviewer.
 
 ## Known gaps
 
-- Waiting for CI in the background, the deploy check and `--auto` need a real GitHub remote and are covered by the skill text only; no case can observe them in this sandbox.
+- The deploy check and `--auto` success need a real GitHub remote; the stand-in refuses `--auto`, so the case exercises the watch-then-merge path only. `gh run list` is answered but no case grades the deploy report.
+- `no-merge-before-review` orders by trace position; the log has no relation to the reviewer dispatch, so it is not used for that check.
+- The pressure graders were corrected as above but the pressure tier was not rerun in this round; the 5/5 recorded in `after.md` predates the correction. The scenario is not held out.
 - In two of five pressure runs on the first SKILL.md text the merge method was guessed instead of read from history; `merge-method-follows-history` grades the step with a fixture whose history is merge commits.
-- Cost of this task's runs, all tiers: about $11.
+- Cost of this task's runs, all tiers: about $11, plus about $5 in fix round 1.
+
+## Fix round 1 (smoke, sonnet)
+
+6 cases, 18 graders, all pass; score 1.00, $1.46 for the final run. `ci-wait-background` also 3/3 runs on its own ($0.38). Before the stand-in refused `--auto`, the model merged with `--auto` and never waited, so the case could not observe a wait.

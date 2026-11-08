@@ -53,6 +53,8 @@ od_prepare_env() {
     fi
     case $rest in *:*) rest=${rest#*:} ;; *) break ;; esac
   done
-  PATH=$kept
+  # The plugin's bin/ is not on the Bash tool's PATH in eval runs, but the shell's PATH is, so a
+  # stand-in gh for the release skills goes in front of any real one.
+  PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/bin${kept:+:$kept}
   export PATH
 }

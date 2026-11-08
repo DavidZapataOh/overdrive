@@ -14,7 +14,7 @@ Follow the repository's own history. Count how the last 20 first-parent commits 
 git log --first-parent -20 --format=%p BASE | awk 'NF > 1 { m++ } END { print (m * 2 > NR) ? "--merge" : "--squash" }'
 ```
 
-A commit with two parents is a merge commit. More than half merge commits prints `--merge`; otherwise, and with no history, `--squash`. Never `--rebase` unless the history is linear and the person asked.
+The count is over the last 20 first-parent commits, not the last 20 merges. A commit with two parents is a merge commit. More than half merge commits prints `--merge`; otherwise, and with no history, `--squash`. Never `--rebase` unless the history is linear and the person asked.
 
 ## Merging
 
