@@ -8,3 +8,4 @@
 - The Stop hook asks for a Risk line only when the turn actually changed a repository.
 - Marketplace and plugin manifests.
 - `skill-evaluation`: user-invoked workflow for writing a skill test first (pressure baseline, eval suite, skill, pressure again, measurement), with `new-pressure-case` and `split-trigger-set` scripts.
+- `deep-research`: user-invoked research workflow that splits a question across `overdrive:researcher` agents with neutral briefs, caps each researcher, labels patterns, gaps and bets, and writes a sourced report file.
