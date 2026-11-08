@@ -111,7 +111,7 @@ test_builder_names_its_cli_and_stop_rules() {
 }
 
 test_builder_hands_back_without_waiting_on_ci() {
-  has builder 'commit, push and hand back immediately'
+  has builder 'push (when the branch has a remote) and hand back immediately'
   has builder 'Never wait on or poll CI'
   has builder 'gh pr checks'
   has builder 'gh run watch'
