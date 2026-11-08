@@ -96,6 +96,29 @@ test_pressure_runs_every_scenario_five_times_with_the_plugin() {
   [ -d repo/tests/pressure/tdd/rush-fix/runs ] || { echo "runs not under the scenario name" >&2; return 1; }
 }
 
+test_case_glob_is_passed_to_the_cli() {
+  project
+  suite tdd --tier smoke --case 'tdd-behavior-*' > /dev/null
+  case "$(cat "$FAKE_LOG")" in
+    *' --tag tdd-smoke --case tdd-behavior-* '* | *' --case tdd-behavior-* '*) ;;
+    *) printf 'case glob not passed: %s\n' "$(cat "$FAKE_LOG")" >&2; return 1 ;;
+  esac
+}
+
+test_a_narrowed_full_run_does_not_write_results() {
+  project
+  suite tdd --tier full --case 'tdd-behavior-*' > /dev/null
+  [ ! -e repo/plugins/overdrive/evals/tdd/RESULTS.md ] || { echo "a narrowed run must not write RESULTS.md" >&2; return 1; }
+}
+
+test_pressure_case_glob_runs_only_the_matching_scenarios() {
+  project
+  FAKE_KEPT=5 suite tdd --tier pressure --case 'tdd-rush-*' > /dev/null
+  assert_eq "1" "$(wc -l < "$FAKE_LOG" | tr -d ' ')"
+  assert_file_contains "$FAKE_LOG" '--case tdd-rush-fix '
+  assert_exit 1 suite tdd --tier pressure --case 'tdd-nothing-*'
+}
+
 test_skill_grants_come_from_the_allow_tools_file() {
   project
   printf 'Write\n# shell for the test runner\n\nBash(npm test *)\n' > repo/plugins/overdrive/evals/tdd/allow-tools
@@ -139,6 +162,8 @@ test_usage_errors() {
   assert_exit 64 suite tdd --tier nightly
   assert_exit 64 suite tdd --tier full --model gpt
   assert_exit 64 suite tdd --tier full --concurrency many
+  assert_exit 64 suite tdd --tier smoke --case
+  assert_exit 64 suite tdd --tier smoke --case ''
   assert_exit 64 suite tdd --tier pressure --concurrency 2
   assert_exit 1 suite unknown --tier smoke
   assert_eq "0" "$(wc -l < "$FAKE_LOG" | tr -d ' ')"

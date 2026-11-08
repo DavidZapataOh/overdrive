@@ -7,6 +7,7 @@
 # FAKE_RESULT   document to copy to the --json path
 # FAKE_KEPT     when set, write a document with this many with-arm runs, each with a kept
 #               sandbox directory holding a trace like the real one
+# FAKE_EARLIER  also write an earlier assistant text before the last one, like a run the Stop hook extended
 # FAKE_NO_RESULT  omit the final result record from the traces
 # FAKE_STDOUT  text written to stdout, like the progress the real command prints
 # FAKE_RUN_ERROR  error string recorded on every kept run
@@ -39,6 +40,7 @@ if [ -n "${FAKE_KEPT-}" ] && [ -n "$json" ]; then
     mkdir -p "$kept/out" "$kept/sealed/home"
     {
       printf '{"type":"system","subtype":"init"}\n'
+      [ -z "${FAKE_EARLIER-}" ] || printf '{"type":"assistant","message":{"content":[{"type":"text","text":"Earlier text %s"},{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"true"}}]}}\n' "$i"
       printf '{"type":"assistant","message":{"content":[{"type":"text","text":"Last assistant text %s"}]}}\n' "$i"
       if [ -z "${FAKE_NO_RESULT-}" ]; then
         printf '{"type":"result","subtype":"success","result":"Final message %s","total_cost_usd":0.1,"usage":{"input_tokens":4,"output_tokens":9}}\n' "$i"
