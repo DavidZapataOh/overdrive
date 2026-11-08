@@ -9,6 +9,30 @@ fx_git_repo() {
   git config user.email "fixture@example.invalid"
   git config commit.gpgsign false
   git config core.autocrlf false
+  fx_ignore_harness_files
+}
+
+# The eval sandbox mounts placeholders (/dev/null binds, directories) at these paths in the
+# workspace once Bash runs. They are not regular files, so `git add` refuses them and the risk
+# classifier correctly fails closed. Excluding them locally keeps the working tree clean without
+# touching tracked files or the model's own .gitignore.
+fx_ignore_harness_files() {
+  mkdir -p .git/info || return 1
+  cat >> .git/info/exclude <<'EOF'
+/.bash_profile
+/.bashrc
+/.zprofile
+/.zshrc
+/.profile
+/.gitconfig
+/.gitmodules
+/.ripgreprc
+/.mcp.json
+/.idea
+/.vscode
+/.claude
+/.eval-artifacts
+EOF
 }
 
 # No installs: tests run with the Node built-in runner.

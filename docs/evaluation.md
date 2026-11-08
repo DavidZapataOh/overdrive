@@ -77,7 +77,7 @@ fx_commit "Add refund stub"
 
 | Function | Result |
 | --- | --- |
-| `fx_git_repo` | `git init` on `main` in the current directory, with a local identity |
+| `fx_git_repo` | `git init` on `main` in the current directory, with a local identity, and a local exclude (`.git/info/exclude`) for the placeholders the eval sandbox mounts in the workspace |
 | `fx_node_project NAME` | `package.json` with `"test": "node --test"`; nothing is installed |
 | `fx_file PATH CONTENT` | the file, with its directories |
 | `fx_plugin NAME [DESCRIPTION]` | a Claude Code plugin at the workspace root: `.claude-plugin/plugin.json` and an empty `skills/` |
@@ -110,6 +110,7 @@ Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for
 
 `run-suite.sh` and `pressure.sh` prepare the environment before they call `claude`:
 
+- **Sandbox placeholders in the workspace.** Once a run uses `Bash`, the OS sandbox mounts placeholders in the working directory (`.bashrc`, `.bash_profile`, `.profile`, `.gitconfig`, `.gitmodules`, `.ripgreprc`, `.mcp.json`, `.idea`, `.vscode`, `.claude`, `.eval-artifacts`). Several are `/dev/null` binds, not regular files, so `git add` refuses them and `overdrive risk --worktree` fails closed (`classification-failed`, critical), which makes the Stop hook replace the model's final message. That is the correct behavior for a real repository, so the fix lives in the fixtures: `fx_git_repo` lists the paths in `.git/info/exclude`, and `new-pressure-case` does the same when it falls back to plain `git`. Scaffolds that skip `fx_git_repo` and build a repository by hand must do likewise.
 - **Temp tree outside `/tmp` on Linux.** The eval's OS sandbox mounts everything under `/tmp` read-only, so a temp tree there leaves `Bash` in the runs unable to write the workspace or `TMPDIR`. When `TMPDIR` (default `/tmp`) is under `/tmp`, the tools export `TMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/overdrive-evals/tmp"`. `OVERDRIVE_EVAL_TMPDIR` sets another directory and applies on every platform.
 - **Sanitized `PATH`.** Entries that are not readable directories (Windows paths on WSL, missing directories) are dropped, because the CLI refuses to start with them.
 - **Grants.** Both tools read `evals/<skill>/allow-tools`; `pressure.sh` has no `--allow-tools` option of its own.
