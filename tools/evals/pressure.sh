@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Usage: pressure.sh SKILL SCENARIO --arm with|without [--runs N] [--model main|sonnet]
 #                    [--max-cost-usd N] [--root DIR]
-# Runs one pressure scenario and writes each run's final message to
-# tests/pressure/SKILL/SCENARIO/runs/ARM-N.md for reading by hand.
+# Runs one pressure scenario and writes each run to tests/pressure/SKILL/SCENARIO/runs/ARM-N.md for
+# reading by hand: every assistant text block in order, then the final message under its own heading.
 #
 # The without arm runs the same scenario under an empty plugin, because
 # `claude plugin eval` cannot run a baseline arm on its own.
@@ -83,6 +83,13 @@ if [ ! -s "$result" ]; then
 fi
 
 
+# The Stop hook can ask for a second reply or replace the last one, so the final message alone can
+# hide what the model said earlier in the run.
+assistant_texts() {
+  jq -rs '[.[] | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text]
+    | to_entries | .[] | "## Assistant text \(.key + 1)\n\n\(.value)\n"' "$1"
+}
+
 final_message() {
   local text
   text=$(jq -rs 'map(select(.type == "result" and (.result | type) == "string")) | last | .result // empty' "$1")
@@ -115,6 +122,8 @@ while IFS=$'\t' read -r trace err; do
   if [ -n "$trace" ] && [ -f "$trace" ]; then
     {
       [ -z "$err" ] || printf 'RUN ERROR: %s\n\n' "$err"
+      assistant_texts "$trace"
+      printf '## Final message\n\n'
       final_message "$trace"
     } > "$dest"
   else

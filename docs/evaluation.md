@@ -19,7 +19,7 @@ plugins/overdrive/evals/
     allow-tools                          # tool grants the cases need, one per line
   results/                               # runner output, gitignored
 tests/pressure/<skill>/<scenario>/       # scenario.md, baseline.md, after.md
-tests/pressure/<skill>/<scenario>/runs/  # final messages of each run, gitignored
+tests/pressure/<skill>/<scenario>/runs/  # runs, gitignored
 ```
 
 ### Naming and tags
@@ -91,10 +91,10 @@ Give each case one grader on the result and one on the steps taken. Prefer `rege
 ## Running
 
 ```bash
-tools/evals/run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--allow-tools TOOL...]
+tools/evals/run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--case GLOB] [--allow-tools TOOL...]
 ```
 
-Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) get them from `plugins/overdrive/evals/<skill>/allow-tools`, one grant per line (blank lines and `#` comments are ignored); CI's eval job uses the same file through `run-suite.sh`. `--allow-tools` on the command line replaces the file. `--concurrency N` (1 to 8, not for the pressure tier) runs cases in parallel on one rate limit.
+Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) get them from `plugins/overdrive/evals/<skill>/allow-tools`, one grant per line (blank lines and `#` comments are ignored); CI's eval job uses the same file through `run-suite.sh`. `--allow-tools` on the command line replaces the file. `--concurrency N` (1 to 8, not for the pressure tier) runs cases in parallel on one rate limit. `--case GLOB` passes through to `claude plugin eval --case` and narrows the tier to the cases whose name matches, so a fix round reruns only the cases it changed (`run-suite.sh tdd --tier smoke --case 'tdd-behavior-test-*'`); on the pressure tier it selects scenarios by the same name, and a narrowed full run is partial, so it does not write `RESULTS.md`.
 
 | Tier | What runs | Default ceiling |
 | --- | --- | --- |
@@ -104,7 +104,7 @@ Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) ge
 
 `full` writes `plugins/overdrive/evals/<skill>/RESULTS.md` unless the run was partial: date, Claude Code version, pinned model IDs, trigger accuracy for `train` and `validation` (floor 90% on validation), per-case score, baseline score, delta and cost, a `REGRESSION` note on every case with a negative delta, and a list of cases with errored runs. A case whose runs did not all grade counts as an incorrect trigger case, and `run-suite.sh` exits 1 when any run errored. The release rules for a skill are in the plan; the summary only reports them.
 
-Pressure scenarios are read by hand. `tools/evals/pressure.sh SKILL SCENARIO --arm with|without` writes each run's final message to `tests/pressure/<skill>/<scenario>/runs/<arm>-<n>.md` and prints the cost and duration of the batch. New skills are built with the `skill-evaluation` skill (`/overdrive:skill-evaluation <name>`); `scripts/new-pressure-case SKILL SCENARIO` in that skill scaffolds `scenario.md` and the pressure case. The `without` arm runs the same scenario under an empty plugin, because the CLI cannot run a baseline arm alone.
+Pressure scenarios are read by hand. `tools/evals/pressure.sh SKILL SCENARIO --arm with|without` writes each run to `tests/pressure/<skill>/<scenario>/runs/<arm>-<n>.md`: every assistant text block in order (`## Assistant text N`), then the final message under `## Final message`, because the Stop hook can request a second reply or replace the last one with a Risk line and prints the cost and duration of the batch. New skills are built with the `skill-evaluation` skill (`/overdrive:skill-evaluation <name>`); `scripts/new-pressure-case SKILL SCENARIO` in that skill scaffolds `scenario.md` and the pressure case. The `without` arm runs the same scenario under an empty plugin, because the CLI cannot run a baseline arm alone.
 
 Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for cases that grant `Bash`, `bubblewrap` and `socat` (the run is refused without a sandbox).
 
@@ -117,7 +117,7 @@ Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for
 
 ### Graders for the plan ledger
 
-The ledger lives at `.overdrive/run/plan-<cksum>/ledger.md`, where `<cksum>` depends on the plan. `file_exists` takes a glob in `path`, so `path: ".overdrive/run/plan-*/ledger.md"` checks that the ledger was created (only files created during the run count). The docs describe `{ source: file, path }` as the contents of one file and mention no glob for it, so do not rely on a pattern there. To grade the ledger's contents use a `regex` grader with `target: trace` on the output of the ledger command, or have the case call `overdrive ledger path` and grade the path it prints. The run records the plugin's commands in the trace, whose quotes are JSON-escaped.
+The ledger lives at `.overdrive/run/plan-<cksum>/ledger.md`, where `<cksum>` depends on the plan. `file_exists` takes a glob in `path`, so `path: ".overdrive/run/plan-*/ledger.md"` checks that the ledger was created (only files created during the run count). The docs describe `{ source: file, path }` as the contents of one file and mention no glob for it, so do not rely on a pattern there. To grade the ledger's contents use a `regex` grader with `target: trace` on the output of the ledger command, or have the case call `overdrive ledger path` and grade the path it prints. The run records the plugin's commands in the trace, whose quotes are JSON-escaped. So are its newlines: a command on the second line of a Bash call follows a literal `\n` in the trace text, and `\b` never matches between that `n` and the command's first letter. A trace pattern that anchors on a command name uses `(?:\\[nrt]|\b)` (or `(?:^|[\s;&|(]|\\n)`) before it, and bounds what follows with `(?:[^"\\;&|]|\\[^nrt])*` so it cannot run into a later command.
 
 ### Models
 

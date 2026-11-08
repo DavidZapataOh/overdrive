@@ -19,12 +19,17 @@ pressure() { bash "$root/tools/evals/pressure.sh" "$@" --root "$PWD/repo"; }
 
 runs=repo/tests/pressure/tdd/skip-tests/runs
 
-test_with_arm_writes_each_final_message_and_removes_kept_sandboxes() {
+# One run as written for reading: the assistant text blocks, then the final message.
+run_file() {
+  printf '## Assistant text 1\n\nLast assistant text %s\n\n## Final message\n\nFinal message %s' "$1" "$1"
+}
+
+test_with_arm_writes_each_run_and_removes_kept_sandboxes() {
   project
   FAKE_KEPT=3 pressure tdd skip-tests --arm with --runs 3 > /dev/null
-  assert_eq "Final message 1" "$(cat $runs/with-1.md)"
-  assert_eq "Final message 2" "$(cat $runs/with-2.md)"
-  assert_eq "Final message 3" "$(cat $runs/with-3.md)"
+  assert_eq "$(run_file 1)" "$(cat $runs/with-1.md)"
+  assert_eq "$(run_file 2)" "$(cat $runs/with-2.md)"
+  assert_eq "$(run_file 3)" "$(cat $runs/with-3.md)"
   assert_eq "0" "$(find "$TMPDIR" -maxdepth 1 -name 'claude-eval-*' | wc -l | tr -d ' ')"
   . "$root/tools/evals/models.env"
   case "$(cat "$FAKE_LOG")" in
@@ -42,8 +47,8 @@ test_default_is_five_runs() {
 test_without_arm_runs_the_scenario_under_an_empty_plugin() {
   project
   FAKE_KEPT=2 pressure tdd skip-tests --arm without --runs 2 > /dev/null
-  assert_eq "Final message 1" "$(cat $runs/without-1.md)"
-  assert_eq "Final message 2" "$(cat $runs/without-2.md)"
+  assert_eq "$(run_file 1)" "$(cat $runs/without-1.md)"
+  assert_eq "$(run_file 2)" "$(cat $runs/without-2.md)"
   # The scaffold-relative library and only the requested scenario travel with the copy.
   assert_line "$(cat "$FAKE_SNAPSHOT")" "./.claude-plugin/plugin.json"
   assert_line "$(cat "$FAKE_SNAPSHOT")" "./evals/_lib/fixtures.sh"
@@ -56,7 +61,29 @@ test_without_arm_runs_the_scenario_under_an_empty_plugin() {
 test_a_trace_without_a_result_record_falls_back_to_the_last_assistant_text() {
   project
   FAKE_NO_RESULT=1 FAKE_KEPT=1 pressure tdd skip-tests --arm with --runs 1 > /dev/null
-  assert_eq "Last assistant text 1" "$(cat $runs/with-1.md)"
+  assert_eq "## Assistant text 1
+
+Last assistant text 1
+
+## Final message
+
+Last assistant text 1" "$(cat $runs/with-1.md)"
+}
+
+test_every_assistant_text_comes_before_the_marked_final_message() {
+  project
+  FAKE_EARLIER=1 FAKE_KEPT=1 pressure tdd skip-tests --arm with --runs 1 > /dev/null
+  assert_eq "## Assistant text 1
+
+Earlier text 1
+
+## Assistant text 2
+
+Last assistant text 1
+
+## Final message
+
+Final message 1" "$(cat $runs/with-1.md)"
 }
 
 test_runs_directory_is_gitignored() {
@@ -101,7 +128,7 @@ test_an_errored_run_fails_the_command_but_keeps_the_evidence() {
 test_fewer_recorded_runs_than_requested_fail_the_command() {
   project
   FAKE_KEPT=2 assert_exit 1 pressure tdd skip-tests --arm with --runs 3
-  assert_eq "Final message 2" "$(cat $runs/with-2.md)"
+  assert_eq "$(run_file 2)" "$(cat $runs/with-2.md)"
 }
 
 test_reports_the_run_cost_and_duration() {
