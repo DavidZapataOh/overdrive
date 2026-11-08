@@ -1,7 +1,5 @@
 ---
 type: regex
-pattern: 'Decided:[\s\S]*(10 ?%|D-0002)'
-target:
-  source: file
-  path: .overdrive/run/skeleton-referrals.md
+target: trace
+pattern: '"type":"tool_use","id":"[^"]*","name":"(?:Write|Bash)","input":\{[^\n]*?\.overdrive/run/skeleton-[^\n]*?Decided:(?:[^"\\]|\\.)*?(?:10 ?%|D-0002)'
 ---

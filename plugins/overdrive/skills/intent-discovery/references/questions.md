@@ -18,7 +18,9 @@
 
     Recomiendo A porque <reason>. Responde "sí" y tomo A.
 
-- The question is the only line that ends in a question mark; the recommendation line states, it does not ask.
+- The question is the only line that ends in a question mark, and nothing follows the mark on that line; the recommendation line states, it does not ask. A framing or rhetorical question counts as a second question: state it as a sentence.
+- One question asks one thing: no "and ..." that adds a second ask (how many people, why now). If the answer could be two facts, ask for the one that changes what gets built.
+- The found line names what the user knows (the shop, the customers, the orders, a rule they set), never the stack or framework unless the user used those words.
 - Two to four options, the recommended one first. The recommendation word is in the user's language (`Recomiendo`, `I recommend`) and the closing sentence makes "yes" mean the recommended option.
 - Options are things the user can pick without knowing how they are built; the consequence is for them (cost, what customers see, effort, what can go wrong), not for the code.
 
@@ -47,3 +49,13 @@ When the answer to a question would not change what gets built, it is not asked.
     B) Que las clientas actuales compren más seguido — apuesta — premias a quien ya te compra.
 
     Recomiendo A porque es la forma más barata de llegar a más gente. Responde "sí" y tomo A.
+
+In English:
+
+    I read the repo: rewards are already store credit only (D-0002), so I am not asking about that.
+    What do you want the referral program to achieve?
+
+    A) Bring in new customers without paid ads — proven pattern — whoever invites earns when their friend makes a first purchase.
+    B) Make current customers buy more often — bet — you reward people who already buy from you.
+
+    I recommend A because it is the cheapest way to reach new people. Reply "yes" and I take A.

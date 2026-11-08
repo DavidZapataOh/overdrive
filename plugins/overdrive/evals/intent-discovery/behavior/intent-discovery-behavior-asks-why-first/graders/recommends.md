@@ -1,4 +1,5 @@
 ---
 type: regex
-pattern: '(Recomiendo|I recommend|Recommended|Recomendado)'
+pattern: '^\W*(?:Recomiendo|I recommend)\b'
+flags: mi
 ---
