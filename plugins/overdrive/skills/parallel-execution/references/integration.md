@@ -7,10 +7,12 @@ After every builder in the parallel set has reported. `BASE` is the branch the s
 3. In the main checkout: `git switch -c integrate-<plan-stem> BASE` and leave it checked out when you finish.
 4. For each remaining task, in plan order:
    - `git merge --no-ff -m '<the task commit subject>' <branch>`
-   - the project's full test suite (the command the plan or `package.json` names; never only the new task's test)
+   - the full suite, with the exact command the user or the plan names or `package.json` defines (`node --test`, `npm test`), never a path-scoped run such as `node --test packages/x/`
    - green: `OD ledger add 'Task N: implemented'`
-5. Conflict: `git merge --abort`. Red suite after a clean merge: `git revert -m 1 --no-edit HEAD`. Either way the task and every later one go back to sequential execution on this branch, one at a time, each starting from the green tip.
+5. Conflict: `git merge --abort`, then the ledger Note from rule 5. Red suite after a clean merge: `git revert -m 1 --no-edit HEAD`. Either way the task and every later one go back to sequential execution on this branch, one at a time, each starting from the green tip.
 6. When all are merged or serialized and the suite is green: `git worktree remove <path>` for each builder worktree, `git branch -d` the merged builder branches, then the closing report (rule 6) and the slice review.
+   - `git worktree remove` refuses a dirty worktree: do not pass `--force`. Keep that worktree and its branch and run `OD ledger add 'Note: kept <path> — uncommitted changes'`.
+   - A builder branch that was not merged (blocked, conflicted, red) stays: `git branch -d` would refuse it, and its commits are what the serialized rerun reads. Name it in the closing report as `not merged` and leave deleting it to the user.
 
 Notes
 

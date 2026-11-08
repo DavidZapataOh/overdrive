@@ -9,6 +9,6 @@ Run: `claude plugin eval plugins/overdrive --trust-plugin --scaffold --no-publis
 | claude-sonnet-5-5 | 5/5 | 5/5 |
 | claude-opus-5-5 | 4/5 | 4/5 |
 
-Both meet the 4/5 target. The opus run that did not load the skill is the one the judge failed.
+Both meet the 4/5 target; opus loading at 4/5 is recorded as a gap (one run did not load the skill). The opus run that did not load the skill is the one the judge failed.
 
 Before the plan-order rule was made strict (merge by plan number, a finished later task waits), opus loaded 5/5 and was compliant 2/5: it merged task 4 last. Sonnet was 5/5 and 5/5 on both versions. Costs: sonnet $0.43 per batch, opus $0.88 per batch.

@@ -2,7 +2,7 @@
 
 Smoke numbers only: one run per case, with-skill arm, no baseline arm. They do not meet the release thresholds and are not a substitute for the full tier (`tools/evals/run-suite.sh parallel-execution --tier full --model main`, then `--model sonnet`), which has not run.
 
-- Date: 2026-11-08
+- Date: 2026-11-08 (UTC; the runs of the first round and of fix round 1 were all on this date)
 - Claude Code: 2.1.319
 - Agent model: claude-sonnet-5-5
 - Judge model: none for smoke (the pressure compliance grader used claude-sonnet-5-5)
@@ -26,7 +26,8 @@ Final: 20 of 20 correct, should-trigger 10/10, should-not-trigger 10/10 (train 1
 | --- | --- | --- |
 | refuses-overlap | 0.20 | 1.00 |
 | uses-worktrees | 0.71 | 1.00 |
-| integrates-and-tests | 0.83 | 1.00 |
+| integrates-and-tests | 0.83 | 1.00 (final reruns; see fix round 1) |
+| conflict-is-serialized | fails abort, pair and note graders | 1.00 |
 
 Without the skill the model never ran `overdrive overlap`, merged on `main` and chained the merges (`integrates-and-tests` fails the integration-branch and test-after-merge graders there). The first with-skill batch scored 1.00 on all three; the final batch scored 0.80 on refuses-overlap because of a landed-file grader that punished a correct run (a builder dispatched and refused by the harness), which was replaced.
 
@@ -44,4 +45,13 @@ Five runs per model, shipping description, `hooks/core.md` active, judge claude-
 | --- | --- | --- | --- | --- |
 | six-tasks-at-once | 5/5 | 5/5 | 4/5 | 4/5 |
 
-Both models meet the 4/5 target; no known gap. Earlier batch on opus, before merge order was made strict in the skill: 5/5 loaded, 2/5 compliant.
+Opus loading is a recorded gap: the skill loaded in 4 of 5 opus runs, and the run that did not load it was the one the judge failed. Both models meet the 4/5 target and core.md was not touched. Earlier batch on opus, before merge order was made strict in the skill: 5/5 loaded, 2/5 compliant.
+
+## Fix round 1 (smoke, claude-sonnet-5-5)
+
+- Merge graders on `integrates-and-tests` and the new `conflict-is-serialized` read only the Bash `command` field (not `description`, not quoted `-m` messages), accept chained and looped merge-and-test, require the full-suite command (`node --test` or `npm test` without a path), and fail when the last merge has no later full-suite run or when two merges have no suite run between them. Checked on a real trace plus 15 synthetic traces (scoped test only, test only in the description, test only in a double- or single-quoted `-m`, test only in a tool result, test before the merge, last merge untested, two merges and one test at the end, abort not counted).
+- `refuses-overlap` with the replaced grader: 1.00 on the final batch and on two reruns.
+- `conflict-is-serialized` (new): two branches edit the same lines of `src/config.js`. With the skill 1.00: merge aborted, no side taken, ledger Note, the conflicting task redone on the green tip, config has both edits, no markers. Without the skill the model fails the abort, merge-pair and Note graders.
+- The first with-skill run of `integrates-and-tests` after the grader change failed because the model ran only `node --test packages/*/test/`; the skill now says to use the exact command given, never a path-scoped run. Two reruns 1.00.
+- Triggers 20/20 after the description wording change (one validation miss, `integrate`, in an intermediate batch; train was 12/12 so nothing was tuned).
+- Pressure `six-tasks-at-once` with the final text: 5/5 compliant. Fix-round smoke cost about $2.9 in total.
