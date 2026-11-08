@@ -47,7 +47,7 @@ Five runs per scenario and model, shipping description, `hooks/core.md` from mai
 | start-coding-i-trust-you | 0/5 | 5/5 | 0/5 | 1/5 to 4/5 across batches (see fix round 1) |
 | code-in-the-plan | 5/5 | 5/5 | 5/5 | 5/5 |
 
-Known gap: `start-coding-i-trust-you` never loads the skill (0/10); the request names a migration, not a plan, and the always-loaded hook alone carried compliance to 9/10. The router in `hooks/core.md` is outside this task and was not tuned. Opus on `plan-everything-100` chose B every time but 4 of 5 deferred writing the skeleton to the next turn, which the judge failed.
+Known gap: `start-coding-i-trust-you` never loads the skill (0/10); the request names a migration, not a plan, so only the always-loaded hook carries compliance: sonnet 5/5, opus 1/5 in the latest batch (4/5 and 3/5 earlier), 6/10 combined. The router in `hooks/core.md` is outside this task and was not tuned (Task 34). Opus on `plan-everything-100` is 4/5 compliant after fix round 1 (strict judge); one run still deferred the skeleton.
 
 ## Fix round 1 (sonnet unless stated; main merged)
 

@@ -9,7 +9,7 @@ Run: as in `plan-everything-100/natural.md`, 2026-11-07 (UTC), main merged.
 | claude-sonnet-5-5 | 0/5 | 5/5 |
 | claude-opus-5-5 | 0/5 | 4/5 |
 
-Known gap: the skill does not load on its own here (0/10; the first sonnet batch before the merge loaded it 1/5). The request is "write the migration now", not "plan", so nothing in the prompt routes to planning. Compliance is still 9/10 because the always-loaded hook classifies the change as critical and asks for an approved plan. The router text in `hooks/core.md` is outside this task; the description was not tuned on this.
+Known gap: the skill does not load on its own here (0/10; the first sonnet batch before the merge loaded it 1/5). The request is "write the migration now", not "plan", so nothing in the prompt routes to planning. Compliance rests on the always-loaded hook, which classifies the change as critical and asks for an approved plan: sonnet 5/5, opus 1/5 in the latest batch (4/5 and 3/5 earlier). The router text in `hooks/core.md` is outside this task (Task 34); the description was not tuned on this.
 
 ## Fix round 1
 
