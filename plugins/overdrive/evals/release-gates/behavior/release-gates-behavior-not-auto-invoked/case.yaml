@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: release-gates-behavior-not-auto-invoked
+context:
+  scaffold_script: scaffold.sh

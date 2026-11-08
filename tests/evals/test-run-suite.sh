@@ -214,3 +214,10 @@ test_path_drops_entries_that_are_not_readable_directories() {
   case $OSTYPE in msys* | cygwin*) return 0 ;; esac
   [ "$(id -u)" = 0 ] || case ":$path:" in *":$PWD/locked:"*) echo "kept an unreadable entry" >&2; return 1 ;; esac
 }
+
+test_path_puts_the_stand_in_gh_first() {
+  project
+  suite tdd --tier smoke > /dev/null
+  path=$(sed -n 's/^PATH=//p' "$FAKE_ENV")
+  case $path in "$root/tools/evals/bin:"*) ;; *) echo "path: $path" >&2; return 1 ;; esac
+}

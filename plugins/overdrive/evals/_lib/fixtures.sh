@@ -32,6 +32,7 @@ fx_ignore_harness_files() {
 /.vscode
 /.claude
 /.eval-artifacts
+/.gh-calls.log
 EOF
 }
 
