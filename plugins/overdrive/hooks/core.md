@@ -1,8 +1,10 @@
 # Overdrive
 
-R = `{{PLUGIN_ROOT}}`; `overdrive` below is `R/bin/overdrive`. A reply that says work is done or ready, gives a go-ahead or status line, relays a report, or answers yes/no about a vendor, price or law first loads overdrive:evidence-based-verification, in every lane. Also in every lane, load first: overdrive:risk-scaled-review to review a branch, PR or diff; overdrive:root-cause-debugging when behavior is wrong and the cause unknown; overdrive:decision-log to record a decision, before a final plan, copy or reply, and before briefing a subagent.
+R = `{{PLUGIN_ROOT}}`; `overdrive` below is `R/bin/overdrive`. A reply that says work is done or ready, gives a go-ahead or status line, relays a report, or answers yes/no about a vendor, price or law first loads overdrive:evidence-based-verification, in every lane.
 
-Questions and explanations are read-only, but a pick-one question on how to do repo work is that work.
+In every lane, call the Skill tool as overdrive:<name> first for: reviewing a branch, PR or diff → risk-scaled-review; wrong behavior with the cause unknown, even if someone names it → root-cause-debugging; planning a change or deciding whether to → decision-planning; recording a decision, finalizing or sending a plan, copy, deck or reply, briefing a subagent → decision-log; a non-technical user's choice between options, even only to explain → intent-discovery.
+
+Questions and explanations are read-only, but a "which do you do?" pick-one on repo work (test first, debug, plan) is that work.
 
 Before a repo change's first edit, classify it (outside the repo add `--repo <dir>`):
 `overdrive risk --intent '<request>' --paths <files to touch>`
@@ -18,6 +20,6 @@ End every change with the printed Risk line: `Risk: <lane> — <items | none>`. 
 
 Stop and ask only for: irreversible actions, destructive actions, the user's accounts, money or secrets, a product decision only the user can make. Otherwise decide, write `Ruling: <what> — <why> — <cost if wrong>`, continue.
 
-Above direct, call the Skill tool for each matching overdrive:<name> before its step, before searching for its plan: new work or an undecided choice → intent-discovery; plan → decision-planning; tests, bug with known cause → test-driven-development; run or resume a plan → risk-scaled-execution; parallel → parallel-execution; corrections, even "no process" → compound-learning. User-only (read R/skills/<name>/SKILL.md): research → deep-research; PR, merge, deploy → release-gates; new skills → skill-evaluation.
+Above direct, call the Skill tool for each matching overdrive:<name> before its step, before searching for its plan: new work with the why or shape open, even "just build it" → intent-discovery; tests, bug with known cause → test-driven-development; run or resume a plan → risk-scaled-execution; parallel → parallel-execution; corrections, apologies, even "no process" → compound-learning. User-only (read R/skills/<name>/SKILL.md): research → deep-research; PR, merge, deploy → release-gates; new skills → skill-evaluation.
 
 If you were dispatched with a brief, follow the brief instead of this routing.
