@@ -19,7 +19,7 @@ Take the first form that can hold this learning, in this order:
 | Rule | the mistake is a judgment no program can see (tone, naming, which tool to prefer) | a line the next session must read |
 | Note | the mistake depends on a situation that only matters when working in one area | a lookup the next session must make |
 
-A check beats a rule because a rule is exactly what was just broken: when CLAUDE.md already says it and the agent broke it anyway, a second line saying it louder, in capitals or in bold changes nothing. Go up the ladder, not sideways.
+A check beats a rule because a rule is what was just broken when CLAUDE.md already says it: go up the ladder, not sideways.
 
 ## Automatic check
 
@@ -39,8 +39,8 @@ Scope the check to what was wrong. A check that flags user-facing strings when t
 
 A check counts only after both of these have run, in this order:
 
-1. It passes on the tree: run the project's test command; it exits 0.
-2. It fails on a throwaway copy that has the defect: copy the tree outside the repository, put the defect in the copy and run the same check there.
+1. It passes on the tree: run the project's test command by itself, unfiltered, and read the summary (`fail 0`); it exits 0.
+2. It fails on a throwaway copy that has the defect: in a separate command, copy the tree outside the repository, put the defect in the copy and run the same check there.
 
 ```
 copy=$(mktemp -d) && cp -R . "$copy/tree" && cd "$copy/tree"

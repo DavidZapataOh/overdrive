@@ -1,6 +1,6 @@
 ---
 name: compound-learning
-description: Use when the user corrects the agent, repeats an instruction or names a slip made before ("otra vez", "same slip as last time", "remember not to"), or a defect got past review or CI, so it is not made twice. Not for retros, onboarding, changelogs or explaining a codebase.
+description: Use when the user corrects the agent, repeats an instruction or names a slip made before ("otra vez", "remember not to"), or a defect got past review or CI.
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/overdrive *)
 ---
 
@@ -13,12 +13,12 @@ A correction changes the next session only if it is written where the next sessi
 1. **Fix the instance first, and every copy of it.** The correction is also a request: repair what was wrong everywhere the same slip occurs in the tree, not only the place named. A check has to pass on the tree, so the other places are part of the change.
 2. **One learning per correction.** State it in one sentence: what was done, what should be done.
 3. **Durable bar.** Ask: if this note vanished, would someone reading the code repeat the mistake? If not (a typo, a one-off slip, a taste for one task, something the code or tests already make impossible), write nothing and close with `Learning: none — <why>`.
-4. **Look before you write.** `OD recall --any <terms>`. If a rule or note already covers it and was broken anyway, that form was too weak: go up the ladder in rule 5; never add a louder copy of the same rule.
+4. **Look before you write.** Read the CLAUDE.md that governs the files concerned, then `OD recall --any <terms>`. If a rule or note already covers it and was broken anyway, that form was too weak: go up the ladder in rule 5.
 5. **Take the cheapest durable form, in this order**: an automatic check, then a rule, then a note. A check is part of the fix, not a write-up: "no process", "no write-ups" and a deadline do not exclude it, and it is written in the same change, never offered for later. What each fits and how to write it: [references/forms.md](references/forms.md).
-   - A check counts only after it passes on the tree and fails on a throwaway copy that has the defect. Run both and read the output. A check that cannot be made to fail is not a check: take the next form and say why.
+   - A check counts only after it passes on the tree and fails on a throwaway copy that has the defect. Run them as two separate commands, unfiltered, and read the output. A check that cannot be made to fail is not a check: take the next form and say why.
    - A rule is a CLAUDE.md line or a decision entry (`overdrive:decision-log`).
    - A note is `.overdrive/learnings/<slug>.md`, read back only with `OD recall`.
-6. **A defect that got past a lane below critical** also adds a risk-map rule: [references/calibrate-risk-map.md](references/calibrate-risk-map.md).
+6. **A defect that got past a lane below critical** also adds a risk-map rule and its note: [references/calibrate-risk-map.md](references/calibrate-risk-map.md).
 7. **Scope as stated.** A principle the user states for everything is persisted for everything (user-level CLAUDE.md or memory index), not narrowed to this repository. A rule about this project stays in this project.
 8. **Never promise.** Do not write "I'll remember", "won't happen again" or "lo tendré en cuenta". Say what was written and where, or that nothing was.
 

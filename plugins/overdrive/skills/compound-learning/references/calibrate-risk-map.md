@@ -24,10 +24,10 @@ A defect reached users or review after a change that the classifier put below cr
    | an identifier | `symbol retryRenewal money` |
    | a code pattern | `content gateway\.charge\( money` |
 
-   Append it to `.overdrive/risk-map.conf` with a trailing comment saying what escaped. Do not widen an existing rule, and do not delete or lower one.
+   Append it to `.overdrive/risk-map.conf` with a trailing comment saying what escaped. Never delete or lower an existing rule.
 4. **Prove it fires and stays narrow.** `OD risk --paths <the escaped file>` now prints `lane critical` and the item; `OD risk --paths <an unrelated file in the same tree>` does not. Run both and read the output.
-5. **Report the map edit as its own critical change** (`Risk: critical — risk-map`): the user's correction is the request for it, so there is nothing further to approve, and it is committed on its own.
+5. **Write the note**, unless the project has `.overdrive/risk-cases/` (the case below is then the record): `.overdrive/learnings/<slug>.md` in the shape of [forms.md](forms.md) (Note). Say what escaped, which rule was added and why, and put the words someone would search for in `applies_when`.
 
 ## Regression case
 
-If the project has a `.overdrive/risk-cases/` directory, add the escaped change as a case there, in the shape the classifier's own corpus uses: `<slug>/setup.sh` (the baseline), `<slug>/change.sh` (the change), `<slug>/expected` (`lane critical` and `items money`) and `<slug>/risk-map.conf` (the rules as committed). If it has none, do not create the directory: the rule plus a note (`references/forms.md`, Note) is the whole record.
+If the project has a `.overdrive/risk-cases/` directory, add the escaped change as a case there, in the shape the classifier's own corpus uses: `<slug>/setup.sh` (the baseline), `<slug>/change.sh` (the change), `<slug>/expected` (`lane critical` and `items money`) and `<slug>/risk-map.conf` (the rules as committed). If it has none, do not create the directory: the rule plus the note from step 5 is the whole record.
