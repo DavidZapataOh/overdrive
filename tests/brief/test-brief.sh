@@ -97,6 +97,18 @@ test_brief_sections_in_order() {
   assert_exit 64 od brief --plan "$(fixtures)/plan.md" --task 2 --lane fast
 }
 
+# Agents run the CLI by the absolute path the brief gives: bin/ is not on their PATH.
+test_brief_names_the_cli_path() {
+  isolate
+  local repo path cli
+  repo=$(make_repo)
+  cli=$(cd "$(plugin)/bin" && pwd -P)/overdrive
+  path=$(cd "$repo" && od brief --text 'Fix the footer link' --lane direct)
+  assert_eq "Overdrive CLI: $cli" "$(sed -n 3p "$path")"
+  path=$(cd "$repo" && od brief --plan "$(fixtures)/plan.md" --task 2 --lane standard)
+  assert_eq "Overdrive CLI: $cli" "$(sed -n 3p "$path")"
+}
+
 test_brief_lists_claude_md_chain() {
   isolate
   local top repo path rules want

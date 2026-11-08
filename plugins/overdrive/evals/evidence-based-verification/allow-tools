@@ -1,0 +1,4 @@
+# Behavior cases run the tests and read history and files. Graders count a test run only from its
+# output in the trace, so a denied or failed command never counts. The OS sandbox blocks the network,
+# which not-found-lists-attempts relies on: no case can reach a vendor source.
+Bash

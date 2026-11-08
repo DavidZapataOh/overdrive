@@ -11,10 +11,12 @@
 # FAKE_STDOUT  text written to stdout, like the progress the real command prints
 # FAKE_RUN_ERROR  error string recorded on every kept run
 # FAKE_COST     costUsd of the kept-runs document (default 0)
+# FAKE_ENV     file that receives the TMPDIR and PATH the call ran with
 # FAKE_EXIT     exit status (default 0)
 
 printf '%s ' "$@" >> "${FAKE_LOG:?}"
 printf '\n' >> "$FAKE_LOG"
+[ -z "${FAKE_ENV-}" ] || printf 'TMPDIR=%s\nPATH=%s\n' "${TMPDIR-}" "$PATH" >> "$FAKE_ENV"
 
 [ "$1 $2" = "plugin eval" ] || exit 99
 target=$3

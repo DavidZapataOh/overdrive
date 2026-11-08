@@ -6,7 +6,8 @@
 if [ -n "${_OD_GUARD_LOADED:-}" ]; then return 0; fi
 _OD_GUARD_LOADED=1
 
-PIN_TAIL='Tests change only before the red run. If the test itself is wrong, run: overdrive pin --release "<reason>" and redo red.'
+# shellcheck disable=SC2154  # plugin is set by the hook that sources this file
+PIN_TAIL="Tests change only before the red run. If the test itself is wrong, run: $plugin/bin/overdrive pin --release \"<reason>\" and redo red."
 
 deny() {
   printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"'
@@ -18,15 +19,15 @@ deny() {
 deny_pinned() { deny "$1 is a pinned test. $PIN_TAIL"; }
 
 deny_invalid() {
-  deny "Pinned tests are active in $1, but $PINS_FILE cannot be parsed, so changes to that repository are blocked. If the pins are wrong, run: overdrive pin --release \"<reason>\" and redo red."
+  deny "Pinned tests are active in $1, but $PINS_FILE cannot be parsed, so changes to that repository are blocked. If the pins are wrong, run: $plugin/bin/overdrive pin --release \"<reason>\" and redo red."
 }
 
 deny_switch() {
-  deny "Switching branches is blocked while tests are pinned in $1: the pinned tests would change under the red run. Finish green and run overdrive pin --clear, or, if the test itself is wrong, run: overdrive pin --release \"<reason>\" and redo red."
+  deny "Switching branches is blocked while tests are pinned in $1: the pinned tests would change under the red run. Finish green and run $plugin/bin/overdrive pin --clear, or, if the test itself is wrong, run: $plugin/bin/overdrive pin --release \"<reason>\" and redo red."
 }
 
 deny_pins_file() {
-  deny "$PINS_FILE is written only by overdrive pin. $PIN_TAIL"
+  deny "$PINS_FILE is written only by $plugin/bin/overdrive pin. $PIN_TAIL"
 }
 
 # load_pins ROOT: parse ROOT's pins into PINNED and set PINS_OK (1 valid, 0 invalid).

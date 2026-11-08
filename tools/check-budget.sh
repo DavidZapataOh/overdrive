@@ -32,6 +32,9 @@ if [ -f "$hook" ]; then
   else
     text=$raw
   fi
+  # Measured with the root a marketplace install has, not this checkout's path.
+  install=${HOME:-/home/user}/.claude/plugins/cache/overdrive/overdrive/0.1.0
+  text=${text//"$plugin"/"$install"}
   injection_chars=$(chars_of "$text")
 else
   echo "note: hooks/session-start not found, injection counted as 0"

@@ -106,7 +106,17 @@ Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) ge
 
 Pressure scenarios are read by hand. `tools/evals/pressure.sh SKILL SCENARIO --arm with|without` writes each run's final message to `tests/pressure/<skill>/<scenario>/runs/<arm>-<n>.md` and prints the cost and duration of the batch. New skills are built with the `skill-evaluation` skill (`/overdrive:skill-evaluation <name>`); `scripts/new-pressure-case SKILL SCENARIO` in that skill scaffolds `scenario.md` and the pressure case. The `without` arm runs the same scenario under an empty plugin, because the CLI cannot run a baseline arm alone.
 
-Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for cases that grant `Bash`, `bubblewrap` and `socat` (the run is refused without a sandbox) and a `PATH` without unreadable directories.
+Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for cases that grant `Bash`, `bubblewrap` and `socat` (the run is refused without a sandbox).
+
+`run-suite.sh` and `pressure.sh` prepare the environment before they call `claude`:
+
+- **Temp tree outside `/tmp` on Linux.** The eval's OS sandbox mounts everything under `/tmp` read-only, so a temp tree there leaves `Bash` in the runs unable to write the workspace or `TMPDIR`. When `TMPDIR` (default `/tmp`) is under `/tmp`, the tools export `TMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/overdrive-evals/tmp"`. `OVERDRIVE_EVAL_TMPDIR` sets another directory and applies on every platform.
+- **Sanitized `PATH`.** Entries that are not readable directories (Windows paths on WSL, missing directories) are dropped, because the CLI refuses to start with them.
+- **Grants.** Both tools read `evals/<skill>/allow-tools`; `pressure.sh` has no `--allow-tools` option of its own.
+
+### Graders for the plan ledger
+
+The ledger lives at `.overdrive/run/plan-<cksum>/ledger.md`, where `<cksum>` depends on the plan. `file_exists` takes a glob in `path`, so `path: ".overdrive/run/plan-*/ledger.md"` checks that the ledger was created (only files created during the run count). The docs describe `{ source: file, path }` as the contents of one file and mention no glob for it, so do not rely on a pattern there. To grade the ledger's contents use a `regex` grader with `target: trace` on the output of the ledger command, or have the case call `overdrive ledger path` and grade the path it prints. The run records the plugin's commands in the trace, whose quotes are JSON-escaped.
 
 ### Models
 
@@ -145,7 +155,9 @@ A `tool_used: Skill` grader is excluded from the score (`scored: false`) in a tw
 
 **Plugin hooks run in the with-arm; `bin/` is not on the Bash tool's `PATH`.** A `SessionStart` hook ran with the plugin loaded (`hook_started` and `hook_response` records in the trace), its `additionalContext` reached the model, and the same prompt in the baseline arm did not see it. The hook ran in the workspace with `CLAUDE_PLUGIN_ROOT` set, but `overdrive` was not on its `PATH`. With `Bash` granted, `command -v overdrive` found nothing and `CLAUDE_PLUGIN_ROOT` was not set in the tool's shell. Consequence: skills call the CLI by absolute path (`${CLAUDE_PLUGIN_ROOT}/bin/overdrive`, substituted in skill content) and the session-start router text uses the substituted root, never the bare command name.
 
-The plugin in this repository has no hooks yet; the hook probe used a temporary one in the throwaway copy.
+The hook probe used a temporary hook in the throwaway copy; the plugin's own hooks (`SessionStart`, `PreToolUse`, `Stop`) run in every with-arm run.
+
+**Shell commands in a Bash-granted run cannot write to the workspace or to `TMPDIR`.** A probe on 2026-11-07 (Linux, WSL2) found the run's working directory, its home and the `TMPDIR` it sets read-only to Bash, while `/tmp` was writable; the Edit and Write tools still write the workspace. `overdrive risk` therefore falls back from `TMPDIR` to `/tmp` (and then to the repository's run directory) before it gives up and reports critical.
 
 ## Risk classifier
 

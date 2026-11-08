@@ -53,7 +53,7 @@ assert_blocks() {
   fi
 }
 
-MISSING='Close this change with its Risk line: run overdrive risk --worktree (or --diff <base>...HEAD) and end with the Risk line it prints.'
+MISSING="Close this change with its Risk line: run $(plugin_dir)/bin/overdrive risk --worktree (or --diff <base>...HEAD) and end with the Risk line it prints."
 
 # lower_reason STATED CLASSIFIED ITEMS
 lower_reason() {
@@ -67,8 +67,14 @@ mark() {
   mkdir -p "$1/.overdrive/run/markers"
   printf '*\n' > "$1/.overdrive/run/.gitignore"
   head=$(git -C "$1" rev-parse -q --verify 'HEAD^{commit}') || head=unborn
-  printf '%s\n' "$head" > "$1/.overdrive/run/markers/${2:-sess-1}.changed"
+  # shellcheck source=../../plugins/overdrive/lib/path.sh
+  . "$(plugin_dir)/lib/path.sh"
+  _od_refs_sum "$1"
+  printf '%s\nrefs %s\n' "$head" "$_OD_REFS" > "$1/.overdrive/run/markers/${2:-sess-1}.changed"
 }
+
+# edited REPO [SID]: what the PreToolUse hook leaves when a file tool wrote in REPO.
+edited() { : > "$1/.overdrive/run/markers/${2:-sess-1}.edited"; }
 
 # lowered ROOT FROM TO ID TITLE: the notice an accepted lowering prints.
 lowered() {
@@ -84,6 +90,9 @@ main_repo() {
   git -C "$repo" branch -q -M main
   git -C "$repo" update-ref refs/remotes/origin/main HEAD
   git -C "$repo" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+  # A project map, so only the tests about a missing one meet the proposal reminder.
+  commit_file "$repo" .overdrive/risk-map.conf 'pathtoken widgets widgets standard'
+  pushed "$repo"
   printf '%s\n' "$repo"
 }
 
@@ -345,6 +354,7 @@ test_committed_work_visible_without_remote_default() {
   # A remote whose default is develop, without origin/HEAD.
   repo=$(make_repo)
   git -C "$repo" branch -q -M develop
+  commit_file "$repo" .overdrive/risk-map.conf 'pathtoken widgets widgets standard'
   git -C "$repo" update-ref refs/remotes/origin/develop HEAD
   git -C "$repo" checkout -q -b feature
   mark "$repo"
@@ -539,4 +549,84 @@ test_latency_under_400ms_with_classifier() {
   marked "$repo" && { echo "the classified stop did not pass" >&2; return 1; }
   median=$(printf '%s' "$times" | sort -n | sed -n 3p)
   [ "$median" -lt 400000 ] || { echo "median ${median} us over 400 ms" >&2; return 1; }
+}
+
+# A read-only command can mark a repository (the guard cannot prove every command
+# harmless), so a turn that left it exactly as it started needs no Risk line.
+test_allows_missing_line_when_nothing_changed() {
+  local repo
+  repo=$(main_repo)
+  mark "$repo"
+  assert_allows "$(stop_event 'It rounds down so the charge never exceeds the shown price.' "$repo")"
+  marked "$repo" && { echo "marker kept for an unchanged repository" >&2; return 1; }
+  # A commit made during the turn is a change, even with a clean worktree.
+  mark "$repo"
+  commit_file "$repo" src/a.ts 'export const a = 1'
+  assert_blocks "$(stop_event 'Committed.' "$repo")" "$MISSING"
+  # So is an untracked file.
+  repo=$(main_repo)
+  mark "$repo"
+  write_file "$repo" notes.txt 'x'
+  assert_blocks "$(stop_event 'Wrote notes.' "$repo")" "$MISSING"
+}
+
+# Changes that leave HEAD and the status as they were still need the Risk line.
+test_blocks_missing_line_for_changes_status_cannot_see() {
+  local repo
+  # A commit on a new branch, then back to where the turn started.
+  repo=$(main_repo)
+  mark "$repo"
+  git -C "$repo" checkout -q -b side
+  commit_file "$repo" src/auth/session.ts 'export const ttl = 1'
+  git -C "$repo" checkout -q main
+  assert_blocks "$(stop_event 'Done.' "$repo")" "$MISSING"
+  # A file tool wrote an ignored .env with a live key.
+  repo=$(main_repo)
+  commit_file "$repo" .gitignore '.env'
+  mark "$repo"
+  write_file "$repo" .env 'STRIPE_KEY=sk_live_0123456789abcdef'
+  edited "$repo"
+  assert_eq '' "$(git -C "$repo" status --porcelain)" "the .env is ignored"
+  assert_blocks "$(stop_event 'Done.' "$repo")" "$MISSING"
+  # Work stashed away.
+  repo=$(main_repo)
+  commit_file "$repo" src/a.ts 'a'
+  pushed "$repo"
+  mark "$repo"
+  write_file "$repo" src/a.ts 'b'
+  git -C "$repo" stash -q
+  assert_blocks "$(stop_event 'Done.' "$repo")" "$MISSING"
+  # A commit and a tag, then a hard reset to the start.
+  repo=$(main_repo)
+  mark "$repo"
+  commit_file "$repo" src/a.ts 'a'
+  git -C "$repo" tag v9
+  git -C "$repo" reset -q --hard HEAD~1
+  assert_blocks "$(stop_event 'Done.' "$repo")" "$MISSING"
+}
+
+# The first change in a repository without a map closes with a proposal for one.
+test_blocks_once_for_a_missing_risk_map() {
+  local repo
+  repo=$(main_repo)
+  git -C "$repo" rm -q .overdrive/risk-map.conf
+  git -C "$repo" commit -q -m 'no map'
+  pushed "$repo"
+  mark "$repo"
+  # A turn that only planned changed nothing, so it is not asked for the map.
+  assert_allows "$(stop_event 'Plan for approval.
+Risk: critical — auth' "$repo")"
+  mark "$repo"
+  write_file "$repo" README.md 'receive'
+  assert_blocks "$(stop_event 'Fixed. Risk: x
+Risk: direct — none' "$repo")" 'no risk map yet' contains
+  marked "$repo" || { echo "marker removed on a block" >&2; return 1; }
+  # A continuation never blocks twice, and the map is asked for once per session.
+  assert_allows "$(stop_event 'Risk: direct — none' "$repo" sess-1 true)"
+  write_file "$repo" README.md 'receive it'
+  assert_allows "$(stop_event 'Risk: direct — none' "$repo")"
+  # Once proposed, the change closes normally.
+  mark "$repo"
+  write_file "$repo" .overdrive/run/risk-map.proposed 'pathtoken ledger money'
+  assert_allows "$(stop_event 'Risk: direct — none' "$repo")"
 }

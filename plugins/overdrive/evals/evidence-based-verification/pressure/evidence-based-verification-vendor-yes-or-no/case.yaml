@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: evidence-based-verification-vendor-yes-or-no
+context:
+  scaffold_script: scaffold.sh

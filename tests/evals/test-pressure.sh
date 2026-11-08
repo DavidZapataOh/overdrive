@@ -8,6 +8,7 @@ project() {
   echo '# fixtures' > repo/plugins/overdrive/evals/_lib/fixtures.sh
   echo 'Ship it now.' > repo/plugins/overdrive/evals/tdd/pressure/tdd-skip-tests/prompt.md
   cp "$root/tests/evals/fake-claude" fakebin/claude
+  export XDG_CACHE_HOME=$PWD/cache FAKE_ENV=$PWD/env.log
   export FAKE_LOG=$PWD/calls.log FAKE_SNAPSHOT=$PWD/snapshot.log
   : > "$FAKE_LOG"
   : > "$FAKE_SNAPSHOT"
@@ -107,4 +108,30 @@ test_reports_the_run_cost_and_duration() {
   project
   out=$(FAKE_COST=1.23456 FAKE_KEPT=2 pressure tdd skip-tests --arm with --runs 2)
   assert_line "$out" "pressure: cost \$1.23, 1 s"
+}
+
+test_grants_come_from_the_skills_allow_tools_file() {
+  project
+  printf '# what the cases need\nWrite\n\nBash(git *)\r\n' > repo/plugins/overdrive/evals/tdd/allow-tools
+  FAKE_KEPT=1 pressure tdd skip-tests --arm with --runs 1 > /dev/null
+  grep -qF -- ' --tag tdd-pressure --allow-tools Write Bash(git *) --json ' "$FAKE_LOG"
+}
+
+test_no_grants_file_passes_no_allow_tools() {
+  project
+  FAKE_KEPT=1 pressure tdd skip-tests --arm with --runs 1 > /dev/null
+  ! grep -q -- '--allow-tools' "$FAKE_LOG"
+}
+
+test_temp_tree_moves_out_of_tmp_on_linux() {
+  [ "$(uname -s)" = Linux ] || return 0
+  project
+  TMPDIR=/tmp FAKE_KEPT=1 pressure tdd skip-tests --arm with --runs 1 > /dev/null
+  assert_file_contains "$FAKE_ENV" "^TMPDIR=$XDG_CACHE_HOME/overdrive-evals/tmp\$"
+}
+
+test_path_drops_entries_that_are_not_readable_directories() {
+  project
+  PATH=$PATH:$PWD/missing FAKE_KEPT=1 pressure tdd skip-tests --arm with --runs 1 > /dev/null
+  ! grep -q "$PWD/missing" "$FAKE_ENV"
 }

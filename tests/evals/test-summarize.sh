@@ -205,3 +205,31 @@ test_trigger_case_with_too_few_runs_is_incorrect() {
   out=$(tool --skill tdd --expect-runs 5 suite.json)
   has 'Trigger accuracy (validation): 0/1 (0%), floor 90%: FAIL'
 }
+
+test_summarize_handles_a_single_arm_smoke_result() {
+  # ablation none: the with arm only, no without arm, no delta, no meanDelta, one run per case.
+  cat > smoke.json <<'JSON'
+{
+  "schemaVersion": 1, "claudeVersion": "2.1.319", "startedAt": "2026-11-07T02:18:56.787Z",
+  "durationSeconds": 12, "costUsd": 0.04, "partial": false,
+  "suite": { "ablation": "none", "runs": 1 },
+  "cases": [
+    { "name": "tdd-trigger-bugfix", "dir": "evals/tdd/trigger/tdd-trigger-bugfix",
+      "graders": [ { "name": "fired", "type": "tool_used", "config": { "tool": "Skill" } } ],
+      "arms": { "with": [ { "score": 1, "error": null, "costUsd": 0.04,
+                            "graders": [ { "name": "fired", "passed": true, "scored": true } ] } ] },
+      "aggregates": { "score": 1, "passRate": 1 } },
+    { "name": "tdd-behavior-red-first", "dir": "evals/tdd/behavior/tdd-behavior-red-first",
+      "arms": { "with": [ { "score": 0.5, "error": null, "costUsd": 0.1 } ], "without": null },
+      "aggregates": { "score": 0.5 } }
+  ],
+  "aggregates": { "casesTotal": 2, "casesPassed": 1, "overallScore": 0.75 }
+}
+JSON
+  out=$(tool --skill tdd --tier smoke --expect-runs 1 smoke.json)
+  has '- Suite: score 0.75, mean delta n/a, cases passed 1/2'
+  has '| tdd-trigger-bugfix | trigger | 1.00 | n/a | n/a | 1 | $0.04 | positive: fired 1/1 |'
+  has '| tdd-behavior-red-first | behavior | 0.50 | n/a | n/a | 1 | $0.10 |  |'
+  has 'Cases with errored runs: none'
+  has 'Cases with negative delta: none'
+}

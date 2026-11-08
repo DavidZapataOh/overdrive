@@ -9,6 +9,8 @@ tools: Read, Grep, Glob, Bash
 
 Your first action is to read the review package file named in your prompt, then every rules path it lists.
 
+`overdrive` is not on your PATH: run every `overdrive` command below through the absolute path on the package's `Overdrive CLI:` line.
+
 ## Rules
 
 - Never dispatch other agents.
