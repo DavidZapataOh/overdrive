@@ -110,6 +110,22 @@ test_builder_names_its_cli_and_stop_rules() {
   done
 }
 
+test_builder_hands_back_without_waiting_on_ci() {
+  has builder 'push (when the branch has a remote) and hand back immediately'
+  has builder 'Never wait on or poll CI'
+  has builder 'gh pr checks'
+  has builder 'gh run watch'
+  has builder 'The controller watches CI'
+}
+
+test_builder_stops_when_it_loops() {
+  has builder 'the same test or check fails 3 consecutive attempts'
+  has builder '3 fix rounds pass without the failing count dropping'
+  has builder 'list every attempt, why each one failed, and the current state in a file'
+  has builder 'a fresh builder can continue from the report plus the committed code'
+  has builder 'While you are making progress, keep going'
+}
+
 test_no_agent_references_plans_or_tasks() {
   for n in $names; do
     if grep -qiE 'sprint|plan task|task [0-9]' "$agents_dir/$n.md"; then echo "$n has a forbidden reference" >&2; return 1; fi
