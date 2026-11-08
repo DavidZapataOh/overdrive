@@ -241,6 +241,40 @@ test_brief_text_mode() {
   assert_file_contains "$path" '^# Brief$'
 }
 
+test_brief_neutral_leaks_nothing_of_the_repo() {
+  isolate
+  local repo path out sum task='Primary sources first: how does Neon price storage?'
+  repo=$PWD/acme-ranker
+  nested_repo "$repo"
+  printf '# Acme Ranker rules\nNever use the staging database.\n' > "$repo/CLAUDE.md"
+  mkdir -p "$HOME/.claude/projects/$(slug "$repo")/memory"
+  printf -- '- [Acme] acme-ranker notes\n' > "$HOME/.claude/projects/$(slug "$repo")/memory/MEMORY.md"
+  TMPDIR=$PWD/tmp
+  export TMPDIR
+  mkdir -p "$TMPDIR"
+  path=$(cd "$repo" && printf 'Use only vendor docs\n' | od brief --text "$task" --neutral --rules -)
+  sum=$(printf '%s\n%s\n%s' "$task" 'Use only vendor docs' 25 | cksum | awk '{ print $1 }')
+  assert_eq "$TMPDIR/overdrive-briefs/$sum.md" "$path"
+  out=$(cat "$path")
+  assert_line "$out" "$task"
+  assert_line "$out" 'Use only vendor docs'
+  assert_line "$out" 'Make at most 25 tool calls, then return what you found, marked partial, with what is still open. Long tails are cut, not chased.'
+  assert_file_contains "$path" '^Return at most 2,000 tokens, starting with `Status: '
+  assert_no_line "$out" '^## Rules$'
+  assert_no_line "$out" '^## Lane$'
+  if printf '%s\n' "$out" | grep -iq 'acme'; then echo 'brief mentions acme' >&2; return 1; fi
+  if printf '%s\n' "$out" | grep -q 'CLAUDE.md'; then echo 'brief mentions CLAUDE.md' >&2; return 1; fi
+  if printf '%s\n' "$out" | grep -Fq -e "$HOME" -e "$repo" -e '/home/'; then echo 'brief carries a path' >&2; return 1; fi
+  # A flag works as well as stdin, and --cap sets the cap.
+  path=$(cd "$repo" && od brief --text Q --neutral --rules 'Rule one' --cap 10 --out "$PWD/../n.md" < /dev/null)
+  assert_file_contains "$path" '^Rule one$'
+  assert_file_contains "$path" 'at most 10 tool calls'
+  [ ! -e "$repo/.overdrive" ]
+  assert_exit 64 od brief --plan "$(fixtures)/plan.md" --task 1 --neutral
+  assert_exit 64 od brief --text Q --rules x
+  assert_exit 64 od brief --text Q --neutral --cap 0
+}
+
 test_brief_unknown_task_exits_65() {
   isolate
   local repo rc=0 err

@@ -50,3 +50,8 @@ Smoke after the fix (sonnet, one pass of the six behavior cases and ten triggers
 
 - Non-comparison questions still use `brief --text`, whose Rules section lists CLAUDE.md and the memory index; only comparisons are neutral.
 - The full tier (three runs per arm, both arms) has not run.
+
+## Neutral briefs from the CLI
+
+- A comparison brief now comes from `overdrive brief --text ... --neutral --rules ...` (task, cap, rules, report contract; no rules chain, memory, recall or repository-derived path; written under `${TMPDIR:-/tmp}/overdrive-briefs/`) instead of a hand-written Write.
+- `unbiased-brief` graders follow: the positive grader looks for a Bash `brief --neutral` naming the candidates and neither `acme[ -]?ranker` nor `CLAUDE.md`; the Agent prompt must be a path under `overdrive-briefs/`; a `brief --text` without `--neutral`, a neutral call naming the project, and any Write of a brief all fail.
