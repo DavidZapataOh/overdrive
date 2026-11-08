@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: decision-log-behavior-flags-scope-cut
+context:
+  scaffold_script: scaffold.sh
