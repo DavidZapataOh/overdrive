@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: compound-learning-language-rule-again
+context:
+  scaffold_script: scaffold.sh
