@@ -275,6 +275,27 @@ test_brief_neutral_leaks_nothing_of_the_repo() {
   assert_exit 64 od brief --text Q --neutral --cap 0
 }
 
+test_brief_neutral_stdout_writes_no_file() {
+  isolate
+  local repo out
+  repo=$PWD/acme-ranker
+  nested_repo "$repo"
+  printf '# Acme Ranker rules\n' > "$repo/CLAUDE.md"
+  TMPDIR=$PWD/tmp
+  export TMPDIR
+  mkdir -p "$TMPDIR"
+  out=$(cd "$repo" && od brief --text 'Primary sources first: how does Neon price storage?' --neutral --stdout --rules 'Use vendor docs')
+  assert_line "$out" '# Brief'
+  assert_line "$out" '## Task'
+  assert_line "$out" 'Primary sources first: how does Neon price storage?'
+  assert_line "$out" 'Use vendor docs'
+  if printf '%s\n' "$out" | grep -Eiq -e 'acme' -e 'CLAUDE.md' -e '/home/' -e "$PWD" -e "$TMPDIR"; then echo 'stdout brief names the repo or a path' >&2; return 1; fi
+  [ ! -e "$TMPDIR/overdrive-briefs" ]
+  [ ! -e "$repo/.overdrive" ]
+  assert_exit 64 od brief --text Q --stdout
+  assert_exit 64 od brief --text Q --neutral --stdout --out x.md
+}
+
 test_brief_unknown_task_exits_65() {
   isolate
   local repo rc=0 err
