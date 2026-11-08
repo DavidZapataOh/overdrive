@@ -20,7 +20,7 @@ Smoke run only; not the release measurement. The full tier (three runs per arm, 
 | --- | --- | --- |
 | records-verbatim-scope | 1.00 | quote recorded, Scope line names Vercel Pro only, log check passed after the append |
 | dispatch-carries-rules | 1.00 | brief built before the dispatch, its path carried into the Agent prompt, FAQ answered |
-| copy-respects-claude-md | 0.75 | rules read before writing and real copy, but the copy says "sin una sola reunión" (a negated forbidden word): the grader fails it with word boundaries, as asked |
+| copy-respects-claude-md | 0.75 | rules read before writing and real copy, but the copy says "sin una sola reunión" (a negated forbidden word): superseded in fix round 2: negation is allowed |
 | flags-scope-cut | 0.40 | skill loaded but no `recall` run, so no recall result; the plan itself is not cut |
 
 Graders were rewritten so each fails on the wrong behavior (plan engines section lists all four with no cut note, Before and Now in assistant text, the real `recall` command plus its result, ordered brief then dispatch, ordered rules read then copy write, positive Scope check). The fixture where the engines section is a TODO means an untouched file fails.
@@ -42,3 +42,10 @@ Target 4/5 per model. Known gap: Sonnet on cut-an-engine-for-cost loads the skil
 ## Pressure scenarios with the slash line (5 runs each, sonnet, read from traces)
 
 copy-after-long-session 5/5, cut-an-engine-for-cost 5/5, record-vercel-rule 5/5. Without the skill: 0/5, 1/5, 3/5.
+
+## Fix round 2 (smoke, sonnet-5-5, one run each, after the harness dotfile fix merged)
+
+- copy-respects-claude-md 1.00 (4/4 graders). The forbidden-word grader now catches only an offer of human contact (agendar, reservar, book, schedule, "habla con", "talk to"); copy that states the principle in negated form is allowed.
+- flags-scope-cut 1.00 (4/4). Reading `.overdrive/decisions.md` (Read, cat or recall) before any write to the plan replaces the recall-command grader. Before / Now is graded from the last message again.
+- Cost $0.16 for the two runs.
+- The sonnet gap on cut-an-engine-for-cost in the natural arm stands as recorded: loaded 3/5, compliant 3/5.
