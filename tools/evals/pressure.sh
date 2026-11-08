@@ -45,6 +45,8 @@ case_name=$skill-$scenario
 scenario_dir=$root/$plugin/evals/$skill/pressure/$case_name
 [ -d "$scenario_dir" ] || { echo "pressure: no scenario $skill/$scenario" >&2; exit 1; }
 
+od_prepare_env || exit 1
+
 work=$(mktemp -d "${TMPDIR:-/tmp}/od-pressure.XXXXXX") || exit 1
 trap 'rm -rf "$work"' EXIT
 
@@ -58,10 +60,22 @@ if [ "$arm" = without ]; then
   cp -R "$scenario_dir" "$target/evals/$skill/pressure/$case_name"
 fi
 
+# Same grant file as run-suite.sh, one tool per line.
+allow=()
+grants=$root/$plugin/evals/$skill/allow-tools
+if [ -f "$grants" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    case $line in '' | '#'*) continue ;; esac
+    allow+=("$line")
+  done < "$grants"
+fi
+
 result=$work/result.json
-claude plugin eval "$target" --trust-plugin --scaffold --no-publish --ablation none --runs "$runs" \
-  --keep-temp --max-cost-usd "$cost" --model "$model_id" --case "$case_name" --tag "$skill-pressure" \
-  --json "$result" > /dev/null
+args=(plugin eval "$target" --trust-plugin --scaffold --no-publish --ablation none --runs "$runs"
+  --keep-temp --max-cost-usd "$cost" --model "$model_id" --case "$case_name" --tag "$skill-pressure")
+[ "${#allow[@]}" -eq 0 ] || args+=(--allow-tools "${allow[@]}")
+claude "${args[@]}" --json "$result" > /dev/null
 rc=$?
 if [ ! -s "$result" ]; then
   echo "pressure: claude plugin eval wrote no result (exit $rc)" >&2

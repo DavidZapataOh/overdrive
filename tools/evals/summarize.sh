@@ -57,7 +57,12 @@ jq -r --argjson buckets "$buckets" --arg skill "$skill" --arg tier "$tier" --arg
   def usd:
     if . >= 0.01 then "$" + f2
     else (. * 10000 | round) as $c | "$0.\($c | tostring | ("0000" + .)[-4:])" end;
-  . as $doc
+  # A smoke result has one arm and may omit whole sections; fill them in so the report reads one shape.
+  .cases |= map(
+    .graders //= [] | .aggregates //= {}
+    | .arms.with = ((.arms.with // []) | map(.graders //= []))
+    | .arms.without = ((.arms.without // []) | map(.graders //= [])))
+  | . as $doc
   | def pct($c; $n): (100 * $c / $n | round | tostring) + "%";
 
   def tier_of:
