@@ -12,17 +12,22 @@ OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
 usage() {
   cat <<'USAGE'
 Usage: overdrive brief (--plan FILE --task N | --text TEXT) [--lane LANE] [--out FILE] [--repo DIR]
+       overdrive brief --text TEXT --neutral [--rules TEXT|-] [--cap N] [--out FILE | --stdout]
 
 Writes the brief to .overdrive/run/<plan-stem>-<cksum>/task-<N>.md (plan mode) or
 .overdrive/run/briefs/<cksum>.md (text mode), or to --out, and prints its path.
 Without --lane the lane comes from overdrive risk; if that fails the lane is critical.
+--neutral writes a research brief that names nothing of the repository: the task, the rules
+given by --rules (- reads them from stdin), the tool-call cap (default 25) and the report
+contract. It goes to ${TMPDIR:-/tmp}/overdrive-briefs/ unless --out is given;
+--stdout prints the brief instead and writes no file, for a prompt that must not carry a path.
 USAGE
 }
 
-plan='' task='' text='' has_text='' lane='' out='' repo=''
+plan='' task='' text='' has_text='' lane='' out='' repo='' neutral='' rules='' has_rules='' cap='' to_stdout=''
 while [ "$#" -gt 0 ]; do
   case $1 in
-    --plan | --task | --text | --lane | --out | --repo)
+    --plan | --task | --text | --lane | --out | --repo | --rules | --cap)
       [ "$#" -ge 2 ] || { usage >&2; exit 64; }
       case $1 in
         --plan) plan=$2 ;;
@@ -31,14 +36,46 @@ while [ "$#" -gt 0 ]; do
         --lane) lane=$2 ;;
         --out) out=$2 ;;
         --repo) repo=$2 ;;
+        --rules) rules=$2; has_rules=1 ;;
+        --cap) cap=$2 ;;
       esac
       shift
       ;;
+    --neutral) neutral=1 ;;
+    --stdout) to_stdout=1 ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; exit 64 ;;
   esac
   shift
 done
+
+if [ -n "$neutral" ]; then
+  [ -n "$has_text" ] && [ -n "$text" ] && [ -z "$plan" ] && [ -z "$task" ] && [ -z "$lane" ] && [ -z "$repo" ] || { usage >&2; exit 64; }
+  [ -z "$to_stdout" ] || [ -z "$out" ] || { usage >&2; exit 64; }
+  case ${cap:-25} in 0* | *[!0-9]*) usage >&2; exit 64 ;; esac
+  [ "$rules" != - ] || rules=$(cat)
+  cap=${cap:-25}
+  # Nothing here reads the repository, the user's rules or memory: the point is a brief
+  # that cannot bias a comparison.
+  neutral_brief() {
+    printf '# Brief\n\n## Task\n\n%s\n\n' "$text"
+    [ -z "$rules" ] || printf '## Research rules\n\n%s\n\n' "$rules"
+    printf '## Cap\n\nMake at most %s tool calls, then return what you found, marked partial, with what is still open. Long tails are cut, not chased.\n\n' "$cap"
+    # shellcheck disable=SC2016
+    printf '## Report\n\nReturn at most 2,000 tokens, starting with `Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT`, then the sourced answer, what was not found with every attempt listed, and rulings as `Ruling: <what> — <why> — <cost if wrong>`.\n'
+  }
+  if [ -n "$to_stdout" ]; then neutral_brief; exit 0; fi
+  sum=$(printf '%s\n%s\n%s' "$text" "$rules" "$cap" | cksum)
+  : "${out:=${TMPDIR:-/tmp}/overdrive-briefs/${sum%% *}.md}"
+  case $out in /* | [A-Za-z]:*) ;; *) out=$PWD/$out ;; esac
+  mkdir -p "${out%/*}" || od_die "cannot create ${out%/*}" 1
+  tmp=$out.tmp.$$
+  neutral_brief > "$tmp" || { rm -f "$tmp"; od_die "cannot write $out" 1; }
+  mv -f "$tmp" "$out" || { rm -f "$tmp"; od_die "cannot write $out" 1; }
+  printf '%s\n' "$out"
+  exit 0
+fi
+[ -z "$has_rules" ] && [ -z "$cap" ] && [ -z "$to_stdout" ] || { usage >&2; exit 64; }
 
 if [ -n "$has_text" ]; then
   [ -z "$plan" ] && [ -z "$task" ] && [ -n "$text" ] || { usage >&2; exit 64; }

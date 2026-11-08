@@ -103,6 +103,12 @@ test_reviewers_name_the_findings_format() {
   done
 }
 
+test_reviewers_let_the_caller_name_the_findings_file() {
+  for n in reviewer critical-reviewer final-reviewer; do
+    has "$n" 'If the prompt or brief you were given names a findings file, write there instead of that path.'
+  done
+}
+
 test_builder_names_its_cli_and_stop_rules() {
   b=$(body "$agents_dir/builder.md")
   for s in 'overdrive pin PATH...' 'overdrive evidence red -- CMD...' 'overdrive evidence green -- CMD...' 'overdrive pin --release "REASON"' 'overdrive pin --clear' '10 minutes'; do

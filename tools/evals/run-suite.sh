@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Usage: run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N]
-#                     [--concurrency N] [--root DIR] [--allow-tools TOOL...]
+#                     [--concurrency N] [--case GLOB] [--root DIR] [--allow-tools TOOL...]
+#
+# --case GLOB narrows the tier to the cases whose name matches (the CLI's own --case), so a fix round
+# reruns only what it changed. A narrowed full run is partial and does not write RESULTS.md.
 #
 # smoke     one run, no baseline, free graders only (cases tagged SKILL-smoke)
 # full      trigger and behavior cases, three runs per arm, writes the skill's RESULTS.md
@@ -14,14 +17,14 @@ here=$(cd "$(dirname "$0")" && pwd)
 . "$here/models.env"
 
 usage() {
-  echo "usage: run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--root DIR] [--allow-tools TOOL...]" >&2
+  echo "usage: run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--case GLOB] [--root DIR] [--allow-tools TOOL...]" >&2
   exit 64
 }
 
 [ "$#" -ge 1 ] || usage
 skill=$1
 shift
-tier='' model=main cost='' jobs='' root=$(cd "$here/../.." && pwd)
+tier='' model=main cost='' jobs='' glob='' root=$(cd "$here/../.." && pwd)
 allow=()
 while [ "$#" -gt 0 ]; do
   case $1 in
@@ -29,6 +32,7 @@ while [ "$#" -gt 0 ]; do
     --model) model=${2-}; shift 2 || usage ;;
     --max-cost-usd) cost=${2-}; shift 2 || usage ;;
     --concurrency) jobs=${2-}; shift 2 || usage ;;
+    --case) [ -n "${2-}" ] || usage; glob=$2; shift 2 ;;
     --root) root=${2-}; shift 2 || usage ;;
     --allow-tools)
       shift
@@ -51,15 +55,19 @@ plugin=plugins/overdrive
 cd "$root" || exit 1
 
 if [ "$tier" = pressure ]; then
-  status=0
+  status=0 ran=0
   for dir in "$root/$plugin/evals/$skill/pressure"/*/; do
     [ -d "$dir" ] || continue
     scenario=$(basename "$dir")
     scenario=${scenario#"$skill"-}
+    # shellcheck disable=SC2053  # the case glob is meant to be a pattern
+    [ -z "$glob" ] || [[ $skill-$scenario == $glob ]] || continue
+    ran=1
     args=(--arm with --model "$model" --root "$root")
     [ -z "$cost" ] || args+=(--max-cost-usd "$cost")
     bash "$here/pressure.sh" "$skill" "$scenario" "${args[@]}" || status=$?
   done
+  [ "$ran" = 1 ] || { echo "run-suite: no pressure scenario of $skill matches --case $glob" >&2; exit 1; }
   exit "$status"
 fi
 
@@ -83,6 +91,7 @@ case $tier in
 esac
 # Parallel runs share one rate limit; the CLI accepts 1 to 8.
 [ -z "$jobs" ] || args+=(--concurrency "$jobs")
+[ -z "$glob" ] || args+=(--case "$glob")
 # Without grants on the command line, the skill's own file grants what its cases need (one per line).
 grants=$root/$plugin/evals/$skill/allow-tools
 if [ "${#allow[@]}" -eq 0 ] && [ -f "$grants" ]; then
@@ -116,7 +125,7 @@ if [ "$rc" -eq 0 ]; then
   esac
 fi
 
-if [ "$tier" = full ] && [ "$(jq -r '.partial' "$json")" != true ]; then
+if [ "$tier" = full ] && [ -z "$glob" ] && [ "$(jq -r '.partial' "$json")" != true ]; then
   printf '%s\n' "$summary" > "$root/$plugin/evals/$skill/RESULTS.md"
 fi
 exit "$rc"
