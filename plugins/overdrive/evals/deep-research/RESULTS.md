@@ -50,3 +50,9 @@ Smoke after the fix (sonnet, one pass of the six behavior cases and ten triggers
 
 - Non-comparison questions still use `brief --text`, whose Rules section lists CLAUDE.md and the memory index; only comparisons are neutral.
 - The full tier (three runs per arm, both arms) has not run.
+
+## Neutral briefs from the CLI
+
+- A comparison brief now comes from `overdrive brief --text ... --neutral --stdout --rules ...` (task, cap, rules, report contract; no rules chain, memory, recall or repository-derived path) and goes into the Agent prompt itself. A file path would carry the session directory, which contains the project slug.
+- `unbiased-brief` graders follow: the positive grader looks for a Bash `brief --neutral --stdout` naming the candidates and neither `acme[ -]?ranker` nor `CLAUDE.md`; the Agent prompt must hold the brief's `## Task` section and a candidate; any Agent prompt containing the project name, `CLAUDE.md`, `/home/`, `.overdrive` or `/tmp/`, a `brief --text` without `--neutral`, and any Write of a brief all fail. Falsified offline: the earlier path-only prompt fails the positive grader and hits the leak grader.
+- `every-claim-sourced` scored 0.80 in three smoke runs. The kept trace showed a grader defect, not a skill defect: sourced findings written as a bullet with nested sub-bullets and the URL on a following line were flagged because the pattern looked for a URL on the bullet's own line. The grader now checks each top-level item through its continuation lines; an item with no URL anywhere still fails (checked offline on a real report and on unsourced, nested-unsourced and last-in-section items).

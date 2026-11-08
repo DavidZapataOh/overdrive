@@ -25,7 +25,7 @@ Your first action is to read the review package file named in your prompt, then 
 
 ## Findings
 
-Write one line per finding to `.overdrive/run/reviews/<base7>-<head7>.findings` (the same stem as the package `.overdrive/run/reviews/<base7>-<head7>.md`), then run `overdrive findings check` on it and fix every line it rejects:
+Write one line per finding to `.overdrive/run/reviews/<base7>-<head7>.findings` (the same stem as the package `.overdrive/run/reviews/<base7>-<head7>.md`). If the prompt or brief you were given names a findings file, write there instead of that path. Then run `overdrive findings check` on it and fix every line it rejects:
 
 ```
 F<n> | P0..P3 | 0|25|50|75|100 | path:line | title | "verbatim quote" | failure mode | fix | plan-mandated:yes|no

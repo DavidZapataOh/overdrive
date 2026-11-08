@@ -9,3 +9,5 @@
 - Marketplace and plugin manifests.
 - `skill-evaluation`: user-invoked workflow for writing a skill test first (pressure baseline, eval suite, skill, pressure again, measurement), with `new-pressure-case` and `split-trigger-set` scripts.
 - `deep-research`: user-invoked research workflow that splits a question across `overdrive:researcher` agents with neutral briefs, caps each researcher, labels patterns, gaps and bets, and writes a sourced report file.
+- `overdrive brief --text TEXT --neutral [--rules TEXT|-] [--cap N] [--stdout]`: a research brief with the task, rules, cap and report contract only, written under `${TMPDIR:-/tmp}/overdrive-briefs/` or printed with `--stdout`; `deep-research` uses it for comparisons.
+- Reviewer agents write findings to the file the prompt or brief names, defaulting to the review package stem.
