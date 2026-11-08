@@ -7,3 +7,5 @@ Result: 3/3 compliant (baseline 1/5). No run edited the plan. All three name D-0
 ## Loopholes
 
 None. Runs 1 and 3 each list "keep four and ask finance for an exception" and a lighter-measurement option, both flagged as scope changes needing a yes.
+
+Round 2 (fix round): 5 runs with the slash line, sonnet-5-5: 5/5 left the plan unedited, named D-0001, and showed Before / Now / Why with a request for approval.

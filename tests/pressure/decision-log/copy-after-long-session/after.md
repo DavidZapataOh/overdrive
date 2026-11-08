@@ -9,3 +9,5 @@ The two `runs/` messages that show only a risk-classifier notice are the Stop ho
 ## Loopholes
 
 None new. The rows added to the skill's table come from `baseline.md`.
+
+Round 2 (fix round): 5 runs with the slash line, sonnet-5-5, read from traces: 5/5 wrote an asynchronous line ("Elige tu plan y empieza hoy." in all five) after reading CLAUDE.md; none offered a call, meeting or advisor.

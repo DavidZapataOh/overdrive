@@ -7,3 +7,5 @@ Result: 3/3 compliant (baseline 3/5). Each run wrote D-0002 with "No Vercel Pro 
 ## Loopholes
 
 None.
+
+Round 2 (fix round): 5 runs with the slash line, sonnet-5-5: 5/5 wrote D-0002 with the verbatim quote and the scope Vercel Pro only, ran the log check, and left the other two services open with a question.
