@@ -210,5 +210,7 @@ test_path_drops_entries_that_are_not_readable_directories() {
   case ":$path:" in *":$PWD/missing:"*) echo "kept a missing entry" >&2; return 1 ;; esac
   case ":$path:" in *":$PWD/ok:"*) ;; *) echo "dropped a readable entry" >&2; return 1 ;; esac
   case ":$path:" in *":$PWD/fakebin:"*) ;; *) echo "dropped fakebin" >&2; return 1 ;; esac
+  # chmod cannot make a directory unreadable for its owner on Windows, nor for root.
+  case $OSTYPE in msys* | cygwin*) return 0 ;; esac
   [ "$(id -u)" = 0 ] || case ":$path:" in *":$PWD/locked:"*) echo "kept an unreadable entry" >&2; return 1 ;; esac
 }
