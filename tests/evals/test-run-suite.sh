@@ -105,6 +105,15 @@ test_case_glob_is_passed_to_the_cli() {
   esac
 }
 
+test_a_case_glob_matching_no_case_fails_clearly() {
+  project
+  jq '.cases = []' "$recorded" > none.json
+  rc=0
+  err=$(FAKE_RESULT=$PWD/none.json suite tdd --tier smoke --case 'tdd-nothing-*' 2>&1 > /dev/null) || rc=$?
+  [ "$rc" -ne 0 ] || { echo "a glob matching no case must fail" >&2; return 1; }
+  case $err in *'no eval case matches'*'tdd-nothing-*'*) ;; *) printf 'unclear message: %s\n' "$err" >&2; return 1 ;; esac
+}
+
 test_a_narrowed_full_run_does_not_write_results() {
   project
   suite tdd --tier full --case 'tdd-behavior-*' > /dev/null

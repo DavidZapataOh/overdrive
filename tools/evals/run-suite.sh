@@ -126,6 +126,11 @@ if [ ! -s "$json" ]; then
   exit 1
 fi
 
+if [ -n "$glob" ] && [ "$(jq -r '.cases | length' "$json")" = 0 ]; then
+  echo "run-suite: no eval case matches --case $glob" >&2
+  exit 1
+fi
+
 summary=$(bash "$here/summarize.sh" --skill "$skill" --tier "$tier" --model "$model_id" --expect-runs "$expect" ${judge:+--judge "$judge"} "$json") || exit 1
 printf '%s\n' "$summary"
 
