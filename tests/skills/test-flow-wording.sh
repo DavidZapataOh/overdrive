@@ -34,3 +34,7 @@ test_builder_runs_plain_separate_commands() {
   has agents/builder.md 'separate commands.*&&'
 }
 
+test_researcher_keeps_private_names_out_of_queries() {
+  has agents/researcher.md 'never put.*(project|customer).*(path|secret).*(search quer|URL)'
+  has skills/deep-research/SKILL.md 'pre-sanitized|sanitized'
+}
