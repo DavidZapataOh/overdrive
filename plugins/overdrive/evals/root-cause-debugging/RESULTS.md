@@ -54,3 +54,7 @@ The baselines did not fail, so neither scenario justifies a rule. The stop rules
 ## Cost
 
 Baselines about $0.9, pressure with the skill about $1.7, natural arm about $4.5 plus a discarded batch of about $2.5, smoke passes about $2 each over seven passes; about $24 in total.
+
+## Router rerun (2026-11-09, hooks/core.md at a2ffb9a)
+
+i-know-its-the-cache-natural, 5 runs each: sonnet loaded 5/5, compliant 4/5 (before 4/5 and 3/5); opus loaded 5/5, compliant 5/5 (before 1/5 and 1/5). No errored runs.

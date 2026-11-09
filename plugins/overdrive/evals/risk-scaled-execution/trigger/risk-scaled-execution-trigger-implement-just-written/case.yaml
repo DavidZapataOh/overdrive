@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: risk-scaled-execution-trigger-implement-just-written
+context:
+  scaffold_script: scaffold.sh

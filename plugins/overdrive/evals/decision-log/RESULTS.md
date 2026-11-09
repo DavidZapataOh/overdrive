@@ -49,3 +49,17 @@ copy-after-long-session 5/5, cut-an-engine-for-cost 5/5, record-vercel-rule 5/5.
 - flags-scope-cut 1.00 (4/4). Reading `.overdrive/decisions.md` (Read, cat or recall) before any write to the plan replaces the recall-command grader. Before / Now is graded from the last message again.
 - Cost $0.16 for the two runs.
 - The sonnet gap on cut-an-engine-for-cost in the natural arm stands as recorded: loaded 3/5, compliant 3/5.
+
+## Router rerun (2026-11-09, hooks/core.md at a2ffb9a, scaffolds at 88a08e8)
+
+`landing-copy`, `spanish-email-reply` and `billing-pr-body-2` now run in a scaffold that holds the files their prompts name (copy/pricing.md, inbox/clienta-medellin.md with docs/precios.md, and the add-billing-retries branch), so a model can finalize. 3 runs each, `--tier full --case`, fired / graded; no errored runs.
+
+| Case | Split | Sonnet before | Sonnet after | Opus before | Opus after |
+| --- | --- | --- | --- | --- | --- |
+| landing-copy | train | 3/3 | 3/3 | 0/3 | 3/3 |
+| spanish-email-reply | validation | 1/3 | 0/3 | 0/3 | 0/3 |
+| billing-pr-body-2 | validation | 3/3 | 1/3 | 1/3 | 3/3 |
+
+landing-copy belongs to the train split; only the other two count towards validation. In the spanish-email-reply runs both models read the email and the price list, load evidence-based-verification because the reply quotes a price, and answer without decision-log: a routing gap, not a fixture defect.
+
+Natural scenario cut-an-engine-for-cost-natural, 5 runs each: sonnet loaded 4/5, compliant 3/5 (before 3/5 and 3/5); opus loaded 2/5, compliant 2/5 (before 4/5 and 4/5).
