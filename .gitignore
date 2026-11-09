@@ -4,3 +4,5 @@ plugins/overdrive/evals/results/
 tests/pressure/*/*/runs/
 # Session transcripts the eval harness writes beside a history case
 plugins/overdrive/evals/**/[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*.jsonl
+# Subagent transcripts the harness writes in a directory named after the session
+plugins/overdrive/evals/**/[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*/
