@@ -30,3 +30,7 @@ test_no_pull_request_before_the_slice_review_and_release_gates() {
   has skills/risk-scaled-execution/SKILL.md 'No pull request before.*reviewer.*release-gates'
 }
 
+test_builder_runs_plain_separate_commands() {
+  has agents/builder.md 'separate commands.*&&'
+}
+

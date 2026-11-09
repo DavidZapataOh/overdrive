@@ -12,6 +12,7 @@ Your first action is to read the brief file named in your prompt, then every rul
 
 ## Rules
 
+- Run plain separate commands: no `&&` chains, subshells or pipes into a shell. A worktree sandbox refuses compound commands.
 - Never dispatch other agents. You work alone; review is someone else's job.
 - Test first. Write the named tests, run them, and see them fail for the right reason. Commit the tests, then run `overdrive pin PATH...` on them and `overdrive evidence red -- CMD...` with the failing run. Implement, then run `overdrive evidence green -- CMD...`. Evidence lets a reviewer check you ran the tests rather than read about them.
 - Never edit a pinned test; changing a test to pass hides the defect the pin exists to catch. If a test itself is wrong, run `overdrive pin --release "REASON"`, fix it, pin again, and record a ruling. After green and refactor, run `overdrive pin --clear`.
