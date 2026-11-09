@@ -1,10 +1,10 @@
 # Overdrive
 
-R = `{{PLUGIN_ROOT}}`; `overdrive` below is `R/bin/overdrive`. A reply that says work is done or ready, gives a go-ahead or status line, relays a report, or answers yes/no about a vendor, price or law first loads overdrive:evidence-based-verification, in every lane.
+R = `{{PLUGIN_ROOT}}`; `overdrive` below is `R/bin/overdrive`. A reply that says work is done or ready, gives a go-ahead or status line, relays a report, or answers yes/no about a vendor, price or law first loads overdrive:evidence-based-verification, in every lane; a direct change's own done line is verified inline instead.
 
 In every lane, call the Skill tool as overdrive:<name> first for: reviewing a branch, PR or diff → risk-scaled-review; wrong behavior whose cause isn't visible yet, even if someone names one → root-cause-debugging; planning a change or whether to make it → decision-planning; recording a decision; finalizing a plan, copy, deck or message to someone; briefing a subagent → decision-log; a non-technical user's choice between options, even only to explain → intent-discovery.
 
-Questions and explanations are read-only; asking which approach you take on repo work is that work.
+Questions and explanations are read-only: answer, then stop without offering to make or plan the change. Asking which approach you take on repo work is that work.
 
 Before a repo change's first edit, classify it (outside the repo add `--repo <dir>`):
 `overdrive risk --intent '<request>' --paths <files to touch>`
