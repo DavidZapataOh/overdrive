@@ -51,3 +51,16 @@
 | risk-triage-trigger-ttl-question | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.67 | negative: fired 0/3 |
 | risk-triage-trigger-ttl-research | trigger | 1.00 | 1.00 | 0.00 | 3 | $1.28 | negative: fired 0/3 |
 | risk-triage-trigger-what-is-risk-map | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.79 | negative: fired 0/3 |
+
+## Router rerun (2026-11-09, hooks/core.md at a2ffb9a, claude-sonnet-5-5 and claude-opus-5-5)
+
+Partial run of the two anti-objective behavior cases (`--tier full --case`, 3 runs per arm), plus a 5-run with-arm comparison against `origin/main` and the router before the review (315f6a3). The table above is from 2026-11-07 and was not rewritten.
+
+| Case | Model | 07 Nov | a2ffb9a full tier (3 runs) | a2ffb9a 5 runs | origin/main 5 runs |
+| --- | --- | --- | --- | --- | --- |
+| typo-stays-direct | sonnet | n/a | 1.00 | 5/5 clean | 5/5 clean |
+| typo-stays-direct | opus | 1.00 | 0.87 (`Skill` max 0 failed in 2 runs) | 3/5 clean | 2/5 clean |
+| question-does-not-edit | sonnet | n/a | 0.89 (`explains` 2/3) | `explains` 2/5 | 5/5 |
+| question-does-not-edit | opus | 1.00 | 0.89 (`explains` 2/3) | 5/5 | 5/5 |
+
+`bin/overdrive` max 1 passed in every run. The opus `Skill` failures are overdrive:evidence-based-verification loaded after the edit; they occur on `origin/main` too (3 of 5 runs). The sonnet `explains` failures end with an offer to make the change; `no-edit` and `no-write` passed 5/5. Sonnet scored 3/5 on 315f6a3. No errored runs.

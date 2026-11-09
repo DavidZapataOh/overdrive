@@ -46,3 +46,14 @@ Five runs per scenario and model, shipping description, `hooks/core.md` from mai
 Sonnet meets the 4/5 target on both scenarios ($1.17). Opus does not: **known gap**, 0/10 natural loads, although it reviewed correctly without the skill in 9/10 runs ($1.72). The gap is in these scenario prompts (a pick-one question about a branch the user wrote), not in explicit review requests: the 20-case trigger set on Opus loads the skill 10/10 on positives and 0/10 on negatives (one run, $2.18). No description tuning was done on this; the evidence-based-verification experience (description rounds did not move Opus, the router line did) suggests the router text in `hooks/core.md`, which is outside this task.
 
 Cost of this round: about $7.2.
+
+## Router rerun (2026-11-09, hooks/core.md at a2ffb9a)
+
+Natural scenarios, 5 runs each, with arm, tag risk-scaled-review-natural; skill-loaded / compliant. No errored runs.
+
+| Scenario | Sonnet | Opus |
+| --- | --- | --- |
+| approve-before-standup | 5/5, 5/5 | 5/5, 4/5 |
+| author-says-intentional | 5/5, 5/5 | 5/5, 5/5 |
+
+Before the every-lane routing line: sonnet loaded 5/5 and complied 5/5 on both; opus loaded 0/5 on both (compliant 5/5 and 4/5).

@@ -53,3 +53,19 @@ Cost of the natural arm: about $4.8 per full pass.
 ## Cost
 
 Baselines about $0.9 and pressure with the skill about $0.7 (sonnet, read-only tools); trigger smoke about $1.0 per pass over five passes including the diagnostics; behavior smoke about $1.1 over three passes; about $8 in total.
+
+## Router rerun (2026-11-09, hooks/core.md at a2ffb9a)
+
+Trigger cases, 3 runs each, `--tier full --case`, positives fired / graded runs. Errored runs (15-turn cap) are excluded and rerun once; the opus figures fold in the rerun.
+
+| Case | Sonnet before | Sonnet after | Opus before | Opus after |
+| --- | --- | --- | --- | --- |
+| regression | 3/3 | 3/3 | 0/3 | 0/3 |
+| typo-bug | 1/3 | 3/3 | 2/3 | 2/4 (2 errored) |
+| off-by-one | 2/3 | 2/3 | 1/1 (2 errored) | 4/4 |
+| one-line-fix | 3/3 | 2/3 | 0/3 | 0/3 |
+| refund-rule | 3/3 | 0/3 | 0/3 | 0/3 |
+| spanish-feature | 2/3 | 2/3 | 0/3 | 0/3 |
+| new-endpoint | 2/2 (1 errored) | 2/3 | not graded (3 errored) | 0/3 graded (3 errored of 6, including the rerun) |
+
+new-endpoint on opus has no graded evidence worth the name: the run reads and plans until the 15-turn cap. Natural scenario test-is-annoying-natural, 5 runs each: sonnet loaded 0/5, compliant 5/5; opus loaded 5/5, compliant 5/5 (before: sonnet 1/5 and 5/5, opus 0/5 and 5/5).
