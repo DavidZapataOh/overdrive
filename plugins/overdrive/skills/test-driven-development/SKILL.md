@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Use before editing code so a function, endpoint or rule behaves differently: a new function, a bug whose cause is already known, a one-line fix, a rushed change. Needs a runnable test command. Not for finding why something fails (root-cause-debugging), reviewing tests, explaining TDD or test setup.
+description: Use before editing code to change what a function or rule does: a new function, a bug fix with a visible cause (wrong output, rejected input), a one-line fix, a rushed change. Needs a runnable test command. Not for finding why something fails (root-cause-debugging), reviewing tests, explaining TDD.
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/overdrive *)
 ---
 
