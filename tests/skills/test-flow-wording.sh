@@ -22,3 +22,11 @@ test_resume_loads_the_execution_skill_in_every_lane() {
   fi
 }
 
+test_execution_reads_the_ledger_before_anything_else() {
+  has skills/risk-scaled-execution/SKILL.md 'Resum[a-z]* a plan.*ledger status.*before'
+}
+
+test_no_pull_request_before_the_slice_review_and_release_gates() {
+  has skills/risk-scaled-execution/SKILL.md 'No pull request before.*reviewer.*release-gates'
+}
+
