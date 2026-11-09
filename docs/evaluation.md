@@ -91,7 +91,7 @@ Give each case one grader on the result and one on the steps taken. Prefer `rege
 ## Running
 
 ```bash
-tools/evals/run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--case GLOB] [--allow-tools TOOL...]
+tools/evals/run-suite.sh SKILL --tier smoke|full|pressure|e2e [--model main|sonnet] [--max-cost-usd N] [--runs N] [--concurrency N] [--case GLOB] [--allow-tools TOOL...]
 ```
 
 Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) get them from `plugins/overdrive/evals/<skill>/allow-tools`, one grant per line (blank lines and `#` comments are ignored); CI's eval job uses the same file through `run-suite.sh`. `--allow-tools` on the command line replaces the file. `--concurrency N` (1 to 8, not for the pressure tier) runs cases in parallel on one rate limit. `--case GLOB` passes through to `claude plugin eval --case` and narrows the tier to the cases whose name matches, so a fix round reruns only the cases it changed (`run-suite.sh tdd --tier smoke --case 'tdd-behavior-test-*'`); on the pressure tier it selects scenarios by the same name, and a narrowed full run is partial, so it does not write `RESULTS.md`.
@@ -101,6 +101,9 @@ Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) ge
 | `smoke` | cases tagged `<skill>-smoke`, one run, no baseline arm, no judge | $2 |
 | `full` | trigger and behavior cases, three runs per arm with and without the plugin, `--threshold 0.9`, judge model pinned | $25 |
 | `pressure` | each scenario with the plugin, five runs, final messages kept | $15 per scenario |
+| `e2e` | the `e2e` suite's behavior cases with the plugin only, three runs (`--runs N` overrides), sandboxes kept so the traces can be read | $30 |
+
+The `e2e` suite (`run-suite.sh e2e --tier e2e`) holds whole-flow cases for each lane, loop detection, CI polling and real worktree dispatch. Each case may run up to an hour and some dispatch opus reviewers, so it is never selected by `changed-skills.sh`, smoke or full, and writes no `RESULTS.md`.
 
 `full` writes `plugins/overdrive/evals/<skill>/RESULTS.md` unless the run was partial: date, Claude Code version, pinned model IDs, trigger accuracy for `train` and `validation` (floor 90% on validation), per-case score, baseline score, delta and cost, a `REGRESSION` note on every case with a negative delta, and a list of cases with errored runs. A case whose runs did not all grade counts as an incorrect trigger case, and `run-suite.sh` exits 1 when any run errored. The release rules for a skill are in the plan; the summary only reports them.
 

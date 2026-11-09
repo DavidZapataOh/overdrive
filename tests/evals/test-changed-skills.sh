@@ -72,6 +72,15 @@ test_results_directory_is_not_a_skill() {
 tdd" "$(tool --root "$repo")"
 }
 
+test_e2e_suite_is_opt_in() {
+  plugin_repo
+  commit_file "$repo" plugins/overdrive/evals/e2e/behavior/e2e-a/case.yaml 'x'
+  assert_eq "debugging
+tdd" "$(tool --root "$repo")"
+  commit_file "$repo" plugins/overdrive/evals/e2e/behavior/e2e-a/prompt.md 'y'
+  assert_eq "" "$(tool --root "$repo" "$base" HEAD)"
+}
+
 test_unreadable_range_fails() {
   plugin_repo
   assert_exit 1 tool --root "$repo" deadbeef HEAD
