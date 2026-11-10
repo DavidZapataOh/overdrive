@@ -607,7 +607,7 @@ test_blocks_missing_line_for_changes_status_cannot_see() {
 
 # The first change in a repository without a map closes with a proposal for one.
 test_blocks_once_for_a_missing_risk_map() {
-  local repo
+  local repo out
   repo=$(main_repo)
   git -C "$repo" rm -q .overdrive/risk-map.conf
   git -C "$repo" commit -q -m 'no map'
@@ -618,8 +618,10 @@ test_blocks_once_for_a_missing_risk_map() {
 Risk: critical — auth' "$repo")"
   mark "$repo"
   write_file "$repo" README.md 'receive'
-  assert_blocks "$(stop_event 'Fixed. Risk: x
-Risk: direct — none' "$repo")" 'no risk map yet' contains
+  out=$(stop_event 'Fixed. Risk: x
+Risk: direct — none' "$repo")
+  # The map proposal must not push a plan awaiting approval out of the final reply.
+  assert_blocks "$out" 'no risk map yet. Load overdrive:risk-triage, write the proposed map to .overdrive/run/risk-map.proposed with the Write tool as its risk-map proposal reference says, keep any plan or question from your reply first' contains
   marked "$repo" || { echo "marker removed on a block" >&2; return 1; }
   # A continuation never blocks twice, and the map is asked for once per session.
   assert_allows "$(stop_event 'Risk: direct — none' "$repo" sess-1 true)"
