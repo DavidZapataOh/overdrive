@@ -25,7 +25,8 @@ with_cases() {
   for dir in "$root/$evals"/*/; do
     [ -d "$dir" ] || continue
     name=$(basename "$dir")
-    case $name in _* | results) continue ;; esac
+    # The end-to-end suite is long and costly, so it runs only when asked for by name.
+    case $name in _* | results | e2e) continue ;; esac
     if [ -n "$(find "$dir" \( -name prompt.md -o -name case.yaml \) -print -quit)" ]; then
       printf '%s\n' "$name"
     fi
@@ -54,6 +55,7 @@ while IFS= read -r path; do
       name=${rest%%/*}
       case $name in
         _* | results) [ "$name" = results ] || all=1 ;;
+        e2e) ;;
         *) named="$named$name"$'\n' ;;
       esac
       ;;

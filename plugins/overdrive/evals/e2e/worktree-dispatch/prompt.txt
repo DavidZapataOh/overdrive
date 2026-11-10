@@ -1,0 +1,1 @@
+Do tasks 1 and 2 of docs/plan.md in parallel, one builder each, and bring the results together on main. Tests run with node --test.

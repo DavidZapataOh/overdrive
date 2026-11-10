@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: deep-research-behavior-queries-carry-no-private-names
+context:
+  scaffold_script: scaffold.sh

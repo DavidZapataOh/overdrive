@@ -105,6 +105,15 @@ test_case_glob_is_passed_to_the_cli() {
   esac
 }
 
+test_a_case_glob_matching_no_case_fails_clearly() {
+  project
+  jq '.cases = []' "$recorded" > none.json
+  rc=0
+  err=$(FAKE_RESULT=$PWD/none.json suite tdd --tier smoke --case 'tdd-nothing-*' 2>&1 > /dev/null) || rc=$?
+  [ "$rc" -ne 0 ] || { echo "a glob matching no case must fail" >&2; return 1; }
+  case $err in *'no eval case matches'*'tdd-nothing-*'*) ;; *) printf 'unclear message: %s\n' "$err" >&2; return 1 ;; esac
+}
+
 test_a_narrowed_full_run_does_not_write_results() {
   project
   suite tdd --tier full --case 'tdd-behavior-*' > /dev/null
@@ -155,6 +164,26 @@ test_partial_run_does_not_overwrite_results() {
   assert_eq "kept" "$(cat repo/plugins/overdrive/evals/tdd/RESULTS.md)"
 }
 
+test_e2e_runs_behavior_cases_with_the_plugin_only() {
+  project
+  mkdir -p repo/plugins/overdrive/evals/e2e/behavior
+  out=$(FAKE_KEPT=3 suite e2e --tier e2e --model sonnet)
+  . "$root/tools/evals/models.env"
+  assert_call_has "plugin eval plugins/overdrive --trust-plugin --scaffold --no-publish --ablation none --runs 3 --keep-temp --max-cost-usd 30 --model $OD_EVAL_MODEL_SONNET --judge-model $OD_EVAL_JUDGE --json $PWD/repo/plugins/overdrive/evals/results/e2e-e2e.json --tag e2e-behavior"
+  case $out in *'- Tier: e2e'*) ;; *) echo "no summary printed" >&2; return 1 ;; esac
+  [ ! -e repo/plugins/overdrive/evals/e2e/RESULTS.md ] || { echo "e2e must not write RESULTS.md" >&2; return 1; }
+}
+
+test_e2e_runs_override_is_passed_and_other_tiers_reject_it() {
+  project
+  mkdir -p repo/plugins/overdrive/evals/e2e/behavior
+  FAKE_KEPT=1 suite e2e --tier e2e --runs 1 > /dev/null
+  assert_call_has "--ablation none --runs 1 --keep-temp --max-cost-usd 30"
+  assert_exit 64 suite tdd --tier full --runs 2
+  assert_exit 64 suite e2e --tier e2e --runs 0
+  assert_exit 64 suite e2e --tier e2e --runs 00
+}
+
 test_usage_errors() {
   project
   assert_exit 64 suite
@@ -184,7 +213,7 @@ test_errored_runs_fail_the_run_even_when_claude_exits_zero() {
 
 test_models_env_records_the_verified_claude_code_version() {
   . "$root/tools/evals/models.env"
-  assert_eq "2.1.319" "$OD_EVAL_CLAUDE_VERSION"
+  assert_eq "2.1.321" "$OD_EVAL_CLAUDE_VERSION"
 }
 
 test_a_broken_baseline_run_fails_the_suite() {

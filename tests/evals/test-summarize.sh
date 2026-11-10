@@ -42,7 +42,7 @@ behavior_case() {
 
 # doc CASE_FILES...: wraps cases in an aggregate document.
 doc() {
-  jq -s '{ schemaVersion: 1, claudeVersion: "2.1.319", startedAt: "2026-11-07T02:18:56.787Z",
+  jq -s '{ schemaVersion: 1, claudeVersion: "2.1.321", startedAt: "2026-11-07T02:18:56.787Z",
            durationSeconds: 90, costUsd: 3.5, partial: false,
            suite: { modelOverride: "claude-opus-5-5" },
            cases: ., aggregates: { casesTotal: (. | length), casesPassed: (. | length), overallScore: 0.8, meanDelta: 0.1 } }' "$@"
@@ -106,7 +106,7 @@ test_summarize_rejects_an_unverified_claude_code_version() {
   behavior_case tdd-behavior-red-first 1 0.5 > c1
   doc c1 | jq '.claudeVersion = "2.2.0"' > suite.json
   out=$(tool --skill tdd suite.json 2>&1) && return 1
-  has 'verified against Claude Code 2.1.319'
+  has 'verified against Claude Code 2.1.321'
   assert_exit 1 tool --skill tdd suite.json
 }
 
@@ -126,7 +126,7 @@ test_summarize_header_and_metadata() {
   out=$(tool --skill tdd --tier full --model claude-opus-5-5 --judge claude-sonnet-5-5 suite.json)
   has '# Eval results: tdd'
   has '- Date: 2026-11-07'
-  has '- Claude Code: 2.1.319'
+  has '- Claude Code: 2.1.321'
   has '- Tier: full'
   has '- Agent model: claude-opus-5-5'
   has '- Judge model: claude-sonnet-5-5'
@@ -144,7 +144,7 @@ test_summarize_marks_partial_runs() {
 
 test_summarize_reads_a_recorded_document() {
   out=$(tool --skill spike "$recorded")
-  has '- Claude Code: 2.1.319'
+  has '- Claude Code: 2.1.321'
   has '| spike-probe | behavior | 1.00 | 0.67 | +0.33 | 1 | $0.0032 |  |'
   has 'Cases with negative delta: none'
   has '| neg | trigger | 1.00 | 1.00 | 0.00 | 2 | $0.0052 | negative: fired 0/2 |'
@@ -210,7 +210,7 @@ test_summarize_handles_a_single_arm_smoke_result() {
   # ablation none: the with arm only, no without arm, no delta, no meanDelta, one run per case.
   cat > smoke.json <<'JSON'
 {
-  "schemaVersion": 1, "claudeVersion": "2.1.319", "startedAt": "2026-11-07T02:18:56.787Z",
+  "schemaVersion": 1, "claudeVersion": "2.1.321", "startedAt": "2026-11-07T02:18:56.787Z",
   "durationSeconds": 12, "costUsd": 0.04, "partial": false,
   "suite": { "ablation": "none", "runs": 1 },
   "cases": [

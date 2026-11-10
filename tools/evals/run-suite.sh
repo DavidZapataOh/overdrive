@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Usage: run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N]
-#                     [--concurrency N] [--case GLOB] [--root DIR] [--allow-tools TOOL...]
+# Usage: run-suite.sh SKILL --tier smoke|full|pressure|e2e [--model main|sonnet] [--max-cost-usd N]
+#                     [--runs N] [--concurrency N] [--case GLOB] [--root DIR] [--allow-tools TOOL...]
 #
 # --case GLOB narrows the tier to the cases whose name matches (the CLI's own --case), so a fix round
 # reruns only what it changed. A narrowed full run is partial and does not write RESULTS.md.
@@ -8,6 +8,9 @@
 # smoke     one run, no baseline, free graders only (cases tagged SKILL-smoke)
 # full      trigger and behavior cases, three runs per arm, writes the skill's RESULTS.md
 # pressure  every pressure scenario with the plugin, five runs, final messages kept for reading
+# e2e       behavior cases of the e2e suite, with-arm only, three runs (--runs N overrides), sandboxes
+#           kept so the traces can be read; long and costly, so never part of smoke or full and
+#           never writes RESULTS.md
 
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -17,20 +20,21 @@ here=$(cd "$(dirname "$0")" && pwd)
 . "$here/models.env"
 
 usage() {
-  echo "usage: run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--case GLOB] [--root DIR] [--allow-tools TOOL...]" >&2
+  echo "usage: run-suite.sh SKILL --tier smoke|full|pressure|e2e [--model main|sonnet] [--max-cost-usd N] [--runs N] [--concurrency N] [--case GLOB] [--root DIR] [--allow-tools TOOL...]" >&2
   exit 64
 }
 
 [ "$#" -ge 1 ] || usage
 skill=$1
 shift
-tier='' model=main cost='' jobs='' glob='' root=$(cd "$here/../.." && pwd)
+tier='' model=main cost='' runs='' jobs='' glob='' root=$(cd "$here/../.." && pwd)
 allow=()
 while [ "$#" -gt 0 ]; do
   case $1 in
     --tier) tier=${2-}; shift 2 || usage ;;
     --model) model=${2-}; shift 2 || usage ;;
     --max-cost-usd) cost=${2-}; shift 2 || usage ;;
+    --runs) runs=${2-}; shift 2 || usage ;;
     --concurrency) jobs=${2-}; shift 2 || usage ;;
     --case) [ -n "${2-}" ] || usage; glob=$2; shift 2 ;;
     --root) root=${2-}; shift 2 || usage ;;
@@ -45,7 +49,9 @@ while [ "$#" -gt 0 ]; do
     *) usage ;;
   esac
 done
-case $tier in smoke | full | pressure) ;; *) usage ;; esac
+case $tier in smoke | full | pressure | e2e) ;; *) usage ;; esac
+case $runs in '') ;; *[!0-9]* | 0*) usage ;; esac
+[ -z "$runs" ] || [ "$tier" = e2e ] || usage
 case $jobs in '' | [1-8]) ;; *) usage ;; esac
 [ "$tier" != pressure ] || [ -z "$jobs" ] || usage
 model_id=$(od_model_id "$model") || usage
@@ -79,6 +85,12 @@ rm -f "$json"
 args=(plugin eval "$plugin" --trust-plugin --scaffold --no-publish)
 judge='' expect=1
 case $tier in
+  e2e)
+    expect=${runs:-3}
+    judge=$OD_EVAL_JUDGE
+    args+=(--ablation none --runs "$expect" --keep-temp --max-cost-usd "${cost:-30}" --model "$model_id"
+      --judge-model "$judge" --json "$json" --tag "$skill-behavior")
+    ;;
   smoke)
     args+=(--ablation none --runs 1 --max-cost-usd "${cost:-2}" --model "$model_id" --json "$json" --tag "$skill-smoke")
     ;;
@@ -111,6 +123,11 @@ rc=$?
 if [ ! -s "$json" ]; then
   echo "run-suite: claude plugin eval wrote no result (exit $rc)" >&2
   [ "$rc" -ne 0 ] && exit "$rc"
+  exit 1
+fi
+
+if [ -n "$glob" ] && [ "$(jq -r '.cases | length' "$json")" = 0 ]; then
+  echo "run-suite: no eval case matches --case $glob" >&2
   exit 1
 fi
 

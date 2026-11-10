@@ -2,7 +2,7 @@
 
 Every skill is measured with `claude plugin eval` before it ships: does Claude pick the skill when it should (trigger), does it behave better with the skill than without it (behavior), and does it hold under pressure to cut corners (pressure). This page covers how the suites are laid out, how to run them, and what was verified about the runner itself.
 
-Everything below was verified against Claude Code 2.1.319. CI installs exactly that version (`OD_EVAL_CLAUDE_VERSION` in `tools/evals/models.env`) and `summarize.sh` refuses results from any other version until the result format is re-verified and the pin is updated.
+Everything below was verified against Claude Code 2.1.321. CI installs exactly that version (`OD_EVAL_CLAUDE_VERSION` in `tools/evals/models.env`) and `summarize.sh` refuses results from any other version until the result format is re-verified and the pin is updated.
 
 Reference: [Test plugins with evals](https://code.claude.com/docs/en/plugin-evals) (Claude Code 2.1.319). Every key used in a case below is taken from that page.
 
@@ -91,7 +91,7 @@ Give each case one grader on the result and one on the steps taken. Prefer `rege
 ## Running
 
 ```bash
-tools/evals/run-suite.sh SKILL --tier smoke|full|pressure [--model main|sonnet] [--max-cost-usd N] [--concurrency N] [--case GLOB] [--allow-tools TOOL...]
+tools/evals/run-suite.sh SKILL --tier smoke|full|pressure|e2e [--model main|sonnet] [--max-cost-usd N] [--runs N] [--concurrency N] [--case GLOB] [--allow-tools TOOL...]
 ```
 
 Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) get them from `plugins/overdrive/evals/<skill>/allow-tools`, one grant per line (blank lines and `#` comments are ignored); CI's eval job uses the same file through `run-suite.sh`. `--allow-tools` on the command line replaces the file. `--concurrency N` (1 to 8, not for the pressure tier) runs cases in parallel on one rate limit. `--case GLOB` passes through to `claude plugin eval --case` and narrows the tier to the cases whose name matches, so a fix round reruns only the cases it changed (`run-suite.sh tdd --tier smoke --case 'tdd-behavior-test-*'`); on the pressure tier it selects scenarios by the same name, and a narrowed full run is partial, so it does not write `RESULTS.md`.
@@ -101,6 +101,9 @@ Cases that need tools beyond the read-only set (`Write`, `Edit`, `Bash(...)`) ge
 | `smoke` | cases tagged `<skill>-smoke`, one run, no baseline arm, no judge | $2 |
 | `full` | trigger and behavior cases, three runs per arm with and without the plugin, `--threshold 0.9`, judge model pinned | $25 |
 | `pressure` | each scenario with the plugin, five runs, final messages kept | $15 per scenario |
+| `e2e` | the `e2e` suite's behavior cases with the plugin only, three runs (`--runs N` overrides), sandboxes kept so the traces can be read | $30 |
+
+The `e2e` suite (`run-suite.sh e2e --tier e2e`) holds whole-flow cases for each lane, loop detection, CI polling and real worktree dispatch. Each case may run up to an hour and some dispatch opus reviewers, so it is never selected by `changed-skills.sh`, smoke or full, and writes no `RESULTS.md`.
 
 `full` writes `plugins/overdrive/evals/<skill>/RESULTS.md` unless the run was partial: date, Claude Code version, pinned model IDs, trigger accuracy for `train` and `validation` (floor 90% on validation), per-case score, baseline score, delta and cost, a `REGRESSION` note on every case with a negative delta, and a list of cases with errored runs. A case whose runs did not all grade counts as an incorrect trigger case, and `run-suite.sh` exits 1 when any run errored. The release rules for a skill are in the plan; the summary only reports them.
 
@@ -114,6 +117,13 @@ Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for
 - **Temp tree outside `/tmp` on Linux.** The eval's OS sandbox mounts everything under `/tmp` read-only, so a temp tree there leaves `Bash` in the runs unable to write the workspace or `TMPDIR`. When `TMPDIR` (default `/tmp`) is under `/tmp`, the tools export `TMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/overdrive-evals/tmp"`. `OVERDRIVE_EVAL_TMPDIR` sets another directory and applies on every platform.
 - **Sanitized `PATH`.** Entries that are not readable directories (Windows paths on WSL, missing directories) are dropped, because the CLI refuses to start with them.
 - **Grants.** Both tools read `evals/<skill>/allow-tools`; `pressure.sh` has no `--allow-tools` option of its own.
+
+### Deviations of the `e2e` suite from its specification
+
+- **Reviewer counts.** `e2e-standard-feature` allows one or two `overdrive:reviewer` dispatches and `e2e-critical-after-approval` one or two final reviews: the review rules permit one scoped re-review after a fix wave, which is part of the single review of a slice.
+- **Trivial change.** `e2e-trivial` passes with no dispatch, no skill call and the single classification. Its recorded cost in tool calls (sonnet, nine kept runs): 3 to 4 tool uses, no Skill calls.
+- **Model sweep and model policy.** Running the cases across models and the policy document that follows from it are not part of this suite; they belong to the sweep.
+- **Isolation case.** `deep-research-behavior-queries-carry-no-private-names` is a guard rather than a discriminator (see its entry in the deep-research results): the eval workspace does not load CLAUDE.md, so the path through which a subagent receives the project's CLAUDE.md is covered only by the probe recorded in the e2e report (a token in CLAUDE.md reached `general-purpose` and `overdrive:researcher`).
 
 ### Graders for the plan ledger
 
