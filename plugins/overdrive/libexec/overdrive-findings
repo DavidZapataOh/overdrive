@@ -82,7 +82,7 @@ function norm_path(p) {
   if ($0 ~ /^[ \t]*$/ || $0 ~ /^#/) next
   n = split_fields($0)
   if (n < 0) { fail(perr); next }
-  if (n != 9) { fail("not a finding line: expected F<n> | P0-P3 | confidence | path:line | title | \"quote\" | failure mode | fix | plan-mandated:yes|no (9 fields separated by \" | \", found " n ")"); next }
+  if (n != 9) { fail("not a finding line: expected F<n> | P0..P3 | 0|25|50|75|100 | path:line | title | \"verbatim quote\" | failure mode | fix | plan-mandated:yes|no (9 fields separated by \" | \", found " n ")"); next }
   id = val[1]
   if (id !~ /^F[0-9]+$/) { fail("first field must be F<n>: " id); next }
   where = FILENAME ":" FNR ": " id

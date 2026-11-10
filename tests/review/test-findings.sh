@@ -171,10 +171,10 @@ test_findings_check_names_the_required_format() {
   repo=$(code_repo)
   printf 'Finding: the lock is not released on error\n' > "$repo/f.md"
   out=$(cd "$repo" && od findings check f.md 2>&1) || :
-  assert_line "$out" 'f.md:1: not a finding line: expected F<n> | P0-P3 | confidence | path:line | title | "quote" | failure mode | fix | plan-mandated:yes|no (9 fields separated by " | ", found 1)'
+  assert_line "$out" 'f.md:1: not a finding line: expected F<n> | P0..P3 | 0|25|50|75|100 | path:line | title | "verbatim quote" | failure mode | fix | plan-mandated:yes|no (9 fields separated by " | ", found 1)'
   printf 'F1 | P1 | 50 | - | Too few fields | "" | x | plan-mandated:no\n' > "$repo/f.md"
   out=$(cd "$repo" && od findings check f.md 2>&1) || :
-  assert_line "$out" 'f.md:1: not a finding line: expected F<n> | P0-P3 | confidence | path:line | title | "quote" | failure mode | fix | plan-mandated:yes|no (9 fields separated by " | ", found 8)'
+  assert_line "$out" 'f.md:1: not a finding line: expected F<n> | P0..P3 | 0|25|50|75|100 | path:line | title | "verbatim quote" | failure mode | fix | plan-mandated:yes|no (9 fields separated by " | ", found 8)'
   out=$(cd "$repo" && od findings merge f.md 2>&1) || :
-  assert_line "$out" 'f.md:1: not a finding line: expected F<n> | P0-P3 | confidence | path:line | title | "quote" | failure mode | fix | plan-mandated:yes|no (9 fields separated by " | ", found 8)'
+  assert_line "$out" 'f.md:1: not a finding line: expected F<n> | P0..P3 | 0|25|50|75|100 | path:line | title | "verbatim quote" | failure mode | fix | plan-mandated:yes|no (9 fields separated by " | ", found 8)'
 }
