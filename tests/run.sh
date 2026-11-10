@@ -10,7 +10,8 @@ RUNNER="$here/run.sh"
 export RUNNER
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/od.XXXXXX") || exit 1
-trap 'rm -rf "$work"' EXIT
+# Tests that keep locked eval sandboxes must not make the cleanup fail.
+trap 'chmod -R u+rwx "$work" 2>/dev/null; rm -rf "$work"' EXIT
 # Fixtures made with mktemp land inside the work dir and are removed on exit.
 TMPDIR=$work
 export TMPDIR
