@@ -50,7 +50,7 @@ _od_pid_dead() {
 # Pids come from $$, so a subshell shares its parent's identity.
 od_lock() {
   local file=$1 start=$SECONDS timeout=${OD_LOCK_TIMEOUT:-5} parent=${1%/*} pid stale broke
-  local dir_since='' empty_since='' seen='' seen_since='' mark
+  local dir_since='' dir_seen='' empty_since='' seen='' seen_since='' mark
   if [ "$parent" != "$file" ] && [ ! -d "$parent" ]; then
     mkdir -p "$parent" || return 1
   fi
@@ -61,13 +61,14 @@ od_lock() {
     if [ -d "$file" ]; then
       # On Windows the path has been seen to stat as a directory for an instant while a
       # lock file is being deleted. $SECONDS has whole-second resolution, so 3 means at
-      # least 2 s. The first sighting is logged to show what the path really was.
+      # least 2 s. The first sighting is kept and printed only if the wait fails, so a
+      # transient sighting stays silent.
       if [ -z "$dir_since" ]; then
         dir_since=$SECONDS
-        printf 'overdrive: lock path looks like a directory: %s\n' "$(ls -ld "$file" 2>&1)" >&2
+        dir_seen=$(ls -ld "$file" 2>&1)
       fi
       if [ $((SECONDS - dir_since)) -ge 3 ] || [ $((SECONDS - start)) -gt "$timeout" ]; then
-        printf 'overdrive: lock path is a directory: %s\n' "$file" >&2
+        printf 'overdrive: lock path is a directory: %s (first seen as: %s)\n' "$file" "$dir_seen" >&2
         return 1
       fi
       sleep 0.05 2>/dev/null || sleep 1

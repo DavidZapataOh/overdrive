@@ -433,7 +433,8 @@ test_lock_transient_directory_is_waited_out() {
   assert_eq "$$" "$(cat "$lock")"
   od_unlock "$lock"
   wait
-  ! grep -qv "looks like a directory" err
+  # A transient sighting must stay silent: parallel writers print nothing.
+  assert_eq "" "$(cat err)"
 }
 
 test_lock_persistent_directory_fails_with_message() {
