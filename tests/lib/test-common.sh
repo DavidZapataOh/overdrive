@@ -389,13 +389,13 @@ test_unlock_keeps_a_lock_that_is_not_ours() {
   od_unlock "$PWD/missing.lock"
 }
 
-test_lock_on_a_directory_fails_at_once() {
+test_lock_on_a_directory_fails_after_a_short_wait() {
   load_common
   local lock=$PWD/dl.lock start=$SECONDS rc=0 err
   mkdir "$lock"
   err=$(OD_LOCK_TIMEOUT=30 od_lock "$lock" 2>&1) || rc=$?
   assert_eq 1 "$rc"
-  [ $((SECONDS - start)) -le 2 ]
+  [ $((SECONDS - start)) -le 4 ]
   case $err in *directory*) ;; *) echo "no clear error: $err" >&2; return 1 ;; esac
 }
 
@@ -420,4 +420,37 @@ test_plan_dir_rule() {
   assert_eq "/r/p--ginas-$sum" "$(LC_ALL=C od_plan_dir '/x/páginas.md' /r)"
   # Computing the name creates nothing.
   [ ! -e "$repo/.overdrive" ]
+}
+
+# On Windows a lock being deleted can briefly look like a directory, so a directory at
+# the lock path is only an error when it stays.
+test_lock_transient_directory_is_waited_out() {
+  load_common
+  local lock=$PWD/t.lock
+  mkdir "$lock"
+  (sleep 0.2; rmdir "$lock") &
+  OD_LOCK_TIMEOUT=10 od_lock "$lock" 2>err
+  assert_eq "$$" "$(cat "$lock")"
+  od_unlock "$lock"
+  wait
+  # A transient sighting must stay silent: parallel writers print nothing.
+  assert_eq "" "$(cat err)"
+}
+
+test_lock_persistent_directory_fails_with_message() {
+  load_common
+  local lock=$PWD/d.lock rc=0
+  mkdir "$lock"
+  OD_LOCK_TIMEOUT=30 od_lock "$lock" 2>err || rc=$?
+  assert_eq 1 "$rc" "exit code"
+  grep -q "lock path is a directory: $lock" err
+}
+
+test_lock_directory_message_survives_a_short_timeout() {
+  load_common
+  local lock=$PWD/s.lock rc=0
+  mkdir "$lock"
+  OD_LOCK_TIMEOUT=0 od_lock "$lock" 2>err || rc=$?
+  assert_eq 1 "$rc" "exit code"
+  grep -q "lock path is a directory: $lock" err
 }

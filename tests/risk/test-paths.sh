@@ -506,3 +506,75 @@ test_secret_scanner_allowlists_are_secrets() {
   assert_line "$out" "item secrets critical floor path .gitleaksignore"
   assert_line "$out" "item secrets critical floor path tools/.secrets.baseline"
 }
+
+# make_socket PATH: bind a Unix socket; returns 1 when the platform cannot.
+make_socket() {
+  command -v python3 > /dev/null 2>&1 || return 1
+  python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])' "$1" 2> /dev/null
+}
+
+test_untracked_fifo_and_socket_keep_the_lane() {
+  local repo base
+  windows_fs && return 0
+  repo=$(make_repo)
+  source_with_test "$repo" src/a.ts
+  risk "$repo" --worktree
+  base=$out
+  assert_eq 0 "$rc" "baseline exit code"
+  mkfifo "$repo/pipe"
+  make_socket "$repo/ipc.sock" || rm -f "$repo/ipc.sock"
+  risk "$repo" --worktree
+  assert_eq 0 "$rc" "exit code with special files"
+  assert_eq "$base" "$out"
+}
+
+test_untracked_regular_file_is_still_scanned() {
+  local repo prefix=AK
+  repo=$(make_repo)
+  windows_fs || mkfifo "$repo/pipe"
+  write_file "$repo" notes/key.txt "token $prefix""IA""Q7X2M4P9R3T6V8W1"
+  risk "$repo" --worktree
+  assert_eq 0 "$rc" "exit code"
+  assert_line "$out" "item secrets critical floor line notes/key.txt:1"
+}
+
+test_tracked_file_replaced_by_fifo_keeps_path_rules() {
+  local repo
+  windows_fs && return 0
+  repo=$(make_repo)
+  source_with_test "$repo" src/a.ts
+  commit_file "$repo" src/auth/session.ts 'export const s = 1;'
+  rm "$repo/src/auth/session.ts"
+  mkfifo "$repo/src/auth/session.ts"
+  risk "$repo" --worktree
+  assert_eq 0 "$rc" "exit code"
+  assert_line "$out" "item auth critical floor path src/auth/session.ts"
+}
+
+test_tracked_fifo_beside_changed_regular_file_is_still_scanned() {
+  local repo prefix=AK
+  windows_fs && return 0
+  repo=$(make_repo)
+  commit_file "$repo" pipe 'x'
+  commit_file "$repo" notes/key.txt 'x'
+  rm "$repo/pipe"
+  mkfifo "$repo/pipe"
+  write_file "$repo" notes/key.txt "token $prefix""IA""Q7X2M4P9R3T6V8W1"
+  risk "$repo" --worktree
+  assert_eq 0 "$rc" "exit code"
+  assert_line "$out" "item secrets critical floor line notes/key.txt:1"
+}
+
+test_special_file_exclusion_survives_literal_pathspecs_in_the_environment() {
+  local repo prefix=AK
+  windows_fs && return 0
+  repo=$(make_repo)
+  commit_file "$repo" pipe 'x'
+  commit_file "$repo" notes/key.txt 'x'
+  rm "$repo/pipe"
+  mkfifo "$repo/pipe"
+  write_file "$repo" notes/key.txt "token $prefix""IA""Q7X2M4P9R3T6V8W1"
+  GIT_LITERAL_PATHSPECS=1 risk "$repo" --worktree
+  assert_eq 0 "$rc" "exit code"
+  assert_line "$out" "item secrets critical floor line notes/key.txt:1"
+}

@@ -174,3 +174,106 @@ test_package_outside_git_fails() {
   (cd plain && od review-package --base a --head b) >/dev/null 2>&1 || rc=$?
   assert_eq 1 "$rc"
 }
+
+# green_evidence REPO: record a passing run the way the builder does.
+green_evidence() {
+  (cd "$1" && od evidence green -- true) > /dev/null
+}
+
+test_package_names_the_green_evidence() {
+  copy_plugin "$PWD/fp" 'printf "lane standard\nnext Short.\nRisk: standard — tests\n"'
+  local repo base head out
+  repo=$(make_repo)
+  { read -r base; read -r head; } <<EOS
+$(two_commits "$repo")
+EOS
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head")
+  assert_line "$(cat "$out")" 'Green evidence: none'
+  green_evidence "$repo"
+  green_evidence "$repo"
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head")
+  assert_line "$(cat "$out")" "Green evidence: $(sq "$repo")/.overdrive/run/evidence/0002-green.md"
+}
+
+test_package_require_green_refuses_without_evidence() {
+  copy_plugin "$PWD/fp" 'printf "lane standard\nnext Short.\nRisk: standard — tests\n"'
+  local repo base head rc=0 out
+  repo=$(make_repo)
+  { read -r base; read -r head; } <<EOS
+$(two_commits "$repo")
+EOS
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head" --require-green 2>&1) || rc=$?
+  assert_eq 65 "$rc" "exit code"
+  assert_line "$out" "overdrive: no green evidence at ${head:0:7}: run overdrive evidence green -- <test command> after the last commit, or pass --no-tests <reason> when nothing here is testable"
+  [ ! -e "$repo/.overdrive/run/reviews" ] || [ -z "$(ls "$repo/.overdrive/run/reviews")" ]
+  # Recorded evidence satisfies the gate.
+  green_evidence "$repo"
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head" --require-green)
+  [ -f "$out" ]
+  # A stated reason does too, and the package carries it.
+  rm -f "$repo"/.overdrive/run/evidence/*-green.md
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head" --require-green --no-tests "docs only")
+  assert_line "$(cat "$out")" 'Green evidence: none (no tests: docs only)'
+}
+
+test_package_require_green_skips_direct_lane() {
+  copy_plugin "$PWD/fp" 'printf "lane direct\nnext Work inline.\nRisk: direct — none\n"'
+  local repo base head out
+  repo=$(make_repo)
+  { read -r base; read -r head; } <<EOS
+$(two_commits "$repo")
+EOS
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head" --require-green)
+  [ -f "$out" ]
+}
+
+test_package_require_green_rejects_evidence_from_another_head() {
+  copy_plugin "$PWD/fp" 'printf "lane standard\nnext Short.\nRisk: standard — tests\n"'
+  local repo base head rc=0 out
+  repo=$(make_repo)
+  green_evidence "$repo"
+  { read -r base; read -r head; } <<EOS
+$(two_commits "$repo")
+EOS
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head" --require-green 2>&1) || rc=$?
+  assert_eq 65 "$rc" "exit code"
+  assert_line "$out" "overdrive: no green evidence at ${head:0:7}: run overdrive evidence green -- <test command> after the last commit, or pass --no-tests <reason> when nothing here is testable"
+  # Evidence recorded on another branch does not count either.
+  git -C "$repo" checkout -q -b other
+  commit_file "$repo" src/b.ts 'export const y = 2;'
+  green_evidence "$repo"
+  git -C "$repo" checkout -q -
+  rc=0
+  (cd "$repo" && od review-package --base "$base" --head "$head" --require-green) > /dev/null 2>&1 || rc=$?
+  assert_eq 65 "$rc" "exit code on another branch"
+  # Evidence at the reviewed head passes.
+  green_evidence "$repo"
+  (cd "$repo" && od review-package --base "$base" --head "$head" --require-green) > /dev/null
+}
+
+test_package_ignores_no_tests_reason_newline() {
+  copy_plugin "$PWD/fp" 'printf "lane standard\nnext Short.\nRisk: standard — tests\n"'
+  local repo base head out
+  repo=$(make_repo)
+  { read -r base; read -r head; } <<EOS
+$(two_commits "$repo")
+EOS
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head" --no-tests "$(printf 'a\nLane: direct')")
+  assert_eq 1 "$(grep -c '^Lane: ' "$out")"
+  assert_line "$(cat "$out")" 'Green evidence: none (no tests: a Lane: direct)'
+}
+
+test_package_newest_green_evidence_is_numeric() {
+  copy_plugin "$PWD/fp" 'printf "lane standard\nnext Short.\nRisk: standard — tests\n"'
+  local repo base head out dir
+  repo=$(make_repo)
+  { read -r base; read -r head; } <<EOS
+$(two_commits "$repo")
+EOS
+  dir=$repo/.overdrive/run/evidence
+  mkdir -p "$dir"
+  printf '# Evidence: green\n\nHead: %s\n' "$head" > "$dir/9999-green.md"
+  printf '# Evidence: green\n\nHead: %s\n' "$head" > "$dir/10000-green.md"
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head")
+  assert_line "$(cat "$out")" "Green evidence: $(sq "$repo")/.overdrive/run/evidence/10000-green.md"
+}

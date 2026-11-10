@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "claudeVersion": "2.1.321",
-  "startedAt": "2026-11-07T02:18:56.787Z",
-  "durationSeconds": 27,
-  "costUsd": 0.008387720000000001,
+  "claudeVersion": "2.1.322",
+  "startedAt": "2026-11-10T03:27:25.421Z",
+  "durationSeconds": 15,
+  "costUsd": 0.005457460000000001,
   "partial": false,
   "suite": {
     "root": "/work/plugin",
@@ -13,7 +13,7 @@
     "concurrency": 1,
     "plugins": [
       {
-        "name": "overdrive",
+        "name": "spike",
         "version": "0.0.1",
         "path": "/work/plugin"
       }
@@ -26,7 +26,7 @@
       "source": "mixed",
       "promptMarkdown": "Read notes.txt and reply with its first word. If your context contains a SPIKE_HOOK_TOKEN value, add it on a second line as \"token=<value>\", otherwise write \"token=NONE\".",
       "runsPerCase": 3,
-      "timeoutSeconds": 120,
+      "timeoutSeconds": 300,
       "maxTurns": 5,
       "graders": [
         {
@@ -66,10 +66,10 @@
             "score": 1,
             "passed": true,
             "turns": 2,
-            "costUsd": 0.0016806000000000002,
+            "costUsd": 0.0014422900000000002,
             "judgeCostUsd": 0,
-            "durationSeconds": 5,
-            "startedAt": "2026-11-07T02:18:56.867Z",
+            "durationSeconds": 4,
+            "startedAt": "2026-11-10T03:27:25.516Z",
             "error": null,
             "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
             "skippedPaidGraders": false,
@@ -105,11 +105,11 @@
           {
             "score": 0.6666666666666666,
             "passed": false,
-            "turns": 3,
-            "costUsd": 0.0015173200000000004,
+            "turns": 2,
+            "costUsd": 0.0015347700000000002,
             "judgeCostUsd": 0,
-            "durationSeconds": 4,
-            "startedAt": "2026-11-07T02:19:02.111Z",
+            "durationSeconds": 5,
+            "startedAt": "2026-11-10T03:27:29.813Z",
             "error": null,
             "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
             "skippedPaidGraders": false,
@@ -153,10 +153,10 @@
     {
       "name": "neg",
       "dir": "evals/spike/trigger/neg",
-      "source": "prose",
+      "source": "mixed",
       "promptMarkdown": "Reply with the single word: ok.",
       "runsPerCase": 3,
-      "timeoutSeconds": 120,
+      "timeoutSeconds": 300,
       "maxTurns": 3,
       "graders": [
         {
@@ -178,32 +178,10 @@
             "score": 1,
             "passed": true,
             "turns": 1,
-            "costUsd": 0.0013394000000000001,
+            "costUsd": 0.0012464000000000002,
             "judgeCostUsd": 0,
-            "durationSeconds": 6,
-            "startedAt": "2026-11-07T02:22:37.184Z",
-            "error": null,
-            "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
-            "skippedPaidGraders": false,
-            "graders": [
-              {
-                "name": "not-fired",
-                "passed": true,
-                "weight": 1,
-                "explanation": "Skill called 0x (expected 0..0)",
-                "withOnly": false,
-                "scored": true
-              }
-            ]
-          },
-          {
-            "score": 1,
-            "passed": true,
-            "turns": 1,
-            "costUsd": 0.0013976000000000001,
-            "judgeCostUsd": 0,
-            "durationSeconds": 5,
-            "startedAt": "2026-11-07T02:22:42.840Z",
+            "durationSeconds": 3,
+            "startedAt": "2026-11-10T03:27:34.725Z",
             "error": null,
             "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
             "skippedPaidGraders": false,
@@ -224,32 +202,10 @@
             "score": 1,
             "passed": true,
             "turns": 1,
-            "costUsd": 0.0012258000000000002,
+            "costUsd": 0.0012340000000000003,
             "judgeCostUsd": 0,
             "durationSeconds": 3,
-            "startedAt": "2026-11-07T02:22:47.569Z",
-            "error": null,
-            "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
-            "skippedPaidGraders": false,
-            "graders": [
-              {
-                "name": "not-fired",
-                "passed": true,
-                "weight": 1,
-                "explanation": "Skill called 0x (expected 0..0)",
-                "withOnly": false,
-                "scored": true
-              }
-            ]
-          },
-          {
-            "score": 1,
-            "passed": true,
-            "turns": 1,
-            "costUsd": 0.0012270000000000002,
-            "judgeCostUsd": 0,
-            "durationSeconds": 3,
-            "startedAt": "2026-11-07T02:22:50.937Z",
+            "startedAt": "2026-11-10T03:27:37.402Z",
             "error": null,
             "tracePath": "/tmp/claude-eval-ID/out/trace.jsonl",
             "skippedPaidGraders": false,
@@ -276,10 +232,10 @@
     }
   ],
   "aggregates": {
-    "casesTotal": 1,
-    "casesPassed": 1,
+    "casesTotal": 2,
+    "casesPassed": 2,
     "overallScore": 1,
     "overallPassRate": 1,
-    "meanDelta": 0.33333333333333337
+    "meanDelta": 0.16666666666666669
   }
 }

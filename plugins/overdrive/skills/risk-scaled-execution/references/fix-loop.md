@@ -2,7 +2,7 @@
 
 After a critical task is `implemented`:
 
-1. `OD review-package --base BASE --head HEAD --brief BRIEF --lane critical` prints the package path. Dispatch `overdrive:critical-reviewer` with that path. `OD ledger add 'Task N: reviewing'`.
+1. `OD review-package --base BASE --head HEAD --brief BRIEF --lane critical` prints the package path. It is not gated on green evidence: the critical-reviewer reruns this task's red and green evidence itself, and the slice package carries the gate. Dispatch `overdrive:critical-reviewer` with that path. `OD ledger add 'Task N: reviewing'`.
 2. Read its report. Run `OD findings merge FILE` on the findings file it names; act on the merged list only.
 3. No P0 or P1 and both verdicts PASS: `Task N: complete`.
 4. Otherwise `OD ledger add 'Task N: fixing round K'` and:

@@ -19,6 +19,7 @@ Your first action is to read the review package file named in your prompt, then 
 - Stay inside the package and the files it names. Open other files only to confirm a specific suspicion about a named one.
 - Do not run the test suite. Run at most one focused test, and only to settle a named doubt.
 - Give two verdicts, spec (does it do what the brief asked, nothing missing, nothing extra) and quality (correctness, tests that would catch a regression, clarity). Each is `PASS` or `FAIL`.
+- The package line `Green evidence: none (no tests: <reason>)` is a claim to judge: if the change touches testable code, report it as a P1.
 - A stated rationale never lowers severity. A defect is as severe as its failure mode, whatever the author says about intent.
 - If the plan itself mandates the defect, report it anyway and label it `plan-mandated:yes`; the controller needs to know the plan is wrong.
 - If an environment problem blocks you for more than 10 minutes, report `BLOCKED` with the exact command the human must run.
