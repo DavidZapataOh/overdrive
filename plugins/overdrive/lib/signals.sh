@@ -742,6 +742,31 @@ END {
 }
 '
 
+# _signals_unreadable DIR WORK: write to WORK/skip the git pathspecs that exclude the
+# tracked paths changed since HEAD that are now a socket, FIFO or device: git cannot
+# hash them and aborts the whole patch, and they have no content to scan. Their path
+# is still classified from the raw records. Untracked ones are never listed by git.
+_signals_unreadable() {
+  local dir=$1 p
+  git --no-pager -C "$dir" diff --name-only -z --no-relative --no-ext-diff HEAD -- > "$2/changed" || return
+  : > "$2/skip"
+  while IFS= read -r -d '' p; do
+    if [ -e "$dir/$p" ] && [ ! -f "$dir/$p" ] && [ ! -L "$dir/$p" ] && [ ! -d "$dir/$p" ]; then
+      printf ':(exclude,literal)%s\0' "$p" >> "$2/skip"
+    fi
+  done < "$2/changed"
+}
+
+# _signals_patch_head WORK GIT_ARG...: diff against HEAD without the paths in WORK/skip.
+_signals_patch_head() {
+  local work=$1 p
+  shift
+  set -- "$@" HEAD --
+  while IFS= read -r -d '' p; do set -- "$@" "$p"; done < "$work/skip"
+  # The exclusions are pathspec magic: user settings must not turn them into literals.
+  GIT_LITERAL_PATHSPECS=0 GIT_ICASE_PATHSPECS=0 git "$@"
+}
+
 # signals_patch GIT_DIR WORK MODE [ARG...]: print the -U0 patch of one mode (diff RANGE,
 # staged or worktree). In worktree mode, untracked files (WORK/untracked, written by
 # signals_changes) are added as intent-to-add entries to a copy of the index, so that
@@ -757,8 +782,9 @@ signals_patch() {
     diff) git "$@" -- ;;
     staged) git "$@" --cached -- ;;
     worktree)
+      _signals_unreadable "$dir" "$work" || return
       if [ ! -s "$work/untracked" ]; then
-        git "$@" HEAD --
+        _signals_patch_head "$work" "$@"
         return
       fi
       index=$(git -C "$dir" rev-parse --git-path index) || return
@@ -766,7 +792,7 @@ signals_patch() {
       if [ -f "$index" ]; then cp "$index" "$work/index" || return; fi
       GIT_INDEX_FILE=$work/index GIT_LITERAL_PATHSPECS=1 git -C "$dir" add -N --pathspec-from-file=- \
         < "$work/untracked" || return
-      GIT_INDEX_FILE=$work/index git "$@" HEAD --
+      GIT_INDEX_FILE=$work/index _signals_patch_head "$work" "$@"
       ;;
     *) return 2 ;;
   esac
