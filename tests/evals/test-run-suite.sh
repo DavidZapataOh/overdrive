@@ -181,6 +181,7 @@ test_e2e_runs_override_is_passed_and_other_tiers_reject_it() {
   assert_call_has "--ablation none --runs 1 --keep-temp --max-cost-usd 30"
   assert_exit 64 suite tdd --tier full --runs 2
   assert_exit 64 suite e2e --tier e2e --runs 0
+  assert_exit 64 suite e2e --tier e2e --runs 00
 }
 
 test_usage_errors() {

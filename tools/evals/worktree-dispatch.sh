@@ -28,7 +28,7 @@ check() {
 
   dispatched=$(jq -s '[.[] | select(.type == "assistant" and .parent_tool_use_id == null)
     | .message.content[]? | select(.type == "tool_use" and .name == "Agent"
-      and (.input.subagent_type | test("^(overdrive:)?builder$")) and .input.isolation == "worktree")] | length' "$transcript")
+      and ((.input.subagent_type // "") | test("^(overdrive:)?builder$")) and .input.isolation == "worktree")] | length' "$transcript")
   [ "${dispatched:-0}" -ge 2 ] || { echo "fewer than 2 builders dispatched with isolation worktree ($dispatched)"; status=1; }
 
   # The builders' own tool calls carry paths inside distinct harness-created worktrees.
@@ -71,6 +71,8 @@ model_id=$(od_model_id "$model") || usage
 scaffold=$root/plugins/overdrive/evals/e2e/worktree-dispatch/scaffold.sh
 prompt=$(cat "$root/plugins/overdrive/evals/e2e/worktree-dispatch/prompt.txt")
 dir=$(mktemp -d "${TMPDIR:-/tmp}/od-worktree.XXXXXX") || exit 1
+# The transcript shows resolved paths; a symlinked temp dir (macOS) would make the main-checkout check vacuous.
+dir=$(cd "$dir" && pwd -P) || exit 1
 transcript=$dir.jsonl
 
 (cd "$dir" && bash "$scaffold" > /dev/null) || { echo "worktree-dispatch: scaffold failed" >&2; exit 1; }

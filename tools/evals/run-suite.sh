@@ -50,7 +50,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case $tier in smoke | full | pressure | e2e) ;; *) usage ;; esac
-case $runs in '') ;; *[!0-9]* | 0) usage ;; esac
+case $runs in '') ;; *[!0-9]* | 0*) usage ;; esac
 [ -z "$runs" ] || [ "$tier" = e2e ] || usage
 case $jobs in '' | [1-8]) ;; *) usage ;; esac
 [ "$tier" != pressure ] || [ -z "$jobs" ] || usage

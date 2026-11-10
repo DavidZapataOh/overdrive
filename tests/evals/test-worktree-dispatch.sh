@@ -39,6 +39,13 @@ test_accepts_two_builders_in_distinct_worktrees() {
   tool --check t.jsonl "$repo"
 }
 
+test_ignores_agent_calls_without_a_subagent_type() {
+  project
+  transcript worktree "$repo/.claude/worktrees/agent-aaa1/packages/pad/index.js" "$repo/.claude/worktrees/agent-bbb2/packages/uniq/index.js"
+  printf '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"tool_use","name":"Agent","input":{"prompt":"no type"}}]}}\n' >> t.jsonl
+  tool --check t.jsonl "$repo"
+}
+
 test_rejects_dispatch_without_worktree_isolation() {
   project
   transcript none "$repo/.claude/worktrees/agent-aaa1/packages/pad/index.js" "$repo/.claude/worktrees/agent-bbb2/packages/uniq/index.js"
