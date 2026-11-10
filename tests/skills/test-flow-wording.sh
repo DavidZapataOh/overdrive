@@ -36,8 +36,9 @@ test_builder_runs_plain_separate_commands() {
 }
 
 test_researcher_keeps_private_names_out_of_queries() {
-  has agents/researcher.md 'never put.*(project|customer).*(path|secret).*(search quer|URL)'
-  has skills/deep-research/SKILL.md 'pre-sanitized|sanitized'
+  has agents/researcher.md 'never put a name of the user.s project.*(file path|secret).*(search quer|URL)'
+  has skills/deep-research/SKILL.md 'names no project, product, company or customer'
+  has skills/deep-research/SKILL.md 'stripped of private names'
 }
 
 test_triage_gates_the_pull_request_on_review_and_release_gates() {

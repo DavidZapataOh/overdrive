@@ -50,4 +50,4 @@ Rules: tests come first and include the hard cases (the other tenant, the retry,
 
 ## Approval
 
-Critical plans wait for the user's approval, whatever `show-plans` says. Send the path, the Global Constraints source, the Review Focus in one line each, and "reply approve, or tell me what to change". Independent non-critical work can proceed while waiting (see `${CLAUDE_PLUGIN_ROOT}/skills/risk-scaled-execution/references/approval-while-building.md`). A change request becomes a revision with `## What changed vs before`.
+Critical plans wait for the user's approval, whatever `show-plans` says. Send the `Plan:` paragraph that risk-triage rule 4 describes (the path, one line per task with its key test, "reply approve, or tell me what to change"), then the Global Constraints source and the Review Focus in one line each. Independent non-critical work can proceed while waiting (see `${CLAUDE_PLUGIN_ROOT}/skills/risk-scaled-execution/references/approval-while-building.md`). A change request becomes a revision with `## What changed vs before`.
