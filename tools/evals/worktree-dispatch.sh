@@ -47,7 +47,7 @@ check() {
     git -C "$repo" cat-file -e "HEAD:packages/$pkg/index.js" 2> /dev/null || { echo "packages/$pkg/index.js is not on the checked out branch"; status=1; }
     git -C "$repo" cat-file -e "HEAD:packages/$pkg/test/$pkg.test.js" 2> /dev/null || { echo "packages/$pkg/test/$pkg.test.js is not on the checked out branch"; status=1; }
   done
-  (cd "$repo" && node --test packages/pad/test packages/uniq/test > /dev/null 2>&1) || { echo "the integrated packages do not pass node --test"; status=1; }
+  (cd "$repo" && node --test packages/pad/test/*.test.js packages/uniq/test/*.test.js > /dev/null 2>&1) || { echo "the integrated packages do not pass node --test"; status=1; }
   return "$status"
 }
 
