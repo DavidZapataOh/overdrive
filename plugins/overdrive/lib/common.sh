@@ -37,7 +37,7 @@ _od_pid_dead() {
 # every coreutils build (the Rust one that ships by default on current Ubuntu lets
 # two racing callers both succeed). Waits up to OD_LOCK_TIMEOUT seconds (default 5)
 # and returns 1 on timeout so callers fail closed; a directory at FILE that stays for
-# two seconds fails with a message.
+# two to three seconds fails with a message.
 # A lock is stale when its pid is dead, or when this waiter has seen it empty for two
 # seconds (the holder died between creating it and writing the pid). Ages are measured
 # by the waiter's own clock, not file times, which differ across platforms.
@@ -59,13 +59,17 @@ od_lock() {
       return 0
     fi
     if [ -d "$file" ]; then
-      # A lock that is being deleted can briefly look like a directory on Windows.
-      [ -n "$dir_since" ] || dir_since=$SECONDS
-      if [ $((SECONDS - dir_since)) -ge 2 ]; then
+      # On Windows the path has been seen to stat as a directory for an instant while a
+      # lock file is being deleted. $SECONDS has whole-second resolution, so 3 means at
+      # least 2 s. The first sighting is logged to show what the path really was.
+      if [ -z "$dir_since" ]; then
+        dir_since=$SECONDS
+        printf 'overdrive: lock path looks like a directory: %s\n' "$(ls -ld "$file" 2>&1)" >&2
+      fi
+      if [ $((SECONDS - dir_since)) -ge 3 ] || [ $((SECONDS - start)) -gt "$timeout" ]; then
         printf 'overdrive: lock path is a directory: %s\n' "$file" >&2
         return 1
       fi
-      [ $((SECONDS - start)) -le "$timeout" ] || return 1
       sleep 0.05 2>/dev/null || sleep 1
       continue
     fi
