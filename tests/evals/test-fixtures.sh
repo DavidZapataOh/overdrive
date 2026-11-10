@@ -78,3 +78,15 @@ test_plugin_writes_a_manifest_and_skills_directory() {
 test_plugin_requires_a_name() {
   assert_exit 1 scaffold 'fx_plugin'
 }
+
+test_plan_writes_one_heading_per_task_with_file_lines() {
+  scaffold 'fx_plan docs/plan.md "Search plan" 4'
+  assert_eq "4" "$(grep -c '^### Task [0-9]*:' ws/docs/plan.md)"
+  assert_eq "4" "$(grep -c '^- Create: ' ws/docs/plan.md)"
+  assert_eq "4" "$(grep -c '^- Test: ' ws/docs/plan.md)"
+}
+
+test_plan_requires_path_title_and_a_task_count() {
+  assert_exit 1 scaffold 'fx_plan docs/plan.md "Plan"'
+  assert_exit 1 scaffold 'fx_plan docs/plan.md "Plan" x'
+}
