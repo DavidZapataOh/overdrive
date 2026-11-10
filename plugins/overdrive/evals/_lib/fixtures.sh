@@ -87,3 +87,25 @@ fx_claude_md() {
   [ -n "${1-}" ] || { echo "fx_claude_md: text required" >&2; return 1; }
   fx_file CLAUDE.md "$1"
 }
+
+# A plan with one "### Task N:" heading per task, each naming the file it creates and its test.
+fx_plan() {
+  local path=${1-} title=${2-} count=${3-} i body
+  { [ -n "$path" ] && [ -n "$title" ]; } || { echo "fx_plan: path and title required" >&2; return 1; }
+  case $count in '' | *[!0-9]* | 0*) echo "fx_plan: task count must be a positive integer" >&2; return 1 ;; esac
+  body="# $title"
+  i=1
+  while [ "$i" -le "$count" ]; do
+    body="$body
+
+### Task $i: Step $i
+
+**Files:**
+- Create: \`src/step$i.js\`
+- Test: \`test/step$i.test.js\`
+
+Export a function \`step$i\` that returns $i."
+    i=$((i + 1))
+  done
+  fx_file "$path" "$body"
+}
