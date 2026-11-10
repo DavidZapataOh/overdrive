@@ -12,6 +12,7 @@ has() {
 test_critical_step_loads_planning_and_writes_the_plan_before_asking() {
   has skills/risk-triage/SKILL.md 'overdrive:decision-planning.*(plan file|file)'
   has skills/risk-triage/SKILL.md 'Global Constraints'
+  has skills/risk-triage/SKILL.md 'opens with a .Plan:. paragraph.*follows in at most two lines'
 }
 
 test_resume_loads_the_execution_skill_in_every_lane() {

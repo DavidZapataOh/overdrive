@@ -212,7 +212,7 @@ test_errored_runs_fail_the_run_even_when_claude_exits_zero() {
 
 test_models_env_records_the_verified_claude_code_version() {
   . "$root/tools/evals/models.env"
-  assert_eq "2.1.319" "$OD_EVAL_CLAUDE_VERSION"
+  assert_eq "2.1.321" "$OD_EVAL_CLAUDE_VERSION"
 }
 
 test_a_broken_baseline_run_fails_the_suite() {
