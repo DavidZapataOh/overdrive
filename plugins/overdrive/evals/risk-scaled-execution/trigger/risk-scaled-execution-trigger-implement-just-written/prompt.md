@@ -1,5 +1,5 @@
 ---
-max_turns: 15
+max_turns: 30
 allowed_tools: [Read, Skill]
 tags: [risk-scaled-execution-trigger, validation]
 ---
