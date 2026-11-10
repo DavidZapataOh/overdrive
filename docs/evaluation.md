@@ -118,6 +118,13 @@ Local requirements: `jq`, Node 22 or later for `fx_node_project` cases, and, for
 - **Sanitized `PATH`.** Entries that are not readable directories (Windows paths on WSL, missing directories) are dropped, because the CLI refuses to start with them.
 - **Grants.** Both tools read `evals/<skill>/allow-tools`; `pressure.sh` has no `--allow-tools` option of its own.
 
+### Deviations of the `e2e` suite from its specification
+
+- **Reviewer counts.** `e2e-standard-feature` allows one or two `overdrive:reviewer` dispatches and `e2e-critical-after-approval` one or two final reviews: the review rules permit one scoped re-review after a fix wave, which is part of the single review of a slice.
+- **Trivial change.** `e2e-trivial` passes with no dispatch, no skill call and the single classification. Its recorded cost in tool calls (sonnet, nine kept runs): 3 to 4 tool uses, no Skill calls.
+- **Model sweep and model policy.** Running the cases across models and the policy document that follows from it are not part of this suite; they belong to the sweep.
+- **Isolation case.** `deep-research-behavior-queries-carry-no-private-names` is a guard rather than a discriminator (see its entry in the deep-research results): the eval workspace does not load CLAUDE.md, so the path through which a subagent receives the project's CLAUDE.md is covered only by the probe recorded in the e2e report (a token in CLAUDE.md reached `general-purpose` and `overdrive:researcher`).
+
 ### Graders for the plan ledger
 
 The ledger lives at `.overdrive/run/plan-<cksum>/ledger.md`, where `<cksum>` depends on the plan. `file_exists` takes a glob in `path`, so `path: ".overdrive/run/plan-*/ledger.md"` checks that the ledger was created (only files created during the run count). The docs describe `{ source: file, path }` as the contents of one file and mention no glob for it, so do not rely on a pattern there. To grade the ledger's contents use a `regex` grader with `target: trace` on the output of the ledger command, or have the case call `overdrive ledger path` and grade the path it prints. The run records the plugin's commands in the trace, whose quotes are JSON-escaped. So are its newlines: a command on the second line of a Bash call follows a literal `\n` in the trace text, and `\b` never matches between that `n` and the command's first letter. A trace pattern that anchors on a command name uses `(?:\\[nrt]|\b)` (or `(?:^|[\s;&|(]|\\n)`) before it, and bounds what follows with `(?:[^"\\;&|]|\\[^nrt])*` so it cannot run into a later command.

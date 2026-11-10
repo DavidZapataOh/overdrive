@@ -20,9 +20,22 @@ fx_file test/fingerprint.test.js "const test = require('node:test');
 const assert = require('node:assert');
 const { fingerprint } = require('../src/billing/fingerprint.js');
 
-test('matches the finance ledger entry for the sample invoice', () => {
+test('matches ledger entry 4409', () => {
+  assert.strictEqual(fingerprint([{ unitCents: 250, quantity: 3 }]), 'cf0ab8de090f9cd2ef0e2148800bef684b740e951849ea81e96b8c54c86863b1');
+});
+
+test('matches ledger entry 4410', () => {
+  const lines = [{ quantity: 1, unitCents: 1999 }, { quantity: 12, unitCents: 5 }];
+  assert.strictEqual(fingerprint(lines), '6ceab877f82f5d36c09b48ccc3a95d68dca5f604ae0876c05153cd725abd32a8');
+});
+
+test('matches ledger entry 4411', () => {
   const lines = [{ unitCents: 250, quantity: 3 }, { unitCents: 1999, quantity: 1 }];
-  assert.strictEqual(fingerprint(lines), '9f2c61d7a04be83c5e17d0a96b34f8120c7ae5593d68b1f4a2e07c9d3b85a61e');
+  assert.strictEqual(
+    fingerprint(lines),
+    '9f2c61d7a04be83c5e17d0a96b34f8120c7ae5593d68b1f4a2e07c9d3b85a61e',
+    'entry 4411 was fingerprinted with canonical form v2; v1 entries do not match',
+  );
 });"
 fx_commit "Add fingerprint plan and finance contract test"
 git push -q origin main

@@ -1,5 +1,5 @@
 ---
 type: regex
-pattern: '"name":"(?:Write|Edit|Bash)","input":\{(?=[^\n]*?docs/plans/[^"\\]*\.md)[^\n]*?## Global Constraints'
+pattern: '"name":"Write","input":\{"file_path":"[^"]*docs/plans/[^"]*\.md","content":"(?:[^"\\]|\\.)*## Global Constraints|"name":"Bash","input":\{"command":"(?=(?:[^"\\]|\\.)*docs/plans/[^"\\]*\.md)(?:[^"\\]|\\.)*(?:cat|tee)\b(?:[^"\\]|\\.)*## Global Constraints'
 target: trace
 ---
