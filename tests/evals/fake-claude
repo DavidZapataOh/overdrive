@@ -53,7 +53,7 @@ if [ -n "${FAKE_KEPT-}" ] && [ -n "$json" ]; then
     runs="$runs${runs:+,}{\"score\":1,\"error\":$err,\"tracePath\":\"$kept/out/trace.jsonl\",\"graders\":[]}"
     i=$((i + 1))
   done
-  printf '{"schemaVersion":1,"claudeVersion":"2.1.321","startedAt":"2026-11-07T00:00:00.000Z","durationSeconds":1,"costUsd":%s,"partial":false,"cases":[{"name":"x","dir":"evals/tdd/pressure/x","graders":[],"arms":{"with":[%s],"without":[]},"aggregates":{"score":1}}],"aggregates":{"casesTotal":1,"casesPassed":1,"overallScore":1}}\n' "${FAKE_COST:-0}" "$runs" > "$json"
+  printf '{"schemaVersion":1,"claudeVersion":"2.1.322","startedAt":"2026-11-07T00:00:00.000Z","durationSeconds":1,"costUsd":%s,"partial":false,"cases":[{"name":"x","dir":"evals/tdd/pressure/x","graders":[],"arms":{"with":[%s],"without":[]},"aggregates":{"score":1}}],"aggregates":{"casesTotal":1,"casesPassed":1,"overallScore":1}}\n' "${FAKE_COST:-0}" "$runs" > "$json"
 elif [ -n "${FAKE_RESULT-}" ] && [ -n "$json" ]; then
   cp "$FAKE_RESULT" "$json"
 fi
