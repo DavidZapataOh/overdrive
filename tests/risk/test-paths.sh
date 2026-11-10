@@ -564,3 +564,17 @@ test_tracked_fifo_beside_changed_regular_file_is_still_scanned() {
   assert_eq 0 "$rc" "exit code"
   assert_line "$out" "item secrets critical floor line notes/key.txt:1"
 }
+
+test_special_file_exclusion_survives_literal_pathspecs_in_the_environment() {
+  local repo prefix=AK
+  windows_fs && return 0
+  repo=$(make_repo)
+  commit_file "$repo" pipe 'x'
+  commit_file "$repo" notes/key.txt 'x'
+  rm "$repo/pipe"
+  mkfifo "$repo/pipe"
+  write_file "$repo" notes/key.txt "token $prefix""IA""Q7X2M4P9R3T6V8W1"
+  GIT_LITERAL_PATHSPECS=1 risk "$repo" --worktree
+  assert_eq 0 "$rc" "exit code"
+  assert_line "$out" "item secrets critical floor line notes/key.txt:1"
+}

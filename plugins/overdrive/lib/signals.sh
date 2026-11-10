@@ -763,7 +763,8 @@ _signals_patch_head() {
   shift
   set -- "$@" HEAD --
   while IFS= read -r -d '' p; do set -- "$@" "$p"; done < "$work/skip"
-  git "$@"
+  # The exclusions are pathspec magic: user settings must not turn them into literals.
+  GIT_LITERAL_PATHSPECS=0 GIT_ICASE_PATHSPECS=0 git "$@"
 }
 
 # signals_patch GIT_DIR WORK MODE [ARG...]: print the -U0 patch of one mode (diff RANGE,
