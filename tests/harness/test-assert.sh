@@ -89,3 +89,20 @@ test_bad() { helper; echo after; }'
   assert_eq 1 "$RUN_RC"
   assert_line "$RUN_OUT" 'not ok 1 test_bad'
 }
+
+test_runner_removes_locked_directories_left_by_tests() {
+  local runner=$RUNNER fixtures=$PWD/fx tmp=$PWD/tmp rc=0
+  mkdir -p "$fixtures" "$tmp"
+  cat > "$fixtures/test-locked.sh" <<'EOT'
+test_locks_a_directory() {
+  mkdir -p "$TMPDIR/sealed/inner" "$TMPDIR/ro"
+  : > "$TMPDIR/sealed/inner/f"
+  chmod 000 "$TMPDIR/sealed"
+  chmod 500 "$TMPDIR/ro"
+}
+EOT
+  TMPDIR=$tmp TESTS_DIR=$fixtures "$BASH" "$runner" > out 2> err || rc=$?
+  assert_eq 0 "$rc" "runner exit code"
+  [ ! -s err ] || { cat err >&2; return 1; }
+  assert_eq 0 "$(find "$tmp" -mindepth 1 | wc -l | tr -d ' ')" "leftovers"
+}
