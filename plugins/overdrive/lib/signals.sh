@@ -748,7 +748,7 @@ END {
 # is still classified from the raw records. Untracked ones are never listed by git.
 _signals_unreadable() {
   local dir=$1 p
-  git --no-pager -C "$dir" diff --name-only -z --no-relative --no-ext-diff HEAD -- > "$2/changed" 2> "$2/git.err" || return
+  git --no-pager -C "$dir" diff --name-only -z --no-relative --no-ext-diff HEAD -- > "$2/changed" || return
   : > "$2/skip"
   while IFS= read -r -d '' p; do
     if [ -e "$dir/$p" ] && [ ! -f "$dir/$p" ] && [ ! -L "$dir/$p" ] && [ ! -d "$dir/$p" ]; then
