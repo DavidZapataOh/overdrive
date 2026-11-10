@@ -2,7 +2,8 @@
 
 Standard slice (no critical task):
 
-1. `OD review-package --base SLICE_BASE --head HEAD --brief BRIEF`.
+0. `OD evidence green -- <test command>` for the slice (the package refuses without a green evidence path).
+1. `OD review-package --base SLICE_BASE --head HEAD --brief BRIEF --require-green` (`--no-tests <reason>` when nothing in the slice is testable).
 2. One `overdrive:reviewer`, by surface: when the slice spans unrelated surfaces (for example API and UI), one package per surface, each with its paths; otherwise one.
 3. Act on `OD findings merge` output. P0 and P1 are fixed inline; P2 and P3 are Notes unless cheap.
 
