@@ -36,7 +36,8 @@ _od_pid_dead() {
 # a noclobber redirection (O_EXCL, a bash builtin), not mkdir: mkdir is not atomic in
 # every coreutils build (the Rust one that ships by default on current Ubuntu lets
 # two racing callers both succeed). Waits up to OD_LOCK_TIMEOUT seconds (default 5)
-# and returns 1 on timeout so callers fail closed; a directory at FILE fails at once.
+# and returns 1 on timeout so callers fail closed; a directory at FILE that stays for
+# two seconds fails with a message.
 # A lock is stale when its pid is dead, or when this waiter has seen it empty for two
 # seconds (the holder died between creating it and writing the pid). Ages are measured
 # by the waiter's own clock, not file times, which differ across platforms.
@@ -49,7 +50,7 @@ _od_pid_dead() {
 # Pids come from $$, so a subshell shares its parent's identity.
 od_lock() {
   local file=$1 start=$SECONDS timeout=${OD_LOCK_TIMEOUT:-5} parent=${1%/*} pid stale broke
-  local empty_since='' seen='' seen_since='' mark
+  local dir_since='' empty_since='' seen='' seen_since='' mark
   if [ "$parent" != "$file" ] && [ ! -d "$parent" ]; then
     mkdir -p "$parent" || return 1
   fi
@@ -58,9 +59,17 @@ od_lock() {
       return 0
     fi
     if [ -d "$file" ]; then
-      printf 'overdrive: lock path is a directory: %s\n' "$file" >&2
-      return 1
+      # A lock that is being deleted can briefly look like a directory on Windows.
+      [ -n "$dir_since" ] || dir_since=$SECONDS
+      if [ $((SECONDS - dir_since)) -ge 2 ]; then
+        printf 'overdrive: lock path is a directory: %s\n' "$file" >&2
+        return 1
+      fi
+      [ $((SECONDS - start)) -le "$timeout" ] || return 1
+      sleep 0.05 2>/dev/null || sleep 1
+      continue
     fi
+    dir_since=''
     pid=''
     # A pid line without its newline is a write in progress.
     [ -r "$file" ] && { IFS= read -r pid < "$file" || pid=''; } 2>/dev/null

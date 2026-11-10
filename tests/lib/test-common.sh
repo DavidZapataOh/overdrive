@@ -421,3 +421,26 @@ test_plan_dir_rule() {
   # Computing the name creates nothing.
   [ ! -e "$repo/.overdrive" ]
 }
+
+# On Windows a lock being deleted can briefly look like a directory, so a directory at
+# the lock path is only an error when it stays.
+test_lock_transient_directory_is_waited_out() {
+  load_common
+  local lock=$PWD/t.lock
+  mkdir "$lock"
+  (sleep 0.5; rmdir "$lock") &
+  OD_LOCK_TIMEOUT=10 od_lock "$lock" 2>err
+  assert_eq "$$" "$(cat "$lock")"
+  od_unlock "$lock"
+  wait
+  [ ! -s err ]
+}
+
+test_lock_persistent_directory_fails_with_message() {
+  load_common
+  local lock=$PWD/d.lock rc=0
+  mkdir "$lock"
+  OD_LOCK_TIMEOUT=30 od_lock "$lock" 2>err || rc=$?
+  assert_eq 1 "$rc" "exit code"
+  grep -q "lock path is a directory: $lock" err
+}
