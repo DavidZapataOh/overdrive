@@ -39,3 +39,11 @@ test_researcher_keeps_private_names_out_of_queries() {
   has agents/researcher.md 'never put.*(project|customer).*(path|secret).*(search quer|URL)'
   has skills/deep-research/SKILL.md 'pre-sanitized|sanitized'
 }
+
+test_triage_gates_the_pull_request_on_review_and_release_gates() {
+  has skills/risk-triage/SKILL.md 'No pull request before the review and release-gates'
+}
+
+test_router_puts_the_review_before_the_pull_request() {
+  has hooks/core.md 'one review per slice, before any PR'
+}

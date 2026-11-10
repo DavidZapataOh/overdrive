@@ -24,6 +24,7 @@ The classifier is `${CLAUDE_PLUGIN_ROOT}/bin/overdrive`, written `overdrive` bel
    4. On an explicit yes: take the ID from `overdrive decisions next-id`, add the entry to `.overdrive/decisions.md` with the reply quoted as `Source` (format in [references/lanes.md](references/lanes.md)), run `overdrive decisions check`, make the change, and end with the lane the user chose, the classifier's items unchanged, and the decision: `Risk: direct — data-migration (lowered by user, D-0007)`.
 6. **Classify again on the real diff before review or merge**: `overdrive risk --worktree` if uncommitted, `--diff <base>...HEAD` if committed, and before editing any file step 1 did not name. A higher lane than the one you worked under: [references/reclassify.md](references/reclassify.md). Uncommitted direct work that stayed inside the paths step 1 named is not classified a second time: its first Risk line stands, and the Stop hook reclassifies the diff and blocks a line below it.
 7. **The last line of every reply that changed or plans to change a repository is the Risk line**, copied from the classifier's latest output with any item you raised appended: `Risk: <lane> — <items | none>`. Before any edit, and for direct work kept inside its named paths, it is the line from step 1.
+8. **No pull request before the review and release-gates.** Above direct, `gh pr create` comes after the lane's reviewer ran on the slice and after you read `${CLAUDE_PLUGIN_ROOT}/skills/release-gates/SKILL.md`; its body file carries the Risk line. A PR opened first is the failure this rule exists for.
 
 | Excuse (verbatim from runs without this skill) | Reality |
 | --- | --- |
@@ -45,4 +46,4 @@ The classifier is `${CLAUDE_PLUGIN_ROOT}/bin/overdrive`, written `overdrive` bel
 
 ## No risk map yet
 
-When the classifier prints `note risk-map missing; propose one with overdrive:risk-triage`, propose the project's map, in the same reply, following [references/risk-map-proposal.md](references/risk-map-proposal.md). The proposal never delays the request: classify it with the floors and do it in its lane.
+When the classifier prints `note risk-map missing; propose one with overdrive:risk-triage`, propose the project's map, in the same reply, following [references/risk-map-proposal.md](references/risk-map-proposal.md). In a critical reply the proposal comes after the `Plan:` paragraph (rule 4), in at most two lines: the file path and the rule. The proposal never delays the request: classify it with the floors and do it in its lane.
