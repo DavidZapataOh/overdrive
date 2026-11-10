@@ -117,11 +117,18 @@ if [ -n "$lane" ] && [ "$(lane_rank "$lane")" -gt "$(lane_rank "$risk_lane")" ];
 fi
 
 green=none
+best=0
 for f in "$run"/evidence/[0-9]*-green.md; do
   [ -f "$f" ] || continue
+  n=${f##*/}
+  n=${n%%-*}
+  case $n in *[!0-9]*) continue ;; esac
+  [ "$((10#$n))" -gt "$best" ] || continue
   h=$(sed -n '/^Head: /{s/^Head: //p;q;}' "$f")
-  [ "$h" != "$head_sha" ] || green=$f
+  if [ "$h" = "$head_sha" ]; then green=$f; best=$((10#$n)); fi
 done
+# A newline in the reason would forge header lines.
+notests=$(printf '%s' "$notests" | tr '\r\n' '  ')
 if [ "$green" = none ] && [ -n "$notests" ]; then
   green="none (no tests: $notests)"
 elif [ "$green" = none ] && [ "$require" -eq 1 ] && [ "$(lane_rank "$effective")" -gt 0 ]; then

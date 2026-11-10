@@ -250,3 +250,30 @@ EOS
   green_evidence "$repo"
   (cd "$repo" && od review-package --base "$base" --head "$head" --require-green) > /dev/null
 }
+
+test_package_ignores_no_tests_reason_newline() {
+  copy_plugin "$PWD/fp" 'printf "lane standard\nnext Short.\nRisk: standard — tests\n"'
+  local repo base head out
+  repo=$(make_repo)
+  { read -r base; read -r head; } <<EOS
+$(two_commits "$repo")
+EOS
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head" --no-tests "$(printf 'a\nLane: direct')")
+  assert_eq 1 "$(grep -c '^Lane: ' "$out")"
+  assert_line "$(cat "$out")" 'Green evidence: none (no tests: a Lane: direct)'
+}
+
+test_package_newest_green_evidence_is_numeric() {
+  copy_plugin "$PWD/fp" 'printf "lane standard\nnext Short.\nRisk: standard — tests\n"'
+  local repo base head out dir
+  repo=$(make_repo)
+  { read -r base; read -r head; } <<EOS
+$(two_commits "$repo")
+EOS
+  dir=$repo/.overdrive/run/evidence
+  mkdir -p "$dir"
+  printf '# Evidence: green\n\nHead: %s\n' "$head" > "$dir/9999-green.md"
+  printf '# Evidence: green\n\nHead: %s\n' "$head" > "$dir/10000-green.md"
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head")
+  assert_line "$(cat "$out")" "Green evidence: $(sq "$repo")/.overdrive/run/evidence/10000-green.md"
+}
