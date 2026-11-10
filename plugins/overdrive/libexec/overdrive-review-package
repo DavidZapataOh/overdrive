@@ -13,7 +13,7 @@ Usage: overdrive review-package --base SHA --head SHA [--brief FILE] [--lane LAN
 Writes .overdrive/run/reviews/<base7>-<head7>.md with the range, the brief path, the
 risk classification of the diff, the commits, the diff stat and the diff with ten
 lines of context, and prints its path. LANE (direct, standard, critical) can only
-raise the lane the classifier gives. The package names the newest green evidence file.
+raise the lane the classifier gives. The package names the newest green evidence recorded at HEAD of the range.
 --require-green refuses a standard or critical package without one (exit 65), unless
 --no-tests gives the reason nothing is testable. Exit 65 also when base is not an
 ancestor of head or the range is empty.
@@ -118,12 +118,14 @@ fi
 
 green=none
 for f in "$run"/evidence/[0-9]*-green.md; do
-  [ ! -f "$f" ] || green=$f
+  [ -f "$f" ] || continue
+  h=$(sed -n '/^Head: /{s/^Head: //p;q;}' "$f")
+  [ "$h" != "$head_sha" ] || green=$f
 done
 if [ "$green" = none ] && [ -n "$notests" ]; then
   green="none (no tests: $notests)"
 elif [ "$green" = none ] && [ "$require" -eq 1 ] && [ "$(lane_rank "$effective")" -gt 0 ]; then
-  od_die "no green evidence: run overdrive evidence green -- <test command>, or pass --no-tests <reason> when nothing here is testable" 65
+  od_die "no green evidence at ${head_sha:0:7}: run overdrive evidence green -- <test command> after the last commit, or pass --no-tests <reason> when nothing here is testable" 65
 fi
 
 {

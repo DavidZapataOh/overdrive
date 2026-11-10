@@ -204,7 +204,7 @@ $(two_commits "$repo")
 EOS
   out=$(cd "$repo" && od review-package --base "$base" --head "$head" --require-green 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
-  assert_line "$out" 'overdrive: no green evidence: run overdrive evidence green -- <test command>, or pass --no-tests <reason> when nothing here is testable'
+  assert_line "$out" "overdrive: no green evidence at ${head:0:7}: run overdrive evidence green -- <test command> after the last commit, or pass --no-tests <reason> when nothing here is testable"
   [ ! -e "$repo/.overdrive/run/reviews" ] || [ -z "$(ls "$repo/.overdrive/run/reviews")" ]
   # Recorded evidence satisfies the gate.
   green_evidence "$repo"
@@ -225,4 +225,28 @@ $(two_commits "$repo")
 EOS
   out=$(cd "$repo" && od review-package --base "$base" --head "$head" --require-green)
   [ -f "$out" ]
+}
+
+test_package_require_green_rejects_evidence_from_another_head() {
+  copy_plugin "$PWD/fp" 'printf "lane standard\nnext Short.\nRisk: standard — tests\n"'
+  local repo base head rc=0 out
+  repo=$(make_repo)
+  green_evidence "$repo"
+  { read -r base; read -r head; } <<EOS
+$(two_commits "$repo")
+EOS
+  out=$(cd "$repo" && od review-package --base "$base" --head "$head" --require-green 2>&1) || rc=$?
+  assert_eq 65 "$rc" "exit code"
+  assert_line "$out" "overdrive: no green evidence at ${head:0:7}: run overdrive evidence green -- <test command> after the last commit, or pass --no-tests <reason> when nothing here is testable"
+  # Evidence recorded on another branch does not count either.
+  git -C "$repo" checkout -q -b other
+  commit_file "$repo" src/b.ts 'export const y = 2;'
+  green_evidence "$repo"
+  git -C "$repo" checkout -q -
+  rc=0
+  (cd "$repo" && od review-package --base "$base" --head "$head" --require-green) > /dev/null 2>&1 || rc=$?
+  assert_eq 65 "$rc" "exit code on another branch"
+  # Evidence at the reviewed head passes.
+  green_evidence "$repo"
+  (cd "$repo" && od review-package --base "$base" --head "$head" --require-green) > /dev/null
 }
