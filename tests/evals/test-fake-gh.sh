@@ -36,6 +36,22 @@ test_merge_refuses_auto_and_merges_otherwise() {
   [ "$(wc -l < .gh-calls.log | tr -d ' ')" = 2 ]
 }
 
+test_merge_lands_the_branch_on_the_remote_and_the_pull_request_reads_merged() {
+  git init -q --bare .remote.git
+  repo
+  git config user.email t@t && git config user.name t
+  git commit -q --allow-empty -m base
+  git remote add origin .remote.git
+  git push -q origin main
+  git switch -q -c feature
+  git commit -q --allow-empty -m fix
+  "$gh" pr create --title x --body y > /dev/null 2>&1 || true
+  [ "$("$gh" pr view 7 --json state | grep -c '"state":"OPEN"')" = 1 ]
+  "$gh" pr merge 7 --squash | grep -q '^✓ Merged'
+  "$gh" pr view 7 --json state | grep -q '"state":"MERGED"'
+  [ "$(git rev-parse feature)" = "$(git --git-dir=.remote.git rev-parse main)" ]
+}
+
 test_run_list_prints_json_and_checks_exit_zero() {
   repo
   "$gh" run list | grep -q '"databaseId":1001'

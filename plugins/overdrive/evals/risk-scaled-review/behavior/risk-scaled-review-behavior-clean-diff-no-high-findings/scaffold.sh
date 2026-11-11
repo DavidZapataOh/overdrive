@@ -18,3 +18,5 @@ fx_file src/users/fetch.js "exports.fetchUser = (db, id) => db.query('SELECT id,
 fx_file src/users/greet.js "const { fetchUser } = require('./fetch.js');
 exports.greet = async (db, id) => 'hello ' + (await fetchUser(db, id)).name;"
 fx_commit "Rename getUser to fetchUser"
+# The range's tests have run green at the branch head, as the review package expects.
+"$(cd "$(dirname "$0")/../../../.." && pwd)/bin/overdrive" evidence green -- node --test > /dev/null || exit 1

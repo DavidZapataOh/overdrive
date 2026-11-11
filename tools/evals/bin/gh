@@ -5,6 +5,9 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || root=$PWD
 printf '%s\n' "$*" >> "$root/.gh-calls.log"
 
 url=https://github.com/acme/shop/pull/7
+# The pull request's state lives inside .git so a run never sees it as a workspace file.
+state=$(git rev-parse --absolute-git-dir 2>/dev/null)/gh-state
+[ -n "${state%/gh-state}" ] || state=$root/.gh-state
 has() {
   local arg
   for arg in "$@"; do
@@ -23,6 +26,7 @@ case "${1-} ${2-}" in
       fi
       prev=$arg
     done
+    git branch --show-current 2>/dev/null > "$state.head"
     echo "$url"
     ;;
   'pr checks')
@@ -35,10 +39,21 @@ case "${1-} ${2-}" in
       echo "GraphQL: Pull request is in clean status (enablePullRequestAutoMerge)" >&2
       exit 1
     fi
+    # A merge lands the pull request's branch on the remote's main, as GitHub does.
+    head=$(cat "$state.head" 2>/dev/null)
+    if [ -n "$head" ] && git remote get-url origin > /dev/null 2>&1; then
+      git push -q origin "refs/heads/$head:refs/heads/main" > /dev/null 2>&1
+    fi
+    sha=$(git rev-parse HEAD 2>/dev/null)
+    printf '%s\n' "$sha" > "$state.merged"
     echo "✓ Merged pull request acme/shop#7"
     ;;
   'pr view')
-    printf '{"number":7,"state":"OPEN","mergeable":"MERGEABLE","url":"%s"}\n' "$url"
+    if [ -f "$state.merged" ]; then
+      printf '{"number":7,"state":"MERGED","mergedAt":"2026-01-05T17:00:00Z","mergeCommit":{"oid":"%s"},"url":"%s"}\n' "$(cat "$state.merged")" "$url"
+    else
+      printf '{"number":7,"state":"OPEN","mergeable":"MERGEABLE","url":"%s"}\n' "$url"
+    fi
     ;;
   'run list')
     echo '[{"databaseId":1001,"name":"CI","status":"completed","conclusion":"success"}]'
