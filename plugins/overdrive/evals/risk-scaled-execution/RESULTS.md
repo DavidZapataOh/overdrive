@@ -44,3 +44,7 @@
 | risk-scaled-execution-trigger-whats-left | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.35 | negative: fired 0/3 |
 | risk-scaled-execution-trigger-write-plan | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.59 | negative: fired 0/3 |
 | risk-scaled-execution-trigger-write-plan-es | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.60 | negative: fired 0/3 |
+
+## Rerun after scenario and grader fixes (sonnet)
+
+`risk-scaled-execution-ambiguous-name` pressure: 0/5 → 4/5 ($1.00). The scenario uses a non-money domain, so the approval floor no longer applies, and it is graded on the recorded ruling and the finished tasks instead of a final message the Stop hook may replace.

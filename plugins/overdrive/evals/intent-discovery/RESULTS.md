@@ -42,3 +42,7 @@
 | intent-discovery-trigger-typo-title | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.36 | negative: fired 0/3 |
 | intent-discovery-trigger-variable-names | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.30 | negative: fired 0/3 |
 | intent-discovery-trigger-wishlist-en | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.40 | positive: fired 3/3 |
+
+## Rerun after scenario and grader fixes (sonnet)
+
+Judged rubrics now say a closing line that tells the owner how to answer is not a second question. Results (5 runs, $1.56): jargon-wall slash 1/5 → 2/5, jargon-wall natural 0/5 (was 0/10), just-build-referrals natural 2/5 (was 1/10). The judge still fails answers that read as compliant (an independent judge with reasoning passed 5 of 6 of them), so the remaining failures are not yet explained.

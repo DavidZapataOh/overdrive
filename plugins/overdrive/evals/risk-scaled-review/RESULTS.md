@@ -43,3 +43,7 @@
 | risk-scaled-review-trigger-security-focus | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.47 | positive: fired 3/3 |
 | risk-scaled-review-trigger-summarize-pr | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.37 | negative: fired 0/3 |
 | risk-scaled-review-trigger-typo-branch | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.35 | positive: fired 3/3 |
+
+## Rerun after scenario and grader fixes (sonnet)
+
+`risk-scaled-review-behavior-clean-diff-no-high-findings`: 0.50 → 1.00 (3 runs, delta 0.00, $1.09). The scaffold now records green evidence at the branch head, which the review package requires. The suite rows above are from the earlier run.

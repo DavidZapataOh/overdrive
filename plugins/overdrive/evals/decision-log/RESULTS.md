@@ -42,3 +42,7 @@
 | decision-log-trigger-test-parse-decision | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.36 | negative: fired 0/3 |
 | decision-log-trigger-typo-hero-copy | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.35 | negative: fired 0/3 |
 | decision-log-trigger-what-is-adr | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.32 | negative: fired 0/3 |
+
+## Rerun after scenario and grader fixes (sonnet)
+
+`decision-log-behavior-copy-respects-claude-md`: 0.75 → 1.00 (3 runs, delta 0.00, $0.50). The `no-human-contact` grader now ignores negations ("sin agendar", "nada que agendar") and competitor contrast, and still fails on an offer ("agendemos una llamada", "reserva una demo"). The suite rows above are from the earlier run.

@@ -23,3 +23,7 @@
 | skill-evaluation-behavior-near-miss-negatives | behavior | 1.00 | 0.00 | +1.00 | 3 | $1.50 |  |
 | skill-evaluation-behavior-not-auto-invoked | behavior | 1.00 | 1.00 | 0.00 | 3 | $1.38 |  |
 | skill-evaluation-behavior-refuses-unmeasured-claim | behavior | 0.50 | 0.83 | -0.33 | 3 | $0.81 | REGRESSION |
+
+## Rerun after scenario and grader fixes (sonnet)
+
+`skill-evaluation-behavior-refuses-unmeasured-claim`: 0.50 → 1.00 (3 runs, $0.74): `cites-measure` reads the answer text, not the last message. Pressure after raising the turn cap from 10 to 20 (5 runs each, $4.47): obvious-rule 2/5 → 3/5, ship-skill-tonight 2/5 → 4/5, no errored runs (was 1 each). The suite rows above are from the earlier run.

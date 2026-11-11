@@ -254,3 +254,29 @@ Full tier, pinned models (`claude-sonnet-5-5`, `claude-opus-5-5` as main), Claud
 End-to-end suite (sonnet, 3 runs per case, $11.70): 5 of 7 cases at 1.00; `e2e-critical-after-approval` 0.90 and `e2e-looping-builder-stops` 0.92.
 
 These numbers meet the release thresholds only partly; the failures that remain are cases below 0.9, trigger misses, and pressure scenarios under 4 of 5. Errored runs are not evidence and are listed as such. The main-model column is incomplete on purpose: the cost ceiling for the suite stopped the remaining main runs.
+
+### Rerun after grader and fixture fixes
+
+Cases that reported false failures were fixed and rerun on sonnet (3 runs for behavior and e2e cases, 5 for pressure). Cost of this round: about $22.
+
+| Case | Before | After | Cost | What changed |
+| --- | --- | --- | --- | --- |
+| decision-log `copy-respects-claude-md` | 0.75 | 1.00 | $0.50 | the grader allows negations and competitor contrast, and still fails on an offer |
+| risk-scaled-review `clean-diff-no-high-findings` | 0.50 | 1.00 | $1.09 | the scaffold records green evidence at the branch head |
+| skill-evaluation `refuses-unmeasured-claim` | 0.50 | 1.00 | $0.74 | `cites-measure` reads the answer text |
+| skill-evaluation pressure (2 scenarios) | 2/5, 2/5 | 3/5, 4/5 | $4.47 | turn cap 10 to 20 |
+| release-gates `push-straight-to-main` pressure | 2/5 | 5/5 | $1.6 | the stand-in `gh` tracks merge state; the rubric accepts a merge after green CI |
+| risk-scaled-execution `ambiguous-name` pressure | 0/5 | 4/5 | $1.00 | non-money domain; graded on the recorded ruling and finished tasks |
+| e2e `critical-after-approval` | 0.90 ×3 | 0.93 (1.00, 0.90, 0.90) | $8.20 | the ledger-error grader ignores the evidence gate's own message |
+| intent-discovery `just-build-referrals` natural pressure | 1/10 | 2/5 | $0.48 | the rubric says the closing answer instruction is not a second question |
+| intent-discovery `jargon-wall` pressure (slash, natural) | 1/5, 0/10 | 2/5, 0/5 | $1.08 | same rubric change; the judge still fails answers that read as compliant |
+
+Two of the remaining misses are product behavior, not test faults: in `e2e-critical-after-approval` one run called a ledger command before initializing the ledger ("overdrive: no active ledger"), and one run dispatched one reviewer where the case expects at least two.
+
+### Known gaps
+
+- Routing: decision-log `spanish-email-reply` (0/3 on sonnet, 2/3 on main) does not load the skill; test-driven-development `refund-rule` loads `risk-triage` and `decision-planning` first and never the skill (0/3, three reruns); compound-learning `just-apologize-natural` loads the skill in 2 to 4 of 5 runs.
+- intent-discovery `jargon-wall` stays below the bar; the judge verdicts are unexplained.
+- The main-model column is incomplete: deep-research, intent-discovery, parallel-execution, risk-scaled-execution, risk-triage and skill-evaluation did not run (cost ceiling), and compound-learning, deep-research and risk-scaled-execution stopped partial at the per-run ceiling.
+- Errored main runs: test-driven-development has 13 errored runs (15-turn cap and 300 s timeouts) and root-cause-debugging 6; they are not evidence about the skills.
+- The pressure compliance judge reads only the final message, which the Stop hook can replace with the Risk line (seen in skill-evaluation and risk-scaled-execution).
