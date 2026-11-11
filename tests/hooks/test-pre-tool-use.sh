@@ -604,3 +604,74 @@ test_repo_containing_the_plugin_is_still_marked() {
       ;;
   esac
 }
+
+# agent_event SUBAGENT [CWD]: a PreToolUse event for an Agent dispatch.
+agent_event() {
+  printf '{"session_id":"sess-1","transcript_path":"/t.jsonl","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"x","subagent_type":"%s","prompt":"review"},"tool_use_id":"toolu_1"}' \
+    "$(jstr "${2:-$PWD}")" "$(jstr "$1")"
+}
+
+# ledger_repo LINE...: a repo with a two-task plan and an active ledger holding LINEs.
+ledger_repo() {
+  local repo line
+  repo=$(make_repo)
+  write_file "$repo" docs/plan.md '# Plan
+
+### Task 1: Charges
+### Task 2: Refunds'
+  (cd "$repo" && od ledger init --plan docs/plan.md) >/dev/null
+  for line in "$@"; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  printf '%s\n' "$repo"
+}
+
+GATE_TAIL="has no critical review after its last change. For each, run $(plugin_dir)/bin/overdrive review-package"
+
+test_denies_final_reviewer_while_a_task_is_unreviewed() {
+  local repo
+  repo=$(ledger_repo 'Task 1: implemented' 'Task 1: reviewing' 'Task 2: implemented')
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 2 $GATE_TAIL"
+  assert_denies "$(agent_event final-reviewer "$repo")" "task 2 $GATE_TAIL"
+  (cd "$repo" && od ledger add 'Task 2: reviewing') >/dev/null
+  assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
+}
+
+test_denies_final_reviewer_after_the_observed_sequence() {
+  local repo
+  repo=$(ledger_repo 'Task 1: in-progress' 'Task 1: reviewing' 'Task 1: fixing round 1 done, builder reported' 'Task 2: implemented')
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 1, 2 $GATE_TAIL"
+}
+
+test_denies_pull_request_while_a_task_is_unreviewed() {
+  local repo
+  repo=$(ledger_repo 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: fixing round 1' 'Task 2: implemented')
+  assert_denies "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")" "task 1, 2 $GATE_TAIL"
+  assert_denies "$(bash_event 'gh pr merge 5 --squash' "$repo")" "task 1, 2 $GATE_TAIL"
+  (cd "$repo" && od ledger add 'Task 1: reviewing' && od ledger add 'Task 2: reviewing') >/dev/null
+  assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
+}
+
+test_allows_pull_request_in_a_run_without_critical_reviews() {
+  local repo
+  repo=$(ledger_repo 'Task 1: implemented' 'Task 2: implemented')
+  assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
+}
+
+test_allows_gated_calls_without_a_ledger() {
+  local repo
+  repo=$(make_repo)
+  assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
+  assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
+}
+
+test_allows_unrelated_agent_and_shell_calls_without_reading_the_ledger() {
+  local repo
+  repo=$(ledger_repo 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: fixing round 1')
+  # A ledger that would fail the read proves it is never consulted.
+  printf 'broken\n' > "$(cd "$repo" && od ledger path)"
+  assert_allows "$(agent_event overdrive:critical-reviewer "$repo")"
+  assert_allows "$(agent_event overdrive:builder "$repo")"
+  assert_allows "$(bash_event 'gh pr view 5' "$repo")"
+  assert_allows "$(bash_event 'ls' "$repo")"
+}

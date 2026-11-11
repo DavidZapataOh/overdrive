@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse guard: pinned tests stay untouched until green, the default branch is
-# never pushed to, and every session marks the repositories it changed.
+# never pushed to, a critical run's final review and pull request wait for every task's
+# review, and every session marks the repositories it changed.
 # It runs before every edit and shell command, so the common call (no pins, no push,
 # no file-writing command) uses builtins only. Pins cost one cksum to check the seal;
 # a shell command that pushes or may write a pinned file costs one awk to tokenize.
@@ -228,10 +229,34 @@ own_read_only_cli() {
   plain_words "$rest"
 }
 
+# review_gate WHAT [--critical]: deny WHAT while the active ledger of the repository around
+# cwd holds a started task with no critical review after its last change. Any failure to
+# read the ledger lets the call through.
+review_gate() {
+  local root open
+  [ -n "$cwd" ] && _od_find_root "$cwd" || return 0
+  root=$_OD_ROOT
+  [ -f "$root/.overdrive/run/active-ledger" ] || return 0
+  open=$(cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" ledger unreviewed ${2:+"$2"} 2>/dev/null </dev/null | paste -sd, - | sed 's/,/, /g') || return 0
+  [ -n "$open" ] || return 0
+  guard
+  deny "$1 is blocked: task $open has no critical review after its last change. For each, run $plugin/bin/overdrive review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then run $plugin/bin/overdrive ledger add 'Task <N>: reviewing'."
+}
+
+agent_tool() {
+  json_extract_string subagent_type "$input" || return 0
+  case $JSON_VALUE in
+    final-reviewer | overdrive:final-reviewer) review_gate "Dispatching the final review" ;;
+  esac
+}
+
 bash_tool() {
   local croot_pins='' need='' ro='' a roots=''
   json_extract_string command "$input" || return 0
   cmd=$JSON_VALUE
+  case $cmd in
+    *gh*pr*create* | *gh*pr*merge*) review_gate "Opening or merging the pull request" --critical ;;
+  esac
   if own_read_only_cli; then
     printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Overdrive read-only command"}}'
     return 0
@@ -323,5 +348,6 @@ fi
 case $tool in
   Edit | Write | MultiEdit | NotebookEdit) file_tool ;;
   Bash) bash_tool ;;
+  Agent | Task) agent_tool ;;
 esac
 exit 0

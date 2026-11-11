@@ -198,3 +198,13 @@ test_unreviewed_without_a_ledger_fails_like_the_other_readers() {
   (cd "$repo" && od ledger unreviewed) >/dev/null 2>&1 || rc=$?
   assert_eq 66 "$rc"
 }
+
+test_unreviewed_critical_flag_needs_a_review_line_in_the_ledger() {
+  local repo
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  (cd "$repo" && od ledger add 'Task 1: implemented') >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed --critical)"
+  (cd "$repo" && od ledger add 'Task 2: reviewing') >/dev/null
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed --critical)"
+}
