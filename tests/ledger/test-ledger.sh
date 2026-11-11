@@ -178,3 +178,195 @@ test_parallel_appends_keep_every_line() {
     assert_eq 1 "$(grep -cx "Note: writer $i reporting a long enough line to expose torn writes" "$ledger")" "writer $i"
   done
 }
+
+test_unreviewed_lists_critical_tasks_without_a_review_after_their_last_change() {
+  local repo line
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  for line in 'Task 3: pending' 'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewing' \
+    'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: complete'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  (cd "$repo" && od ledger _record-review 2 && od ledger _record-review 1 && od ledger add 'Task 2: fixing round 1') >/dev/null
+  assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger _record-review 2) >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_unreviewed_ignores_unmarked_and_blocked_tasks() {
+  local repo line
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  for line in 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: complete' \
+    'Task 2: in-progress' 'Task 2: implemented' 'Task 2: complete' 'Task 3: blocked sudo apt install libfoo'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  (cd "$repo" && od ledger _record-review 1) >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed --all-started)"
+  # Blocked after work started stays gated; so does an unmarked task still open.
+  (cd "$repo" && od ledger add 'Task 3: in-progress critical' && od ledger add 'Task 3: blocked sudo') >/dev/null
+  assert_eq 3 "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_unreviewed_all_started_lists_unmarked_open_tasks() {
+  local repo
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  for line in 'Task 1: in-progress' 'Task 1: fixing round 1 done' 'Task 2: implemented' 'Task 3: in-progress' 'Task 3: complete'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq "1
+2" "$(cd "$repo" && od ledger unreviewed --all-started)"
+}
+
+test_unreviewed_keeps_gating_a_critical_task_completed_without_a_review() {
+  local repo line
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  for line in 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: complete' \
+    'Task 2: in-progress' 'Task 2: implemented' 'Task 2: complete'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed --all-started)"
+}
+
+test_init_on_a_feature_branch_binds_the_ledger_to_it() {
+  local repo
+  repo=$(plan_repo)
+  git -C "$repo" checkout -q -b feat-a
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical') >/dev/null
+  assert_eq 'Run: branch feat-a' "$(sed -n 2p "$(cd "$repo" && od ledger path)")"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  git -C "$repo" checkout -q -b feat-b
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed --all-started)"
+  git -C "$repo" checkout -q feat-a
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_ledger_started_on_the_default_branch_binds_at_the_first_add_on_a_feature_branch() {
+  local repo ledger
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  ledger=$(cd "$repo" && od ledger path)
+  (cd "$repo" && od ledger add 'Note: starting') >/dev/null
+  ! grep -q '^Run: branch' "$ledger"
+  git -C "$repo" checkout -q -b feat
+  (cd "$repo" && od ledger add 'Task 1: in-progress critical' && od ledger add 'Task 1: implemented') >/dev/null
+  assert_eq 1 "$(grep -c '^Run: branch feat$' "$ledger")"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  git -C "$repo" checkout -q -b other
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_unbound_ledger_gates_on_any_branch() {
+  local repo
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical') >/dev/null
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  git -C "$repo" checkout -q -b feat
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_ledger_with_a_run_line_from_before_keeps_working() {
+  local repo ledger
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  ledger=$(cd "$repo" && od ledger path)
+  printf 'Run: branch master\nTask 1: in-progress critical\n' >> "$ledger"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger add 'Task 1: implemented') >/dev/null
+  assert_eq 1 "$(grep -c '^Run: branch' "$ledger")"
+}
+
+test_unreviewed_without_a_ledger_fails_like_the_other_readers() {
+  local repo rc=0
+  repo=$(make_repo)
+  (cd "$repo" && od ledger unreviewed) >/dev/null 2>&1 || rc=$?
+  assert_eq 66 "$rc"
+}
+
+test_closed_run_and_flags_of_unreviewed() {
+  local repo
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical') >/dev/null
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger add 'Run: closed — abandoned') >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed --all-started)"
+  rc=0
+  (cd "$repo" && od ledger add 'Run: closed —') >/dev/null 2>&1 || rc=$?
+  assert_eq 65 "$rc"
+}
+
+test_any_branch_flag_ignores_the_binding() {
+  local repo
+  repo=$(plan_repo)
+  git -C "$repo" checkout -q -b feat-a
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical') >/dev/null
+  git -C "$repo" checkout -q -
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed --any-branch)"
+  git -C "$repo" checkout -q --detach feat-a
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_add_refuses_the_review_record_the_guard_writes() {
+  local repo rc=0 out
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  out=$(cd "$repo" && od ledger add 'Task 2: reviewed by critical-reviewer' 2>&1) || rc=$?
+  assert_eq 65 "$rc" "exit code"
+  case $out in *"written by the guard"*) ;; *) printf 'message lacks the reason: %s\n' "$out" >&2; return 1 ;; esac
+  assert_eq 0 "$(grep -c reviewed "$(cd "$repo" && od ledger path)")"
+}
+
+test_only_the_guard_record_counts_as_a_review() {
+  local repo line
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  for line in 'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewing' 'Task 2: complete'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger _record-review 2) >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger add 'Task 2: fixing round 1') >/dev/null
+  assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 'Task 2: fixing round 1' "$(cd "$repo" && od ledger status | grep '^Task 2')"
+}
+
+test_add_refuses_the_change_record_the_guard_writes() {
+  local repo rc=0
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  (cd "$repo" && od ledger add 'Task 2: changed by builder') >/dev/null 2>&1 || rc=$?
+  assert_eq 65 "$rc" "exit code"
+}
+
+test_a_builder_change_needs_a_new_review() {
+  local repo line
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  for line in 'Task 2: in-progress critical' 'Task 2: implemented'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  (cd "$repo" && od ledger _record-review 2 && od ledger _record-change 2) >/dev/null
+  assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 'Task 2: implemented' "$(cd "$repo" && od ledger status | grep '^Task 2')"
+  (cd "$repo" && od ledger _record-review 2) >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_a_closed_run_gates_only_its_bound_branch() {
+  local repo
+  repo=$(plan_repo)
+  git -C "$repo" checkout -q -b feat-a
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical' && od ledger add 'Run: closed — abandoned') >/dev/null
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  git -C "$repo" checkout -q -b feat-b
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed --any-branch)"
+}

@@ -12,6 +12,8 @@ Usage: overdrive ledger init --plan FILE
        overdrive ledger status [--plan FILE]
        overdrive ledger path [--plan FILE]
        overdrive ledger rulings [--plan FILE]
+       overdrive ledger unreviewed [--all-started] [--any-branch] [--plan FILE]
+       overdrive ledger mark-critical [--plan FILE] N
 
 The ledger of plan dir/<stem>.md is .overdrive/run/<stem>-<cksum>/ledger.md (stem limited
 to [A-Za-z0-9._-], cksum of the plan's absolute path); its first line is
@@ -22,8 +24,25 @@ not given. Each added line is one of:
   Ruling: <what> — <why> — <cost if wrong>
   Note: <text>
   Preflight: <text>
+  Run: closed — <reason>      the run was abandoned; its tasks no longer gate other branches
 status prints the last state of every task in the plan or the ledger, then "next <N>",
 the first task not complete, or "next none".
+unreviewed prints, one per line, each task marked critical (a "critical" word after its state,
+as in "Task 2: in-progress critical") that has no "reviewed by critical-reviewer" line after its
+last in-progress, implemented, fixing or "changed by builder" line: a change made after the last
+review needs another one. The PreToolUse guard writes those two lines when overdrive:critical-reviewer
+or overdrive:builder is dispatched with "Task N" in its description; add refuses them, and a
+"reviewing" line is a state only. Tasks
+that never started or only blocked and ledgers bound to another branch print nothing. A
+critical task stays listed after "complete" until a review follows its last change.
+--all-started also lists unmarked started tasks that are not complete or blocked;
+--any-branch ignores the branch binding. A closed run stops gating once it is not on its bound
+branch (an unbound closed run gates nowhere); on that branch it keeps gating.
+mark-critical appends "Task N: in-progress critical" unless task N is already marked;
+overdrive brief calls it for a critical task.
+A ledger binds to the run's branch with a "Run: branch <name>" line, written by init or
+by the first add made on a branch other than the default one; until then it applies on
+every branch.
 USAGE
 }
 
@@ -75,6 +94,10 @@ valid_line() {
       case $cost in *' — '*) return 1 ;; esac
       [ -n "${what//[[:space:]]/}" ] && [ -n "${why//[[:space:]]/}" ] && [ -n "${cost//[[:space:]]/}" ]
       ;;
+    'Run: closed — '*)
+      rest=${l#'Run: closed — '}
+      [ -n "${rest//[[:space:]]/}" ]
+      ;;
     'Note: '* | 'Preflight: '*)
       rest=${l#*: }
       [ -n "${rest//[[:space:]]/}" ]
@@ -97,6 +120,7 @@ FILENAME == ENVIRON["PLAN"] {
   }
   next
 }
+/^Task [0-9]+: (reviewed by critical-reviewer|changed by builder)$/ { next }
 /^Task [0-9]+: / {
   n = $2 + 0; s = $0; sub(/^Task [0-9]+: /, "", s)
   if (!(n in st)) keys[++k] = n
@@ -117,9 +141,88 @@ END {
 }
 '
 
+# run_branch: the branch HEAD is on, empty when detached; on_default_branch tells whether it
+# is the repository's default one (origin's HEAD, else main or master).
+current_branch() { git -C "$root" symbolic-ref -q --short HEAD; }
+
+on_default_branch() {
+  local def
+  def=$(git -C "$root" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null) || def=''
+  [ -z "$def" ] || [ "$1" != "${def#origin/}" ] || return 0
+  case $1 in main | master) return 0 ;; esac
+  return 1
+}
+
+# bind_branch: append the "Run: branch" line once, when HEAD is on a non-default branch.
+# The caller holds the ledger lock.
+bind_branch() {
+  local cur
+  cur=$(current_branch) || return 0
+  ! on_default_branch "$cur" || return 0
+  grep -q '^Run: branch ' "$ledger" || printf 'Run: branch %s\n' "$cur" >> "$ledger"
+}
+
+# append_line LINE: bind the branch if needed and append LINE, under the lock.
+append_line() {
+  local rc=0
+  od_lock "$ledger.lock" || od_die "cannot lock $ledger"
+  bind_branch
+  printf '%s\n' "$1" >> "$ledger" || rc=1
+  od_unlock "$ledger.lock"
+  [ "$rc" -eq 0 ] || od_die "cannot write $ledger"
+}
+
+# shellcheck disable=SC2016
+unreviewed_awk='
+/^Task [0-9]+: / {
+  n = $2 + 0; s = $0; sub(/^Task [0-9]+: /, "", s)
+  if (match(s, /^fixing round [0-9]+/)) { st = "fixing"; rest = substr(s, RLENGTH + 1) }
+  else { rest = s; sub(/^[^ ]+/, "", rest); st = s; sub(/ .*/, "", st) }
+  if (!(n in seen)) { seen[n] = 1; keys[++k] = n }
+  if (rest ~ /^ critical( |$)/) crit[n] = 1
+  if (s == "reviewed by critical-reviewer") { rev[n] = 1; next }
+  if (s == "changed by builder") { rev[n] = 0; started[n] = 1; next }
+  if (st == "in-progress" || st == "implemented" || st == "fixing") rev[n] = 0
+  if (st != "pending" && st != "blocked") started[n] = 1
+  last[n] = st
+}
+END {
+  for (i = 2; i <= k; i++) {
+    x = keys[i]
+    for (j = i - 1; j >= 1 && keys[j] > x; j--) keys[j + 1] = keys[j]
+    keys[j + 1] = x
+  }
+  for (i = 1; i <= k; i++) {
+    x = keys[i]
+    if (!started[x] || rev[x]) continue
+    if (crit[x] || (all && last[x] != "complete" && last[x] != "blocked")) print x
+  }
+}
+'
+
+# applies [ANY_BRANCH]: true unless the run is bound to another branch or closed without a
+# binding. ANY_BRANCH ignores the binding.
+applies() {
+  local run_branch cur
+  run_branch=$(sed -n 's/^Run: branch //p' "$ledger" | sed -n 1p)
+  # A closed run still holds its own branch: closing frees the others.
+  ! grep -q '^Run: closed — ' "$ledger" || [ -n "$run_branch" ] || return 1
+  cur=$(current_branch)
+  # A detached HEAD may be the run's own commit, so it counts as a match.
+  [ -n "${1-}" ] || [ -z "$run_branch" ] || [ -z "$cur" ] || [ "$run_branch" = "$cur" ]
+}
+
 sub=${1-}
 [ $# -eq 0 ] || shift
-plan=''
+plan='' all_started='' any_branch=''
+while [ "$sub" = unreviewed ]; do
+  case ${1-} in
+    --all-started) all_started=1 ;;
+    --any-branch) any_branch=1 ;;
+    *) break ;;
+  esac
+  shift
+done
 if [ "${1-}" = --plan ]; then
   [ $# -ge 2 ] || { usage >&2; exit 64; }
   plan=$2
@@ -137,6 +240,7 @@ case $sub in
     else
       printf '%s%s\n' "$header_prefix" "$plan_abs" > "$ledger" ||
         { od_unlock "$ledger.lock"; od_die "cannot write $ledger"; }
+      bind_branch
     fi
     od_unlock "$ledger.lock"
     tmp=$run/active-ledger.$$.tmp
@@ -146,9 +250,35 @@ case $sub in
     ;;
   add)
     [ $# -eq 1 ] || { usage >&2; exit 64; }
+    case $1 in
+      'Task '*': reviewed by critical-reviewer'* | 'Task '*': changed by builder'*)
+        od_die "that record is written by the guard when overdrive:critical-reviewer or overdrive:builder is dispatched with \"Task N\" in its description; it cannot be added by hand" 65
+        ;;
+    esac
     valid_line "$1" || od_die "not a ledger line (see overdrive ledger --help): $1" 65
     resolve "$plan"
-    od_append "$ledger" "$1" || exit 1
+    append_line "$1"
+    ;;
+  mark-critical)
+    [ $# -eq 1 ] || { usage >&2; exit 64; }
+    case $1 in *[!0-9]* | 0* | '') exit 0 ;; esac
+    resolve "$plan"
+    grep -Eq "^Task $1: [^ ]+( round [0-9]+)? critical( |\$)" "$ledger" || append_line "Task $1: in-progress critical"
+    ;;
+  _record-review)
+    # Called by the PreToolUse guard only; the guard denies it from the shell.
+    [ $# -eq 1 ] || { usage >&2; exit 64; }
+    case $1 in *[!0-9]* | 0* | '') exit 64 ;; esac
+    resolve "$plan"
+    applies || exit 0
+    append_line "Task $1: reviewed by critical-reviewer"
+    ;;
+  _record-change)
+    [ $# -eq 1 ] || { usage >&2; exit 64; }
+    case $1 in *[!0-9]* | 0* | '') exit 64 ;; esac
+    resolve "$plan"
+    applies || exit 0
+    append_line "Task $1: changed by builder"
     ;;
   status)
     [ $# -eq 0 ] || { usage >&2; exit 64; }
@@ -163,6 +293,13 @@ case $sub in
       printf 'overdrive: plan not found, listing ledger tasks only: %s\n' "$PLAN" >&2
       awk "$status_awk" "$ledger"
     fi
+    ;;
+  unreviewed)
+    [ $# -eq 0 ] || { usage >&2; exit 64; }
+    resolve "$plan"
+    # A ledger of another branch belongs to another piece of work.
+    applies "$any_branch" || exit 0
+    awk -v all="$all_started" "$unreviewed_awk" "$ledger"
     ;;
   path)
     [ $# -eq 0 ] || { usage >&2; exit 64; }

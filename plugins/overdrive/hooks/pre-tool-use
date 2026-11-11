@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse guard: pinned tests stay untouched until green, the default branch is
-# never pushed to, and every session marks the repositories it changed.
+# never pushed to, a critical run's final review and pull request wait for every task's
+# review (recorded here, when the critical reviewer is dispatched), and every session
+# marks the repositories it changed.
 # It runs before every edit and shell command, so the common call (no pins, no push,
 # no file-writing command) uses builtins only. Pins cost one cksum to check the seal;
 # a shell command that pushes or may write a pinned file costs one awk to tokenize.
@@ -101,6 +103,12 @@ file_tool() {
   ! in_plugin "$_OD_PATH" || return 0
   _od_find_root "$_OD_PATH" || return 0
   croot=$_OD_ROOT
+  case $_OD_PATH in
+    "$croot"/.overdrive/run/active-ledger | "$croot"/.overdrive/run/*/ledger.md)
+      guard
+      deny "The ledger is written only by $plugin/bin/overdrive ledger add: the guard writes the review and change records itself, and a file tool would forge them."
+      ;;
+  esac
   if [ -f "$croot/$PINS_FILE" ]; then
     guard
     check_target "$_OD_PATH" '' ''
@@ -228,10 +236,118 @@ own_read_only_cli() {
   plain_words "$rest"
 }
 
+# review_gate WHAT EXTRA [FLAG...]: deny WHAT while the active ledger of the repository
+# around cwd holds a critical task with no critical review after its last change. EXTRA
+# is added to the deny text; FLAGs go to overdrive ledger unreviewed. Any failure to read
+# the ledger lets the call through.
+review_gate() {
+  local root open verb=has noun=task cli what=$1 extra=$2
+  shift 2
+  [ -n "$cwd" ] && _od_find_root "$cwd" || return 0
+  root=$_OD_ROOT
+  [ -f "$root/.overdrive/run/active-ledger" ] || return 0
+  open=$(cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" ledger unreviewed "$@" 2>/dev/null </dev/null | paste -sd, - | sed 's/,/, /g') || return 0
+  [ -n "$open" ] || return 0
+  case $open in *,*) verb=have noun=tasks ;; esac
+  cli="'$plugin/bin/overdrive'"
+  guard
+  deny "$what is blocked: $noun $open $verb no critical review after the last change. For each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description (the guard records the review when it is dispatched).${extra:+ $extra}"
+}
+
+# task_numbers: set NUMS to the tasks a dispatch names: those in its description ("Task 2",
+# "Tasks 1-2", "Tasks 1, 2"), else the brief path in its prompt. Free prompt text names
+# no task: it mentions tasks the work merely depends on.
+task_numbers() {
+  local desc='' prompt='' body n prev='' sep re_list='(^|[^A-Za-z])[Tt]asks? +#?([0-9]+)(([ ]*[-,][ ]*|[ ]+and[ ]+)#?[0-9]+)*' re_num='^([0-9]+)([^0-9]*)(.*)$' re_brief='task-([1-9][0-9]*)\.md'
+  NUMS=()
+  json_extract_string description "$input" && desc=$JSON_VALUE
+  if [[ $desc =~ $re_list ]]; then
+    body=${BASH_REMATCH[0]}
+    body=${body#"${body%%[0-9]*}"}
+    while [[ $body =~ $re_num ]]; do
+      n=$((10#${BASH_REMATCH[1]}))
+      sep=${BASH_REMATCH[2]}
+      body=${BASH_REMATCH[3]}
+      if [ -n "$prev" ] && [[ $sep == *-* ]] && [ "$n" -gt "$prev" ] && [ $((n - prev)) -le 50 ]; then
+        while [ "$prev" -lt "$n" ]; do prev=$((prev + 1)); NUMS[${#NUMS[@]}]=$prev; done
+      else
+        NUMS[${#NUMS[@]}]=$n
+      fi
+      prev=$n
+    done
+    return 0
+  fi
+  json_extract_string prompt "$input" && prompt=$JSON_VALUE
+  if [[ $prompt =~ $re_brief ]]; then NUMS[0]=${BASH_REMATCH[1]}; fi
+}
+
+# record_dispatch KIND: a dispatch is the proof of a review or of a change: the guard
+# records it, so the ledger holds what happened and not what the controller wrote.
+record_dispatch() {
+  local root n
+  task_numbers
+  [ "${#NUMS[@]}" -gt 0 ] || return 0
+  [ -n "$cwd" ] && _od_find_root "$cwd" || return 0
+  root=$_OD_ROOT
+  [ -f "$root/.overdrive/run/active-ledger" ] || return 0
+  for n in "${NUMS[@]}"; do
+    (cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" ledger "_record-$1" "$n" >/dev/null 2>&1 </dev/null) || :
+  done
+}
+
+agent_tool() {
+  json_extract_string subagent_type "$input" || return 0
+  case $JSON_VALUE in
+    final-reviewer | overdrive:final-reviewer)
+      review_gate "Dispatching the final review" "A standard or direct task still open at the end of the slice must be marked complete, or critical and reviewed." --all-started
+      ;;
+    critical-reviewer | overdrive:critical-reviewer) record_dispatch review ;;
+    builder | overdrive:builder) record_dispatch change ;;
+  esac
+}
+
+# Word boundaries keep a commit message or a grep pattern that mentions the command from matching.
+GH_PR_RE='(^|[;&|( ])gh ([^;&|]* )?pr +(create|merge)([ ;&|]|$)'
+
+# The ledger's internal entry points for the records the guard writes.
+RECORD_RE='ledger[^;&|]* _record-(review|change)([ ;&|"'"'"']|$)'
+
+# record_call: deny cmd when it runs an internal entry point. A mention inside a quoted
+# string (a search pattern, a commit message) is only text; the quote state before the
+# word tells them apart.
+record_call() {
+  local rest=$cmd acc='' m before q c state=''
+  while [[ $rest =~ $RECORD_RE ]]; do
+    m=${BASH_REMATCH[0]}
+    before=$acc${rest%%"$m"*}${m%_record-*}
+    q=${before//[!\"\']/}
+    state=''
+    while [ -n "$q" ]; do
+      c=${q:0:1}
+      q=${q:1}
+      if [ -z "$state" ]; then state=$c; elif [ "$c" = "$state" ]; then state=''; fi
+    done
+    if [ -z "$state" ]; then
+      guard
+      deny "The review and change records are written by the guard when overdrive:critical-reviewer or overdrive:builder is dispatched with \"Task N\" in its description; they are not commands to run."
+    fi
+    acc=$acc${rest%%"$m"*}$m
+    rest=${rest#*"$m"}
+  done
+}
+
 bash_tool() {
   local croot_pins='' need='' ro='' a roots=''
   json_extract_string command "$input" || return 0
   cmd=$JSON_VALUE
+  case $cmd in *_record-*) record_call ;; esac
+  if [[ $cmd =~ $GH_PR_RE ]]; then
+    # A merge can run from the default branch, away from the run's own.
+    case $cmd in
+      *merge*) review_gate "Opening or merging the pull request" '' --any-branch ;;
+      *) review_gate "Opening or merging the pull request" '' ;;
+    esac
+  fi
   if own_read_only_cli; then
     printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Overdrive read-only command"}}'
     return 0
@@ -323,5 +439,6 @@ fi
 case $tool in
   Edit | Write | MultiEdit | NotebookEdit) file_tool ;;
   Bash) bash_tool ;;
+  Agent | Task) agent_tool ;;
 esac
 exit 0
