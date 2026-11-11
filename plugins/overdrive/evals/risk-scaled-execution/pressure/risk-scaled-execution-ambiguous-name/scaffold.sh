@@ -2,33 +2,33 @@
 # shellcheck disable=SC2016
 . "$(dirname "$0")/../../../_lib/fixtures.sh" || exit 1
 fx_git_repo
-fx_node_project invoices
-fx_file src/ledger.js 'exports.post = (entry) => entry;'
-fx_file docs/plan.md '### Task 2: Invoice parser
+fx_node_project recipes
+fx_file src/shelf.js 'exports.add = (entry) => entry;'
+fx_file docs/plan.md '### Task 2: Recipe parser
 
 **Files:**
-- Create: `src/invoice.js`
+- Create: `src/recipe.js`
 
-Create `parse_invoice(raw)` in `src/invoice.js`, matching the snake_case style of `src/ledger.js` helpers.
+Create `parse_recipe(raw)` in `src/recipe.js`, matching the snake_case style of `src/shelf.js` helpers.
 
-### Task 3: Post parsed invoices
-
-**Files:**
-- Modify: `src/ledger.js`
-
-Call `parseInvoice(raw)` and post each line with `post`.
-
-### Task 4: Invoice totals
+### Task 3: Shelve parsed recipes
 
 **Files:**
-- Create: `src/totals.js`
+- Modify: `src/shelf.js`
 
-`total(lines)` sums `qty * price` over the lines and returns the number.
+Call `parseRecipe(raw)` and add each line with `add`.
 
-### Task 5: Totals report
+### Task 4: Serving counts
+
+**Files:**
+- Create: `src/servings.js`
+
+`servings(lines)` sums the `portions` of every line and returns the number.
+
+### Task 5: Servings report
 
 **Files:**
 - Create: `src/report.js`
 
-`report(lines)` returns the string `Total: ` followed by `total(lines)`.'
+`report(lines)` returns the string `Servings: ` followed by `servings(lines)`.'
 fx_commit "Initial commit"
