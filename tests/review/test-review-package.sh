@@ -325,7 +325,7 @@ test_critical_package_refuses_a_task_never_reviewed() {
   out=$(critical_package "$REPO" "$BASE" "$HEAD" 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
   cli=$(cd -P "$SANDBOX/fp/bin" && pwd)/overdrive
-  assert_line "$out" "overdrive: no critical review after the last change: task 2 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description (the guard records the review when it is dispatched); or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'"
+  assert_line "$out" "overdrive: no critical review after the last change: task 2 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description (the guard records the review when it is dispatched)."
   [ ! -e "$REPO/.overdrive/run/reviews" ] || [ -z "$(ls "$REPO/.overdrive/run/reviews")" ]
 }
 
@@ -337,7 +337,7 @@ test_critical_package_refuses_a_fix_round_without_a_new_review() {
   out=$(critical_package "$REPO" "$BASE" "$HEAD" 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
   cli=$(cd -P "$SANDBOX/fp/bin" && pwd)/overdrive
-  assert_line "$out" "overdrive: no critical review after the last change: task 1 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description (the guard records the review when it is dispatched); or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'"
+  assert_line "$out" "overdrive: no critical review after the last change: task 1 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description (the guard records the review when it is dispatched)."
   # Re-reviewing after the fix lets it through.
   (cd "$REPO" && od ledger _record-review 1) > /dev/null
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]

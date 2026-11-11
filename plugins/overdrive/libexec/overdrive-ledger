@@ -24,18 +24,20 @@ not given. Each added line is one of:
   Ruling: <what> — <why> — <cost if wrong>
   Note: <text>
   Preflight: <text>
-  Run: closed — <reason>      the run was abandoned; its tasks no longer gate a review or a PR
+  Run: closed — <reason>      the run was abandoned; its tasks no longer gate other branches
 status prints the last state of every task in the plan or the ledger, then "next <N>",
 the first task not complete, or "next none".
 unreviewed prints, one per line, each task marked critical (a "critical" word after its state,
 as in "Task 2: in-progress critical") that has no "reviewed by critical-reviewer" line after its
-last in-progress, implemented or fixing line: a change made after the last review needs another
-one. The PreToolUse guard writes that line when overdrive:critical-reviewer is dispatched with
-"Task N" in its description; add refuses it, and a "reviewing" line is a state only. Tasks
+last in-progress, implemented, fixing or "changed by builder" line: a change made after the last
+review needs another one. The PreToolUse guard writes those two lines when overdrive:critical-reviewer
+or overdrive:builder is dispatched with "Task N" in its description; add refuses them, and a
+"reviewing" line is a state only. Tasks
 that never started or only blocked and ledgers bound to another branch print nothing. A
 critical task stays listed after "complete" until a review follows its last change.
 --all-started also lists unmarked started tasks that are not complete or blocked;
---any-branch ignores the branch binding. A closed run prints nothing.
+--any-branch ignores the branch binding. A closed run stops gating once it is not on its bound
+branch (an unbound closed run gates nowhere); on that branch it keeps gating.
 mark-critical appends "Task N: in-progress critical" unless task N is already marked;
 overdrive brief calls it for a critical task.
 A ledger binds to the run's branch with a "Run: branch <name>" line, written by init or
@@ -118,7 +120,7 @@ FILENAME == ENVIRON["PLAN"] {
   }
   next
 }
-/^Task [0-9]+: reviewed by critical-reviewer$/ { next }
+/^Task [0-9]+: (reviewed by critical-reviewer|changed by builder)$/ { next }
 /^Task [0-9]+: / {
   n = $2 + 0; s = $0; sub(/^Task [0-9]+: /, "", s)
   if (!(n in st)) keys[++k] = n
@@ -179,6 +181,7 @@ unreviewed_awk='
   if (!(n in seen)) { seen[n] = 1; keys[++k] = n }
   if (rest ~ /^ critical( |$)/) crit[n] = 1
   if (s == "reviewed by critical-reviewer") { rev[n] = 1; next }
+  if (s == "changed by builder") { rev[n] = 0; started[n] = 1; next }
   if (st == "in-progress" || st == "implemented" || st == "fixing") rev[n] = 0
   if (st != "pending" && st != "blocked") started[n] = 1
   last[n] = st
@@ -197,11 +200,13 @@ END {
 }
 '
 
-# applies [ANY_BRANCH]: true unless the run is closed or bound to another branch.
+# applies [ANY_BRANCH]: true unless the run is bound to another branch or closed without a
+# binding. ANY_BRANCH ignores the binding.
 applies() {
   local run_branch cur
-  grep -q '^Run: closed — ' "$ledger" && return 1
   run_branch=$(sed -n 's/^Run: branch //p' "$ledger" | sed -n 1p)
+  # A closed run still holds its own branch: closing frees the others.
+  ! grep -q '^Run: closed — ' "$ledger" || [ -n "$run_branch" ] || return 1
   cur=$(current_branch)
   # A detached HEAD may be the run's own commit, so it counts as a match.
   [ -n "${1-}" ] || [ -z "$run_branch" ] || [ -z "$cur" ] || [ "$run_branch" = "$cur" ]
@@ -246,8 +251,8 @@ case $sub in
   add)
     [ $# -eq 1 ] || { usage >&2; exit 64; }
     case $1 in
-      'Task '*': reviewed by critical-reviewer'*)
-        od_die "the review record is written by the guard when overdrive:critical-reviewer is dispatched with \"Task N\" in its description; it cannot be added by hand" 65
+      'Task '*': reviewed by critical-reviewer'* | 'Task '*': changed by builder'*)
+        od_die "that record is written by the guard when overdrive:critical-reviewer or overdrive:builder is dispatched with \"Task N\" in its description; it cannot be added by hand" 65
         ;;
     esac
     valid_line "$1" || od_die "not a ledger line (see overdrive ledger --help): $1" 65
@@ -267,6 +272,13 @@ case $sub in
     resolve "$plan"
     applies || exit 0
     append_line "Task $1: reviewed by critical-reviewer"
+    ;;
+  _record-change)
+    [ $# -eq 1 ] || { usage >&2; exit 64; }
+    case $1 in *[!0-9]* | 0* | '') exit 64 ;; esac
+    resolve "$plan"
+    applies || exit 0
+    append_line "Task $1: changed by builder"
     ;;
   status)
     [ $# -eq 0 ] || { usage >&2; exit 64; }

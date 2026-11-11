@@ -337,3 +337,36 @@ test_only_the_guard_record_counts_as_a_review() {
   assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
   assert_eq 'Task 2: fixing round 1' "$(cd "$repo" && od ledger status | grep '^Task 2')"
 }
+
+test_add_refuses_the_change_record_the_guard_writes() {
+  local repo rc=0
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  (cd "$repo" && od ledger add 'Task 2: changed by builder') >/dev/null 2>&1 || rc=$?
+  assert_eq 65 "$rc" "exit code"
+}
+
+test_a_builder_change_needs_a_new_review() {
+  local repo line
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  for line in 'Task 2: in-progress critical' 'Task 2: implemented'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  (cd "$repo" && od ledger _record-review 2 && od ledger _record-change 2) >/dev/null
+  assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 'Task 2: implemented' "$(cd "$repo" && od ledger status | grep '^Task 2')"
+  (cd "$repo" && od ledger _record-review 2) >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_a_closed_run_gates_only_its_bound_branch() {
+  local repo
+  repo=$(plan_repo)
+  git -C "$repo" checkout -q -b feat-a
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical' && od ledger add 'Run: closed — abandoned') >/dev/null
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  git -C "$repo" checkout -q -b feat-b
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed --any-branch)"
+}
