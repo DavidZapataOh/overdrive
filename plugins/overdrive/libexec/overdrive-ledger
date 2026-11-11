@@ -28,10 +28,12 @@ the first task not complete, or "next none".
 unreviewed prints, one per line, each task marked critical (a "critical" word after its state,
 as in "Task 2: in-progress critical") that has no "reviewing" line after its last in-progress,
 implemented or fixing line: a change made after the last review needs another one. Tasks
-that never started or only blocked, finished ledgers (every started task complete) and
-ledgers of another branch print nothing. --all-started also lists unmarked started tasks
-that are not complete or blocked.
-Init records "Run: branch <name>" on the second line of a new ledger.
+that never started or only blocked and ledgers bound to another branch print nothing. A
+critical task stays listed after "complete" until a review follows its last change.
+--all-started also lists unmarked started tasks that are not complete or blocked.
+A ledger binds to the run's branch with a "Run: branch <name>" line, written by init or
+by the first add made on a branch other than the default one; until then it applies on
+every branch.
 USAGE
 }
 
@@ -125,6 +127,27 @@ END {
 }
 '
 
+# run_branch: the branch HEAD is on, empty when detached; on_default_branch tells whether it
+# is the repository's default one (origin's HEAD, else main or master).
+current_branch() { git -C "$root" symbolic-ref -q --short HEAD; }
+
+on_default_branch() {
+  local def
+  def=$(git -C "$root" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null) || def=''
+  [ -z "$def" ] || [ "$1" != "${def#origin/}" ] || return 0
+  case $1 in main | master) return 0 ;; esac
+  return 1
+}
+
+# bind_branch: append the "Run: branch" line once, when HEAD is on a non-default branch.
+# The caller holds the ledger lock.
+bind_branch() {
+  local cur
+  cur=$(current_branch) || return 0
+  ! on_default_branch "$cur" || return 0
+  grep -q '^Run: branch ' "$ledger" || printf 'Run: branch %s\n' "$cur" >> "$ledger"
+}
+
 # shellcheck disable=SC2016
 unreviewed_awk='
 /^Task [0-9]+: / {
@@ -144,9 +167,6 @@ END {
     for (j = i - 1; j >= 1 && keys[j] > x; j--) keys[j + 1] = keys[j]
     keys[j + 1] = x
   }
-  open = 0
-  for (i = 1; i <= k; i++) if (started[keys[i]] && last[keys[i]] != "complete") open = 1
-  if (!open) exit
   for (i = 1; i <= k; i++) {
     x = keys[i]
     if (!started[x] || rev[x]) continue
@@ -177,11 +197,9 @@ case $sub in
     if [ -f "$ledger" ]; then
       (check_header) || { od_unlock "$ledger.lock"; exit 65; }
     else
-      {
-        printf '%s%s\n' "$header_prefix" "$plan_abs"
-        branch=$(git -C "$root" symbolic-ref -q --short HEAD) && printf 'Run: branch %s\n' "$branch"
-        :
-      } > "$ledger" || { od_unlock "$ledger.lock"; od_die "cannot write $ledger"; }
+      printf '%s%s\n' "$header_prefix" "$plan_abs" > "$ledger" ||
+        { od_unlock "$ledger.lock"; od_die "cannot write $ledger"; }
+      bind_branch
     fi
     od_unlock "$ledger.lock"
     tmp=$run/active-ledger.$$.tmp
@@ -193,7 +211,12 @@ case $sub in
     [ $# -eq 1 ] || { usage >&2; exit 64; }
     valid_line "$1" || od_die "not a ledger line (see overdrive ledger --help): $1" 65
     resolve "$plan"
-    od_append "$ledger" "$1" || exit 1
+    od_lock "$ledger.lock" || od_die "cannot lock $ledger"
+    bind_branch
+    rc=0
+    printf '%s\n' "$1" >> "$ledger" || rc=1
+    od_unlock "$ledger.lock"
+    [ "$rc" -eq 0 ] || od_die "cannot write $ledger"
     ;;
   status)
     [ $# -eq 0 ] || { usage >&2; exit 64; }
@@ -213,8 +236,8 @@ case $sub in
     [ $# -eq 0 ] || { usage >&2; exit 64; }
     resolve "$plan"
     # A ledger of another branch belongs to another piece of work.
-    run_branch=$(sed -n '2s/^Run: branch //p' "$ledger")
-    if [ -n "$run_branch" ] && [ "$run_branch" != "$(git -C "$root" symbolic-ref -q --short HEAD)" ]; then
+    run_branch=$(sed -n 's/^Run: branch //p' "$ledger" | sed -n 1p)
+    if [ -n "$run_branch" ] && [ "$run_branch" != "$(current_branch)" ]; then
       exit 0
     fi
     awk -v all="$all_started" "$unreviewed_awk" "$ledger"

@@ -30,13 +30,12 @@ test_init_is_idempotent() {
   # The plan directory is the sanitized stem plus the checksum of the absolute path.
   ledger=$(sq "$repo")/.overdrive/run/cart-plan-$(printf %s "$plan_abs" | cksum | cut -d' ' -f1)/ledger.md
   assert_eq "$ledger" "$out"
-  assert_eq "# Overdrive ledger — plan: $plan_abs" "$(sed -n 1p "$ledger")"
-  assert_eq "Run: branch $(git -C "$repo" symbolic-ref --short HEAD)" "$(sed -n 2p "$ledger")"
+  assert_eq "# Overdrive ledger — plan: $plan_abs" "$(cat "$ledger")"
   (cd "$repo" && od ledger add 'Task 1: in-progress') >/dev/null
   again=$(cd "$repo" && od ledger init --plan "docs/plans/cart plan.md")
   assert_eq "$ledger" "$again"
-  assert_eq 'Task 1: in-progress' "$(sed -n 3p "$ledger")"
-  assert_eq 3 "$(wc -l < "$ledger" | tr -d ' ')"
+  assert_eq 'Task 1: in-progress' "$(sed -n 2p "$ledger")"
+  assert_eq 2 "$(wc -l < "$ledger" | tr -d ' ')"
   assert_eq "$ledger" "$(cd "$repo" && od ledger path)"
 }
 
@@ -94,7 +93,7 @@ lines" 'task 1: complete'; do
     'Note: resumed after a restart' 'Preflight: no produces/consumes conflicts' 'Task 2: blocked'; do
     (cd "$repo" && od ledger add "$line") >/dev/null
   done
-  assert_eq 8 "$(wc -l < "$ledger" | tr -d ' ')"
+  assert_eq 7 "$(wc -l < "$ledger" | tr -d ' ')"
 }
 
 test_ruling_requires_three_parts() {
@@ -174,7 +173,7 @@ test_parallel_appends_keep_every_line() {
   for i in $(seq 1 20); do
     [ ! -s "out$i" ] || { cat "out$i" >&2; return 1; }
   done
-  assert_eq 22 "$(wc -l < "$ledger" | tr -d ' ')"
+  assert_eq 21 "$(wc -l < "$ledger" | tr -d ' ')"
   for i in $(seq 1 20); do
     assert_eq 1 "$(grep -cx "Note: writer $i reporting a long enough line to expose torn writes" "$ledger")" "writer $i"
   done
@@ -220,25 +219,64 @@ test_unreviewed_all_started_lists_unmarked_open_tasks() {
 2" "$(cd "$repo" && od ledger unreviewed --all-started)"
 }
 
-test_unreviewed_treats_a_finished_ledger_as_done() {
-  local repo
+test_unreviewed_keeps_gating_a_critical_task_completed_without_a_review() {
+  local repo line
   repo=$(plan_repo)
   (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
-  for line in 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: complete'; do
+  for line in 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: complete' \
+    'Task 2: in-progress' 'Task 2: implemented' 'Task 2: complete'; do
     (cd "$repo" && od ledger add "$line") >/dev/null
   done
-  assert_eq '' "$(cd "$repo" && od ledger unreviewed --all-started)"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed --all-started)"
 }
 
-test_unreviewed_applies_only_on_the_runs_branch() {
+test_init_on_a_feature_branch_binds_the_ledger_to_it() {
+  local repo
+  repo=$(plan_repo)
+  git -C "$repo" checkout -q -b feat-a
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical') >/dev/null
+  assert_eq 'Run: branch feat-a' "$(sed -n 2p "$(cd "$repo" && od ledger path)")"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  git -C "$repo" checkout -q -b feat-b
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed --all-started)"
+  git -C "$repo" checkout -q feat-a
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_ledger_started_on_the_default_branch_binds_at_the_first_add_on_a_feature_branch() {
+  local repo ledger
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  ledger=$(cd "$repo" && od ledger path)
+  (cd "$repo" && od ledger add 'Note: starting') >/dev/null
+  ! grep -q '^Run: branch' "$ledger"
+  git -C "$repo" checkout -q -b feat
+  (cd "$repo" && od ledger add 'Task 1: in-progress critical' && od ledger add 'Task 1: implemented') >/dev/null
+  assert_eq 1 "$(grep -c '^Run: branch feat$' "$ledger")"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  git -C "$repo" checkout -q -b other
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_unbound_ledger_gates_on_any_branch() {
   local repo
   repo=$(plan_repo)
   (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical') >/dev/null
   assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
-  git -C "$repo" checkout -q -b elsewhere
-  assert_eq '' "$(cd "$repo" && od ledger unreviewed --all-started)"
-  git -C "$repo" checkout -q -
+  git -C "$repo" checkout -q -b feat
   assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_ledger_with_a_run_line_from_before_keeps_working() {
+  local repo ledger
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  ledger=$(cd "$repo" && od ledger path)
+  printf 'Run: branch master\nTask 1: in-progress critical\n' >> "$ledger"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger add 'Task 1: implemented') >/dev/null
+  assert_eq 1 "$(grep -c '^Run: branch' "$ledger")"
 }
 
 test_unreviewed_without_a_ledger_fails_like_the_other_readers() {

@@ -613,8 +613,13 @@ agent_event() {
 
 # ledger_repo LINE...: a repo with a two-task plan and an active ledger holding LINEs.
 ledger_repo() {
-  local repo line
-  repo=$(make_repo)
+  ledger_repo_at "$(make_repo)" "$@"
+}
+
+# ledger_repo_at REPO LINE...: the same inside an existing repo, on its current branch.
+ledger_repo_at() {
+  local repo=$1 line
+  shift
   write_file "$repo" docs/plan.md '# Plan
 
 ### Task 1: Charges
@@ -674,16 +679,38 @@ test_allows_gated_calls_without_a_ledger() {
   assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
 }
 
-test_allows_gated_calls_with_a_finished_or_other_branch_ledger() {
+test_allows_gated_calls_with_a_ledger_bound_to_another_branch() {
   local repo
-  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented')
-  git -C "$repo" checkout -q -b new-change
+  repo=$(make_repo)
+  git -C "$repo" checkout -q -b feat-a
+  repo=$(ledger_repo_at "$repo" 'Task 1: in-progress critical' 'Task 1: implemented')
+  git -C "$repo" checkout -q -b feat-b
   assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
   assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
-  git -C "$repo" checkout -q -
+  git -C "$repo" checkout -q feat-a
   assert_denies "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")" "task 1 has $GATE_TAIL"
-  (cd "$repo" && od ledger add 'Task 1: complete') >/dev/null
-  assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
+}
+
+test_denies_a_critical_task_completed_without_a_review() {
+  local repo
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: complete')
+  assert_denies "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")" "task 1 has $GATE_TAIL"
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 1 has $GATE_TAIL"
+}
+
+test_ledger_started_on_main_gates_on_the_feature_branch_created_after() {
+  local repo
+  repo=$(ledger_repo)
+  git -C "$repo" checkout -q -b feat
+  (cd "$repo" && od ledger add 'Task 1: in-progress critical' && od ledger add 'Task 1: implemented') >/dev/null
+  assert_denies "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")" "task 1 has $GATE_TAIL"
+}
+
+test_unbound_ledger_gates_the_final_review_on_a_feature_branch() {
+  local repo
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented')
+  git -C "$repo" checkout -q -b feat
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 1 has $GATE_TAIL"
 }
 
 test_pull_request_pattern_needs_the_command_itself() {

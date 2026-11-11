@@ -380,14 +380,16 @@ test_critical_package_without_a_ledger_keeps_its_behavior() {
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
 }
 
-test_critical_package_ignores_a_ledger_of_another_branch_and_finished_ones() {
+test_critical_package_ignores_a_ledger_bound_to_another_branch() {
   critical_range
+  git -C "$REPO" checkout -q -b feat-a
   task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented'
-  git -C "$REPO" checkout -q -b next-change
+  git -C "$REPO" checkout -q -b feat-b
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
-  git -C "$REPO" checkout -q -
-  (cd "$REPO" && od ledger add 'Task 1: complete') >/dev/null
-  [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
+  git -C "$REPO" checkout -q feat-a
+  local rc=0
+  critical_package "$REPO" "$BASE" "$HEAD" >/dev/null 2>&1 || rc=$?
+  assert_eq 65 "$rc"
 }
 
 test_critical_package_ignores_standard_tasks_of_a_mixed_slice() {
