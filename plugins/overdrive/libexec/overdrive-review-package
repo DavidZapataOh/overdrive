@@ -143,7 +143,7 @@ if [ "$require" -eq 1 ] && [ "$(lane_rank "$effective")" -eq 2 ]; then
   if [ -n "$open" ]; then
     case $open in *,*) verb=have noun=tasks ;; *) verb=has noun=task ;; esac
     cli=$OVERDRIVE_HOME/bin/overdrive
-    od_die "no critical review after the last change: $noun $open $verb none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $cli ledger add 'Task <N>: reviewing'" 65
+    od_die "no critical review after the last change: $noun $open $verb none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $cli ledger add 'Task <N>: reviewing'; or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'" 65
   fi
 fi
 

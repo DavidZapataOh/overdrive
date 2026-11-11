@@ -285,3 +285,28 @@ test_unreviewed_without_a_ledger_fails_like_the_other_readers() {
   (cd "$repo" && od ledger unreviewed) >/dev/null 2>&1 || rc=$?
   assert_eq 66 "$rc"
 }
+
+test_closed_run_and_flags_of_unreviewed() {
+  local repo
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical') >/dev/null
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger add 'Run: closed — abandoned') >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed --all-started)"
+  rc=0
+  (cd "$repo" && od ledger add 'Run: closed —') >/dev/null 2>&1 || rc=$?
+  assert_eq 65 "$rc"
+}
+
+test_any_branch_flag_ignores_the_binding() {
+  local repo
+  repo=$(plan_repo)
+  git -C "$repo" checkout -q -b feat-a
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" && od ledger add 'Task 1: in-progress critical') >/dev/null
+  git -C "$repo" checkout -q -
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed --any-branch)"
+  git -C "$repo" checkout -q --detach feat-a
+  assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+}

@@ -746,3 +746,43 @@ test_unrelated_calls_never_read_the_ledger() {
   counted_guard "$dir" "$(bash_event 'gh pr create --title t' "$repo")" >/dev/null
   assert_eq 'unreviewed' "$(cat "$dir/calls")"
 }
+
+test_brief_of_a_critical_task_marks_it_so_the_unmarked_sequence_is_denied() {
+  local repo
+  repo=$(ledger_repo)
+  (cd "$repo" && od brief --plan docs/plan.md --task 1 --lane critical && od brief --plan docs/plan.md --task 2 --lane critical) >/dev/null
+  # A standard task's brief leaves the ledger alone.
+  for line in 'Task 1: in-progress' 'Task 1: reviewing' 'Task 1: fixing round 1 done' 'Task 2: in-progress' 'Task 2: implemented'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "tasks 1, 2 have $GATE_TAIL"
+  assert_denies "$(bash_event 'gh pr create --title t' "$repo")" "tasks 1, 2 have $GATE_TAIL"
+  assert_denies "$(bash_event 'gh pr merge 4 --squash' "$repo")" "tasks 1, 2 have $GATE_TAIL"
+}
+
+test_an_abandoned_run_can_be_closed() {
+  local repo
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented')
+  assert_denies "$(bash_event 'gh pr create --title t' "$repo")" "or, if this run was abandoned, '$(plugin_dir)/bin/overdrive' ledger add 'Run: closed — <reason>'"
+  (cd "$repo" && od ledger add 'Run: closed — superseded by a new plan') >/dev/null
+  assert_allows "$(bash_event 'gh pr create --title t' "$repo")"
+  assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
+}
+
+test_merge_is_gated_from_the_default_branch_and_a_detached_head() {
+  local repo
+  repo=$(make_repo)
+  git -C "$repo" checkout -q -b feat-a
+  repo=$(ledger_repo_at "$repo" 'Task 1: in-progress critical' 'Task 1: implemented')
+  git -C "$repo" checkout -q -
+  assert_allows "$(bash_event 'gh pr create --title t' "$repo")"
+  assert_denies "$(bash_event 'gh pr merge 4 --squash' "$repo")" "task 1 has $GATE_TAIL"
+  git -C "$repo" checkout -q --detach feat-a
+  assert_denies "$(bash_event 'gh pr create --title t' "$repo")" "task 1 has $GATE_TAIL"
+}
+
+test_final_review_deny_tells_how_to_close_an_open_standard_task() {
+  local repo
+  repo=$(ledger_repo 'Task 1: in-progress' 'Task 1: implemented')
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "mark it complete, or critical and review it"
+}

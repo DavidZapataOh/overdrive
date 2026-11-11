@@ -413,3 +413,18 @@ test_brief_memory_matching_folds_accents() {
   assert_line "$out" '- [Cobro](cobro.md) — CANCELACIÓN del plan'
   assert_no_line "$out" 'fuentes'
 }
+
+test_brief_marks_a_critical_task_in_the_ledger() {
+  isolate
+  local repo plan ledger
+  repo=$(make_repo)
+  plan=$(fixtures)/plan.md
+  # No ledger yet: the brief is written and nothing else happens.
+  (cd "$repo" && od brief --plan "$plan" --task 2 --lane critical) >/dev/null
+  (cd "$repo" && od ledger init --plan "$plan") >/dev/null
+  ledger=$(cd "$repo" && od ledger path)
+  (cd "$repo" && od brief --plan "$plan" --task 1 --lane standard) >/dev/null
+  ! grep -q '^Task 1:' "$ledger"
+  (cd "$repo" && od brief --plan "$plan" --task 2 --lane critical && od brief --plan "$plan" --task 2 --lane critical) >/dev/null
+  assert_eq 'Task 2: in-progress critical' "$(grep '^Task ' "$ledger")"
+}

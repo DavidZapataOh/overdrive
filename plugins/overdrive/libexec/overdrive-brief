@@ -340,4 +340,8 @@ tmp=$out.tmp.$$
 } > "$tmp" || { rm -f "$tmp"; od_die "cannot write $out" 1; }
 # A rename is atomic, so a reader or a parallel writer never sees half a brief.
 mv -f "$tmp" "$out" || { rm -f "$tmp"; od_die "cannot write $out" 1; }
+if [ -z "$has_text" ] && [ "$(sed -n '/^## Lane$/{n;n;p;q;}' "$out")" = 'lane critical' ]; then
+  # The mark is what makes the ledger hold the final review and the PR for this task.
+  "$BASH" "$OVERDRIVE_HOME/bin/overdrive" ledger mark-critical --plan "$plan" "$task" > /dev/null 2>&1 || true
+fi
 printf '%s\n' "$out"

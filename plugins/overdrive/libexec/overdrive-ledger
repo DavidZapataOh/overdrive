@@ -12,7 +12,8 @@ Usage: overdrive ledger init --plan FILE
        overdrive ledger status [--plan FILE]
        overdrive ledger path [--plan FILE]
        overdrive ledger rulings [--plan FILE]
-       overdrive ledger unreviewed [--all-started] [--plan FILE]
+       overdrive ledger unreviewed [--all-started] [--any-branch] [--plan FILE]
+       overdrive ledger mark-critical [--plan FILE] N
 
 The ledger of plan dir/<stem>.md is .overdrive/run/<stem>-<cksum>/ledger.md (stem limited
 to [A-Za-z0-9._-], cksum of the plan's absolute path); its first line is
@@ -23,6 +24,7 @@ not given. Each added line is one of:
   Ruling: <what> — <why> — <cost if wrong>
   Note: <text>
   Preflight: <text>
+  Run: closed — <reason>      the run was abandoned; its tasks no longer gate a review or a PR
 status prints the last state of every task in the plan or the ledger, then "next <N>",
 the first task not complete, or "next none".
 unreviewed prints, one per line, each task marked critical (a "critical" word after its state,
@@ -30,7 +32,10 @@ as in "Task 2: in-progress critical") that has no "reviewing" line after its las
 implemented or fixing line: a change made after the last review needs another one. Tasks
 that never started or only blocked and ledgers bound to another branch print nothing. A
 critical task stays listed after "complete" until a review follows its last change.
---all-started also lists unmarked started tasks that are not complete or blocked.
+--all-started also lists unmarked started tasks that are not complete or blocked;
+--any-branch ignores the branch binding. A closed run prints nothing.
+mark-critical appends "Task N: in-progress critical" unless task N is already marked;
+overdrive brief calls it for a critical task.
 A ledger binds to the run's branch with a "Run: branch <name>" line, written by init or
 by the first add made on a branch other than the default one; until then it applies on
 every branch.
@@ -84,6 +89,10 @@ valid_line() {
       cost=${rest#* — }
       case $cost in *' — '*) return 1 ;; esac
       [ -n "${what//[[:space:]]/}" ] && [ -n "${why//[[:space:]]/}" ] && [ -n "${cost//[[:space:]]/}" ]
+      ;;
+    'Run: closed — '*)
+      rest=${l#'Run: closed — '}
+      [ -n "${rest//[[:space:]]/}" ]
       ;;
     'Note: '* | 'Preflight: '*)
       rest=${l#*: }
@@ -148,6 +157,16 @@ bind_branch() {
   grep -q '^Run: branch ' "$ledger" || printf 'Run: branch %s\n' "$cur" >> "$ledger"
 }
 
+# append_line LINE: bind the branch if needed and append LINE, under the lock.
+append_line() {
+  local rc=0
+  od_lock "$ledger.lock" || od_die "cannot lock $ledger"
+  bind_branch
+  printf '%s\n' "$1" >> "$ledger" || rc=1
+  od_unlock "$ledger.lock"
+  [ "$rc" -eq 0 ] || od_die "cannot write $ledger"
+}
+
 # shellcheck disable=SC2016
 unreviewed_awk='
 /^Task [0-9]+: / {
@@ -177,11 +196,15 @@ END {
 
 sub=${1-}
 [ $# -eq 0 ] || shift
-plan='' all_started=''
-if [ "$sub" = unreviewed ] && [ "${1-}" = --all-started ]; then
-  all_started=1
+plan='' all_started='' any_branch=''
+while [ "$sub" = unreviewed ]; do
+  case ${1-} in
+    --all-started) all_started=1 ;;
+    --any-branch) any_branch=1 ;;
+    *) break ;;
+  esac
   shift
-fi
+done
 if [ "${1-}" = --plan ]; then
   [ $# -ge 2 ] || { usage >&2; exit 64; }
   plan=$2
@@ -211,12 +234,13 @@ case $sub in
     [ $# -eq 1 ] || { usage >&2; exit 64; }
     valid_line "$1" || od_die "not a ledger line (see overdrive ledger --help): $1" 65
     resolve "$plan"
-    od_lock "$ledger.lock" || od_die "cannot lock $ledger"
-    bind_branch
-    rc=0
-    printf '%s\n' "$1" >> "$ledger" || rc=1
-    od_unlock "$ledger.lock"
-    [ "$rc" -eq 0 ] || od_die "cannot write $ledger"
+    append_line "$1"
+    ;;
+  mark-critical)
+    [ $# -eq 1 ] || { usage >&2; exit 64; }
+    case $1 in *[!0-9]* | 0* | '') exit 0 ;; esac
+    resolve "$plan"
+    grep -Eq "^Task $1: [^ ]+( round [0-9]+)? critical( |\$)" "$ledger" || append_line "Task $1: in-progress critical"
     ;;
   status)
     [ $# -eq 0 ] || { usage >&2; exit 64; }
@@ -237,7 +261,10 @@ case $sub in
     resolve "$plan"
     # A ledger of another branch belongs to another piece of work.
     run_branch=$(sed -n 's/^Run: branch //p' "$ledger" | sed -n 1p)
-    if [ -n "$run_branch" ] && [ "$run_branch" != "$(current_branch)" ]; then
+    grep -q '^Run: closed — ' "$ledger" && exit 0
+    cur=$(current_branch)
+    # A detached HEAD may be the run's own commit, so it counts as a match.
+    if [ -z "$any_branch" ] && [ -n "$run_branch" ] && [ -n "$cur" ] && [ "$run_branch" != "$cur" ]; then
       exit 0
     fi
     awk -v all="$all_started" "$unreviewed_awk" "$ledger"

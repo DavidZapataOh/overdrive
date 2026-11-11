@@ -9,6 +9,7 @@
 | `implemented` | go to its review |
 | `reviewing` | run the review again (the package is cheap) |
 | `fixing round K` | continue the loop at round K; the findings file is in `.overdrive/run/reviews/` |
+| `Run: closed — <reason>` | the run was abandoned; do not resume it, `OD ledger init` a new plan |
 | `blocked` | check whether the human's command has been run; if so retry, otherwise skip to the next independent task |
 
 The user may name a task ("continue from task 8"): if the ledger and the request disagree, the ledger's completed tasks stand and the request picks where to start among the incomplete ones; write a Ruling for any gap. Tasks before the start point that are not `complete` in the ledger are reported, never silently run or skipped.

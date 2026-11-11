@@ -229,26 +229,30 @@ own_read_only_cli() {
   plain_words "$rest"
 }
 
-# review_gate WHAT [--all-started]: deny WHAT while the active ledger of the repository
-# around cwd holds a critical task with no critical review after its last change. Any
-# failure to read the ledger lets the call through.
+# review_gate WHAT EXTRA [FLAG...]: deny WHAT while the active ledger of the repository
+# around cwd holds a critical task with no critical review after its last change. EXTRA
+# is added to the deny text; FLAGs go to overdrive ledger unreviewed. Any failure to read
+# the ledger lets the call through.
 review_gate() {
-  local root open verb=has noun=task cli
+  local root open verb=has noun=task cli what=$1 extra=$2
+  shift 2
   [ -n "$cwd" ] && _od_find_root "$cwd" || return 0
   root=$_OD_ROOT
   [ -f "$root/.overdrive/run/active-ledger" ] || return 0
-  open=$(cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" ledger unreviewed ${2:+"$2"} 2>/dev/null </dev/null | paste -sd, - | sed 's/,/, /g') || return 0
+  open=$(cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" ledger unreviewed "$@" 2>/dev/null </dev/null | paste -sd, - | sed 's/,/, /g') || return 0
   [ -n "$open" ] || return 0
   case $open in *,*) verb=have noun=tasks ;; esac
   cli="'$plugin/bin/overdrive'"
   guard
-  deny "$1 is blocked: $noun $open $verb no critical review after the last change. For each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then run $cli ledger add 'Task <N>: reviewing'."
+  deny "$what is blocked: $noun $open $verb no critical review after the last change. For each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then run $cli ledger add 'Task <N>: reviewing'${extra:+ ($extra)}; or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'."
 }
 
 agent_tool() {
   json_extract_string subagent_type "$input" || return 0
   case $JSON_VALUE in
-    final-reviewer | overdrive:final-reviewer) review_gate "Dispatching the final review" --all-started ;;
+    final-reviewer | overdrive:final-reviewer)
+      review_gate "Dispatching the final review" "a standard or direct task still open at the end of the slice: mark it complete, or critical and review it" --all-started
+      ;;
   esac
 }
 
@@ -260,7 +264,11 @@ bash_tool() {
   json_extract_string command "$input" || return 0
   cmd=$JSON_VALUE
   if [[ $cmd =~ $GH_PR_RE ]]; then
-    review_gate "Opening or merging the pull request"
+    # A merge can run from the default branch, away from the run's own.
+    case $cmd in
+      *merge*) review_gate "Opening or merging the pull request" '' --any-branch ;;
+      *) review_gate "Opening or merging the pull request" '' ;;
+    esac
   fi
   if own_read_only_cli; then
     printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Overdrive read-only command"}}'
