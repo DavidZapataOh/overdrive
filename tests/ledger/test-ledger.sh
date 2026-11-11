@@ -178,3 +178,23 @@ test_parallel_appends_keep_every_line() {
     assert_eq 1 "$(grep -cx "Note: writer $i reporting a long enough line to expose torn writes" "$ledger")" "writer $i"
   done
 }
+
+test_unreviewed_lists_started_tasks_without_a_review_after_their_last_change() {
+  local repo
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  for line in 'Task 3: pending' 'Task 2: implemented' 'Task 2: reviewing' 'Task 2: fixing round 1' \
+    'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger add 'Task 2: reviewing') >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_unreviewed_without_a_ledger_fails_like_the_other_readers() {
+  local repo rc=0
+  repo=$(make_repo)
+  (cd "$repo" && od ledger unreviewed) >/dev/null 2>&1 || rc=$?
+  assert_eq 66 "$rc"
+}

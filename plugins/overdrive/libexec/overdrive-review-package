@@ -15,7 +15,9 @@ risk classification of the diff, the commits, the diff stat and the diff with te
 lines of context, and prints its path. LANE (direct, standard, critical) can only
 raise the lane the classifier gives. The package names the newest green evidence recorded at HEAD of the range.
 --require-green refuses a standard or critical package without one (exit 65), unless
---no-tests gives the reason nothing is testable. Exit 65 also when base is not an
+--no-tests gives the reason nothing is testable. In the critical lane it also refuses (exit 65)
+while the active ledger holds a started task with no "reviewing" line after its last change.
+Exit 65 also when base is not an
 ancestor of head or the range is empty.
 USAGE
 }
@@ -133,6 +135,14 @@ if [ "$green" = none ] && [ -n "$notests" ]; then
   green="none (no tests: $notests)"
 elif [ "$green" = none ] && [ "$require" -eq 1 ] && [ "$(lane_rank "$effective")" -gt 0 ]; then
   od_die "no green evidence at ${head_sha:0:7}: run overdrive evidence green -- <test command> after the last commit, or pass --no-tests <reason> when nothing here is testable" 65
+fi
+
+if [ "$require" -eq 1 ] && [ "$(lane_rank "$effective")" -eq 2 ]; then
+  # No active ledger, or one that cannot be read, means no per-task record to hold against.
+  open=$(cd "$root" && "$BASH" "$OVERDRIVE_HOME/bin/overdrive" ledger unreviewed 2> /dev/null < /dev/null | paste -sd, - | sed 's/,/, /g') || open=''
+  if [ -n "$open" ]; then
+    od_die "no critical review after the last change of task $open: for each, run overdrive review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then overdrive ledger add 'Task <N>: reviewing'" 65
+  fi
 fi
 
 {
