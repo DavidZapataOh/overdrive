@@ -9,7 +9,7 @@
 
 [![ci](https://github.com/DavidZapataOh/overdrive/actions/workflows/ci.yml/badge.svg)](https://github.com/DavidZapataOh/overdrive/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FDavidZapataOh%2Foverdrive%2Fmain%2Fplugins%2Foverdrive%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=informational)](CHANGELOG.md)
 [![Skills](https://img.shields.io/badge/skills-14-8957e5.svg)](#skills)
 
 </div>
