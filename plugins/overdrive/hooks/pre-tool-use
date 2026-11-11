@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse guard: pinned tests stay untouched until green, the default branch is
 # never pushed to, a critical run's final review and pull request wait for every task's
-# review, and every session marks the repositories it changed.
+# review (recorded here, when the critical reviewer is dispatched), and every session
+# marks the repositories it changed.
 # It runs before every edit and shell command, so the common call (no pins, no push,
 # no file-writing command) uses builtins only. Pins cost one cksum to check the seal;
 # a shell command that pushes or may write a pinned file costs one awk to tokenize.
@@ -244,7 +245,29 @@ review_gate() {
   case $open in *,*) verb=have noun=tasks ;; esac
   cli="'$plugin/bin/overdrive'"
   guard
-  deny "$what is blocked: $noun $open $verb no critical review after the last change. For each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then run $cli ledger add 'Task <N>: reviewing'${extra:+ ($extra)}; or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'."
+  deny "$what is blocked: $noun $open $verb no critical review after the last change. For each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description (the guard records the review when it is dispatched${extra:+; $extra}); or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'."
+}
+
+# record_review: a critical-reviewer dispatch is the proof that a task was reviewed. The
+# task comes from the call's own text, never from a line the controller wrote.
+record_review() {
+  local root desc='' prompt='' re_task='Task ([1-9][0-9]*)' re_path='task-([1-9][0-9]*)' n
+  json_extract_string description "$input" && desc=$JSON_VALUE
+  if [[ $desc =~ $re_task ]]; then
+    n=${BASH_REMATCH[1]}
+  else
+    json_extract_string prompt "$input" && prompt=$JSON_VALUE
+    if [[ $prompt =~ $re_task ]] || [[ $prompt =~ $re_path ]]; then
+      n=${BASH_REMATCH[1]}
+    else
+      guard
+      deny "Dispatching the critical review is blocked: name the task it reviews, with a description like 'Critical review Task N'."
+    fi
+  fi
+  [ -n "$cwd" ] && _od_find_root "$cwd" || return 0
+  root=$_OD_ROOT
+  [ -f "$root/.overdrive/run/active-ledger" ] || return 0
+  (cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" ledger _record-review "$n" >/dev/null 2>&1 </dev/null) || :
 }
 
 agent_tool() {
@@ -253,16 +276,28 @@ agent_tool() {
     final-reviewer | overdrive:final-reviewer)
       review_gate "Dispatching the final review" "a standard or direct task still open at the end of the slice: mark it complete, or critical and review it" --all-started
       ;;
+    critical-reviewer | overdrive:critical-reviewer) record_review ;;
   esac
 }
 
 # Word boundaries keep a commit message or a grep pattern that mentions the command from matching.
 GH_PR_RE='(^|[;&|( ])gh ([^;&|]* )?pr +(create|merge)([ ;&|]|$)'
 
+# The ledger's internal entry point for the review record, run by the shell.
+RECORD_RE='(^|[^A-Za-z0-9_-])overdrive(-ledger)?["'"'"']? ([^;&|]* )?_record-review([ ;&|"'"'"']|$)'
+
 bash_tool() {
   local croot_pins='' need='' ro='' a roots=''
   json_extract_string command "$input" || return 0
   cmd=$JSON_VALUE
+  case $cmd in
+    *_record-review*)
+      if [[ $cmd =~ $RECORD_RE ]]; then
+        guard
+        deny "The review record is written by the guard when overdrive:critical-reviewer is dispatched with \"Task N\" in its description; it is not a command to run."
+      fi
+      ;;
+  esac
   if [[ $cmd =~ $GH_PR_RE ]]; then
     # A merge can run from the default branch, away from the run's own.
     case $cmd in

@@ -184,11 +184,12 @@ test_unreviewed_lists_critical_tasks_without_a_review_after_their_last_change() 
   repo=$(plan_repo)
   (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
   for line in 'Task 3: pending' 'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewing' \
-    'Task 2: fixing round 1' 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete'; do
+    'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: complete'; do
     (cd "$repo" && od ledger add "$line") >/dev/null
   done
+  (cd "$repo" && od ledger _record-review 2 && od ledger _record-review 1 && od ledger add 'Task 2: fixing round 1') >/dev/null
   assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
-  (cd "$repo" && od ledger add 'Task 2: reviewing') >/dev/null
+  (cd "$repo" && od ledger _record-review 2) >/dev/null
   assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
 }
 
@@ -196,10 +197,11 @@ test_unreviewed_ignores_unmarked_and_blocked_tasks() {
   local repo line
   repo=$(plan_repo)
   (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
-  for line in 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete' \
+  for line in 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: complete' \
     'Task 2: in-progress' 'Task 2: implemented' 'Task 2: complete' 'Task 3: blocked sudo apt install libfoo'; do
     (cd "$repo" && od ledger add "$line") >/dev/null
   done
+  (cd "$repo" && od ledger _record-review 1) >/dev/null
   assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
   assert_eq '' "$(cd "$repo" && od ledger unreviewed --all-started)"
   # Blocked after work started stays gated; so does an unmarked task still open.
@@ -309,4 +311,29 @@ test_any_branch_flag_ignores_the_binding() {
   assert_eq 1 "$(cd "$repo" && od ledger unreviewed --any-branch)"
   git -C "$repo" checkout -q --detach feat-a
   assert_eq 1 "$(cd "$repo" && od ledger unreviewed)"
+}
+
+test_add_refuses_the_review_record_the_guard_writes() {
+  local repo rc=0 out
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  out=$(cd "$repo" && od ledger add 'Task 2: reviewed by critical-reviewer' 2>&1) || rc=$?
+  assert_eq 65 "$rc" "exit code"
+  case $out in *"written by the guard"*) ;; *) printf 'message lacks the reason: %s\n' "$out" >&2; return 1 ;; esac
+  assert_eq 0 "$(grep -c reviewed "$(cd "$repo" && od ledger path)")"
+}
+
+test_only_the_guard_record_counts_as_a_review() {
+  local repo line
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md") >/dev/null
+  for line in 'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewing' 'Task 2: complete'; do
+    (cd "$repo" && od ledger add "$line") >/dev/null
+  done
+  assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger _record-review 2) >/dev/null
+  assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
+  (cd "$repo" && od ledger add 'Task 2: fixing round 1') >/dev/null
+  assert_eq 2 "$(cd "$repo" && od ledger unreviewed)"
+  assert_eq 'Task 2: fixing round 1' "$(cd "$repo" && od ledger status | grep '^Task 2')"
 }

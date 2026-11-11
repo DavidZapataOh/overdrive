@@ -16,7 +16,7 @@ lines of context, and prints its path. LANE (direct, standard, critical) can onl
 raise the lane the classifier gives. The package names the newest green evidence recorded at HEAD of the range.
 --require-green refuses a standard or critical package without one (exit 65), unless
 --no-tests gives the reason nothing is testable. In the critical lane it also refuses (exit 65)
-while a task the active ledger marks critical has no "reviewing" line after its last change.
+while a task the active ledger marks critical has no critical-reviewer dispatch recorded after its last change.
 Exit 65 also when base is not an
 ancestor of head or the range is empty.
 USAGE
@@ -143,7 +143,7 @@ if [ "$require" -eq 1 ] && [ "$(lane_rank "$effective")" -eq 2 ]; then
   if [ -n "$open" ]; then
     case $open in *,*) verb=have noun=tasks ;; *) verb=has noun=task ;; esac
     cli=$OVERDRIVE_HOME/bin/overdrive
-    od_die "no critical review after the last change: $noun $open $verb none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $cli ledger add 'Task <N>: reviewing'; or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'" 65
+    od_die "no critical review after the last change: $noun $open $verb none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description (the guard records the review when it is dispatched); or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'" 65
   fi
 fi
 

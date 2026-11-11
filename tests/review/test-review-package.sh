@@ -288,7 +288,10 @@ task_ledger() {
 ### Task 2: Refunds'
   (cd "$repo" && od ledger init --plan docs/plan.md) > /dev/null
   for line in "$@"; do
-    (cd "$repo" && od ledger add "$line") > /dev/null
+    case $line in
+      Task\ [0-9]*': reviewed by critical-reviewer') (cd "$repo" && od ledger _record-review "$(printf '%s' "$line" | tr -dc 0-9)") > /dev/null ;;
+      *) (cd "$repo" && od ledger add "$line") > /dev/null ;;
+    esac
   done
 }
 
@@ -310,33 +313,33 @@ EOS
 
 test_critical_package_passes_when_every_task_is_reviewed_after_its_last_change() {
   critical_range
-  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete' \
-    'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewing' 'Task 2: fixing round 1' 'Task 2: reviewing' 'Task 2: complete'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewed by critical-reviewer' 'Task 1: complete' \
+    'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewed by critical-reviewer' 'Task 2: fixing round 1' 'Task 2: reviewed by critical-reviewer' 'Task 2: complete'
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
 }
 
 test_critical_package_refuses_a_task_never_reviewed() {
   critical_range
-  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete' 'Task 2: in-progress critical' 'Task 2: implemented'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewed by critical-reviewer' 'Task 1: complete' 'Task 2: in-progress critical' 'Task 2: implemented'
   local out rc=0
   out=$(critical_package "$REPO" "$BASE" "$HEAD" 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
   cli=$(cd -P "$SANDBOX/fp/bin" && pwd)/overdrive
-  assert_line "$out" "overdrive: no critical review after the last change: task 2 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $cli ledger add 'Task <N>: reviewing'; or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'"
+  assert_line "$out" "overdrive: no critical review after the last change: task 2 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description (the guard records the review when it is dispatched); or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'"
   [ ! -e "$REPO/.overdrive/run/reviews" ] || [ -z "$(ls "$REPO/.overdrive/run/reviews")" ]
 }
 
 test_critical_package_refuses_a_fix_round_without_a_new_review() {
   critical_range
-  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: fixing round 1' \
-    'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewing' 'Task 2: complete'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewed by critical-reviewer' 'Task 1: fixing round 1' \
+    'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewed by critical-reviewer' 'Task 2: complete'
   local out rc=0
   out=$(critical_package "$REPO" "$BASE" "$HEAD" 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
   cli=$(cd -P "$SANDBOX/fp/bin" && pwd)/overdrive
-  assert_line "$out" "overdrive: no critical review after the last change: task 1 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $cli ledger add 'Task <N>: reviewing'; or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'"
+  assert_line "$out" "overdrive: no critical review after the last change: task 1 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description (the guard records the review when it is dispatched); or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'"
   # Re-reviewing after the fix lets it through.
-  (cd "$REPO" && od ledger add 'Task 1: reviewing') > /dev/null
+  (cd "$REPO" && od ledger _record-review 1) > /dev/null
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
 }
 
@@ -351,7 +354,7 @@ test_critical_package_names_every_uncovered_task() {
 
 test_critical_package_ignores_tasks_not_started() {
   critical_range
-  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 2: pending'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewed by critical-reviewer' 'Task 2: pending'
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
 }
 
@@ -396,7 +399,7 @@ test_critical_package_ignores_a_ledger_bound_to_another_branch() {
 
 test_critical_package_ignores_standard_tasks_of_a_mixed_slice() {
   critical_range
-  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' \
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewed by critical-reviewer' \
     'Task 2: in-progress' 'Task 2: implemented'
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
 }

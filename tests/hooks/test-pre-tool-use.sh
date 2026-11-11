@@ -611,6 +611,15 @@ agent_event() {
     "$(jstr "${2:-$PWD}")" "$(jstr "$1")"
 }
 
+# add_line REPO LINE: add LINE; the review record is what the guard writes, so it goes
+# through the internal entry point.
+add_line() {
+  case $2 in
+    Task\ [0-9]*': reviewed by critical-reviewer') (cd "$1" && od ledger _record-review "$(printf '%s' "$2" | tr -dc 0-9)") >/dev/null ;;
+    *) (cd "$1" && od ledger add "$2") >/dev/null ;;
+  esac
+}
+
 # ledger_repo LINE...: a repo with a two-task plan and an active ledger holding LINEs.
 ledger_repo() {
   ledger_repo_at "$(make_repo)" "$@"
@@ -626,40 +635,41 @@ ledger_repo_at() {
 ### Task 2: Refunds'
   (cd "$repo" && od ledger init --plan docs/plan.md) >/dev/null
   for line in "$@"; do
-    (cd "$repo" && od ledger add "$line") >/dev/null
+    add_line "$repo" "$line"
   done
   printf '%s\n' "$repo"
 }
 
-GATE_TAIL="no critical review after the last change. For each, run '$(plugin_dir)/bin/overdrive' review-package"
+GATE_TAIL="no critical review after the last change. For each, run '$(plugin_dir)/bin/overdrive' review-package --base <task base> --head HEAD --brief <brief> --lane critical, then dispatch overdrive:critical-reviewer with \"Task <N>\" in its description"
 
 test_denies_final_reviewer_while_a_task_is_unreviewed() {
   local repo
-  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 2: in-progress critical' 'Task 2: implemented')
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewed by critical-reviewer' 'Task 2: in-progress critical' 'Task 2: implemented')
   assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 2 has $GATE_TAIL"
   assert_denies "$(agent_event final-reviewer "$repo")" "task 2 has $GATE_TAIL"
-  (cd "$repo" && od ledger add 'Task 2: reviewing') >/dev/null
+  add_line "$repo" 'Task 2: reviewed by critical-reviewer'
   assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
 }
 
 test_denies_final_reviewer_after_the_observed_sequence() {
   local repo
-  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: reviewing' 'Task 1: fixing round 1 done, builder reported' 'Task 2: in-progress critical' 'Task 2: implemented')
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: reviewed by critical-reviewer' 'Task 1: fixing round 1 done, builder reported' 'Task 2: in-progress critical' 'Task 2: implemented')
   assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "tasks 1, 2 have $GATE_TAIL"
 }
 
 test_denies_pull_request_while_a_task_is_unreviewed() {
   local repo
-  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: fixing round 1' 'Task 2: in-progress critical' 'Task 2: implemented')
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewed by critical-reviewer' 'Task 1: fixing round 1' 'Task 2: in-progress critical' 'Task 2: implemented')
   assert_denies "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")" "tasks 1, 2 have $GATE_TAIL"
   assert_denies "$(bash_event 'gh pr merge 5 --squash' "$repo")" "tasks 1, 2 have $GATE_TAIL"
-  (cd "$repo" && od ledger add 'Task 1: reviewing' && od ledger add 'Task 2: reviewing') >/dev/null
+  add_line "$repo" 'Task 1: reviewed by critical-reviewer'
+  add_line "$repo" 'Task 2: reviewed by critical-reviewer'
   assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
 }
 
 test_allows_pull_request_for_standard_tasks_of_a_mixed_slice() {
   local repo
-  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete' \
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewed by critical-reviewer' 'Task 1: complete' \
     'Task 2: in-progress' 'Task 2: implemented' 'Task 2: complete' 'Task 3: blocked sudo apt install libfoo')
   assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
   assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
@@ -785,4 +795,81 @@ test_final_review_deny_tells_how_to_close_an_open_standard_task() {
   local repo
   repo=$(ledger_repo 'Task 1: in-progress' 'Task 1: implemented')
   assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "mark it complete, or critical and review it"
+}
+
+# dispatch_event SUBAGENT DESCRIPTION PROMPT [CWD]: an Agent dispatch with the given texts.
+dispatch_event() {
+  printf '{"session_id":"sess-1","transcript_path":"/t.jsonl","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"%s","subagent_type":"%s","prompt":"%s"},"tool_use_id":"toolu_1"}' \
+    "$(jstr "${4:-$PWD}")" "$(jstr "$2")" "$(jstr "$1")" "$(jstr "$3")"
+}
+
+ledger_text() { cat "$(cd "$1" && od ledger path)"; }
+
+test_a_self_written_review_after_a_fix_is_not_a_review() {
+  local repo
+  repo=$(ledger_repo 'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewing' 'Task 2: fixing round 1' \
+    'Ruling: finding accepted — reviewer evidence — minor' 'Task 2: reviewing' 'Task 2: complete')
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 2 has $GATE_TAIL"
+  assert_denies "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")" "task 2 has $GATE_TAIL"
+}
+
+test_dispatching_the_critical_reviewer_records_the_review() {
+  local repo
+  repo=$(ledger_repo 'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: fixing round 1' 'Task 2: complete')
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 2 has $GATE_TAIL"
+  assert_allows "$(dispatch_event overdrive:critical-reviewer 'Re-review Task 2 fix' 'Review the package.' "$repo")"
+  assert_eq 1 "$(ledger_text "$repo" | grep -cx 'Task 2: reviewed by critical-reviewer')"
+  assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
+  assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
+}
+
+test_the_task_number_comes_from_the_description_then_the_prompt_then_the_brief_path() {
+  local repo
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 2: in-progress critical' 'Task 2: implemented')
+  assert_allows "$(dispatch_event critical-reviewer 'Critical review Task 1' 'Fixes for Task 2.' "$repo")"
+  assert_allows "$(dispatch_event overdrive:critical-reviewer 'Critical review' 'Package for Task 2, brief .overdrive/run/task-1.md' "$repo")"
+  assert_eq 'Task 1: reviewed by critical-reviewer
+Task 2: reviewed by critical-reviewer' "$(ledger_text "$repo" | grep 'reviewed by')"
+  repo=$(ledger_repo 'Task 2: in-progress critical' 'Task 2: implemented')
+  assert_allows "$(dispatch_event overdrive:critical-reviewer 'Critical review' 'Read /r/.overdrive/run/plan-123/task-2.md and the package.' "$repo")"
+  assert_eq 1 "$(ledger_text "$repo" | grep -cx 'Task 2: reviewed by critical-reviewer')"
+}
+
+test_a_critical_review_without_a_task_number_is_denied_and_records_nothing() {
+  local repo
+  repo=$(ledger_repo 'Task 2: in-progress critical' 'Task 2: implemented')
+  assert_denies "$(dispatch_event overdrive:critical-reviewer 'Critical review' 'Review the package.' "$repo")" "Critical review Task N"
+  assert_eq 0 "$(ledger_text "$repo" | grep -c 'reviewed by')"
+}
+
+test_the_internal_review_record_cannot_be_called_from_the_shell() {
+  local repo
+  repo=$(ledger_repo 'Task 2: in-progress critical' 'Task 2: implemented')
+  assert_denies "$(bash_event "'$(plugin_dir)/bin/overdrive' ledger _record-review 2" "$repo")" "written by the guard"
+  assert_denies "$(bash_event "bash $(plugin_dir)/libexec/overdrive-ledger _record-review 2" "$repo")" "written by the guard"
+  assert_denies "$(bash_event "cd x && overdrive ledger --plan p.md _record-review 2" "$repo")" "written by the guard"
+  assert_allows "$(bash_event 'grep -rn "_record-review" docs' "$repo")"
+}
+
+test_the_critical_reviewer_dispatch_records_nothing_without_an_applicable_ledger() {
+  local repo
+  repo=$(make_repo)
+  assert_allows "$(dispatch_event overdrive:critical-reviewer 'Critical review Task 2' 'x' "$repo")"
+  repo=$(ledger_repo 'Task 2: in-progress critical' 'Task 2: implemented' 'Run: closed — abandoned')
+  assert_allows "$(dispatch_event overdrive:critical-reviewer 'Critical review Task 2' 'x' "$repo")"
+  assert_eq 0 "$(ledger_text "$repo" | grep -c 'reviewed by')"
+  repo=$(make_repo)
+  git -C "$repo" checkout -q -b feat-a
+  repo=$(ledger_repo_at "$repo" 'Task 2: in-progress critical' 'Task 2: implemented')
+  git -C "$repo" checkout -q -b feat-b
+  assert_allows "$(dispatch_event overdrive:critical-reviewer 'Critical review Task 2' 'x' "$repo")"
+  assert_eq 0 "$(ledger_text "$repo" | grep -c 'reviewed by')"
+}
+
+test_other_agents_never_write_a_review_record() {
+  local repo
+  repo=$(ledger_repo 'Task 2: in-progress critical' 'Task 2: implemented')
+  assert_allows "$(dispatch_event overdrive:reviewer 'Review Task 2' 'x' "$repo")"
+  assert_allows "$(dispatch_event overdrive:builder 'Build Task 2' 'x' "$repo")"
+  assert_eq 0 "$(ledger_text "$repo" | grep -c 'reviewed by')"
 }
