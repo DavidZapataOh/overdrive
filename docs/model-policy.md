@@ -24,7 +24,7 @@ Which model and effort each Overdrive agent runs on, and the measurements behind
 
 Overrides were temporary copies of the plugin outside the repository with only the agent frontmatter changed. Per-run figures are means. Cost is the whole session (main session plus every subagent), so it includes the parts that did not change between arms. Tokens are output tokens by model from the result's `modelUsage`; cache reads were within 10 percent between arms in every pair.
 
-The two review cases named in the plan both classify as critical (tenant isolation, money), so they dispatch `critical-reviewer` and never the standard `reviewer`; the plan's standard-feature case dispatches no builder (the standard lane builds inline) and its code has no defect to catch. Each agent was therefore paired with a case that exercises it:
+The two review cases of the `e2e` suite both classify as critical (tenant isolation, money), so they dispatch `critical-reviewer` and never the standard `reviewer`; the `e2e-standard-feature` case dispatches no builder (the standard lane builds inline) and its code has no defect to catch. Each agent was therefore paired with a case that exercises it:
 
 | Agent | Case | What counts as a defect caught |
 | --- | --- | --- |
