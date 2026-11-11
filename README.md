@@ -29,7 +29,7 @@ claude plugin install overdrive@overdrive
 
 ### One-command setup on a new Mac
 
-Paste this block once into Terminal. It uses the GitHub CLI (`gh`) if it is installed and installs it with Homebrew if it is not. Homebrew may or may not be on the machine: without it the block stops and tells you to install `gh` from <https://cli.github.com>, and you paste the block again. It assumes the `claude` command is already installed.
+Paste this block once into Terminal. It uses the GitHub CLI (`gh`) if it is installed and installs it with Homebrew if it is not. Homebrew may or may not be on the machine: without it the block stops and points to <https://cli.github.com> for `gh`. If any step fails, the block stops there; fix that step and paste the block again. It assumes the `claude` command is already installed.
 
 ```sh
 { command -v gh >/dev/null 2>&1 || { command -v brew >/dev/null 2>&1 && brew install gh; }; } \
@@ -37,7 +37,7 @@ Paste this block once into Terminal. It uses the GitHub CLI (`gh`) if it is inst
   && export CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1 \
   && claude plugin marketplace add DavidZapataOh/overdrive \
   && claude plugin install overdrive@overdrive \
-  || echo "Setup stopped: install gh from https://cli.github.com (or Homebrew), then paste the block again."
+  || echo "Setup stopped at the step above. If gh is missing, install it from https://cli.github.com, then paste the block again."
 ```
 
 `gh auth login` asks you to sign in with a browser. The `export` only applies to that terminal window; add the same line to `~/.zshrc` if you want it in every new one. Start a new Claude Code session afterwards so the plugin loads.
