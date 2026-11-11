@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="396" viewBox="0 0 880 396" role="img" aria-label="A terminal session in which the critical-lane gate denies gh pr create until the critical review is recorded">
+<title>The critical-lane gate</title>
+<rect width="880" height="396" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+<path d="M0 12 a12 12 0 0 1 12 -12 h856 a12 12 0 0 1 12 12 v34 h-880 z" fill="#161b22"/>
+<line x1="0" y1="46" x2="880" y2="46" stroke="#30363d"/>
+<circle cx="26" cy="23" r="6" fill="#ff5f56"/><circle cx="46" cy="23" r="6" fill="#ffbd2e"/><circle cx="66" cy="23" r="6" fill="#27c93f"/>
+<text x="440" y="28" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#9da7b3">critical lane: pull request gate</text>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" xml:space="preserve">
+<text x="24" y="76"><tspan fill="#3fb950">$ </tspan><tspan fill="#e6edf3">gh pr create --base main --title "Add refunds" --body-file body.md</tspan></text>
+<text x="24" y="98"><tspan fill="#e6edf3"></tspan></text>
+<text x="24" y="120"><tspan fill="#f85149">Opening or merging the pull request is blocked: task 2 has no critical review after the last</tspan></text>
+<text x="24" y="142"><tspan fill="#f85149">change. For each, run '…/overdrive/bin/overdrive' review-package --base &lt;task base&gt; --head</tspan></text>
+<text x="24" y="164"><tspan fill="#f85149">HEAD --brief &lt;brief&gt; --lane critical, then dispatch overdrive:critical-reviewer with "Task</tspan></text>
+<text x="24" y="186"><tspan fill="#f85149">&lt;N&gt;" in its description (the guard records the review when it is dispatched).</tspan></text>
+<text x="24" y="208"><tspan fill="#e6edf3"></tspan></text>
+<text x="24" y="230"><tspan fill="#3a86f0">&gt; </tspan><tspan fill="#e6edf3">dispatch overdrive:critical-reviewer  (description: "Task 2: Refunds")</tspan></text>
+<text x="24" y="252"><tspan fill="#8b949e"># the guard records the review when the reviewer is dispatched</tspan></text>
+<text x="24" y="274"><tspan fill="#e6edf3"></tspan></text>
+<text x="24" y="296"><tspan fill="#3fb950">$ </tspan><tspan fill="#e6edf3">gh pr create --base main --title "Add refunds" --body-file body.md</tspan></text>
+<text x="24" y="318"><tspan fill="#8b949e"># allowed: every critical task has a review after its last change</tspan></text>
+<text x="24" y="340"><tspan fill="#e6edf3"></tspan></text>
+<text x="24" y="362"><tspan fill="#c4872a">Risk: critical — money</tspan></text>
+</g>
+</svg>

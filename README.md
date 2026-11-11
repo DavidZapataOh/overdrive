@@ -1,10 +1,50 @@
-# Overdrive
+<div align="center">
 
-Overdrive is a Claude Code plugin that scales the amount of process to the risk of each change. A deterministic classifier assigns every task to one of three lanes: `direct` for trivial edits, `standard` for ordinary work and `critical` for changes that touch data, auth, money, secrets or public contracts. Each lane brings only the planning, review and evidence it needs, so small changes stay fast and risky ones are never merged under-reviewed.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+  <img src="assets/logo.svg" alt="Overdrive" width="260">
+</picture>
 
-The plugin is 14 skills, 5 subagents, three hooks (session router, tool-call guard, stop check) and a small shell CLI, `overdrive`. Nothing runs outside Claude Code, and the runtime needs only Bash 3.2, git and the POSIX tools that ship with them.
+**Process that scales with risk.** A Claude Code plugin that gives every change only the planning, review and evidence it needs.
 
-## The three lanes
+[![ci](https://github.com/DavidZapataOh/overdrive/actions/workflows/ci.yml/badge.svg)](https://github.com/DavidZapataOh/overdrive/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.0-informational.svg)](CHANGELOG.md)
+[![Skills](https://img.shields.io/badge/skills-14-8957e5.svg)](#skills)
+
+</div>
+
+## Why
+
+Coding agents tend to fail in one of two directions: they run a full ceremony over a typo fix, or they merge a billing change after a glance. Both come from treating every change the same.
+
+- **Risk decides the process, not size.** A deterministic classifier reads the paths, the diff and the request, and puts each change in `direct`, `standard` or `critical`.
+- **Small stays fast.** A trivial edit gets no plan and no review, only its own check.
+- **Risky is never under-reviewed.** Data, auth, money, secrets and public contracts get a test-first plan you approve, a review after every task, and a hook that blocks the pull request until the reviews exist.
+- **Claude can raise a lane, never lower it.** Only you can lower one, and the answer is recorded as a decision.
+
+<p align="center"><img src="assets/lanes.svg" alt="The three lanes: direct, standard and critical, and what each brings" width="820"></p>
+
+## Install
+
+```sh
+claude plugin marketplace add DavidZapataOh/overdrive
+claude plugin install overdrive@overdrive
+```
+
+Start a new Claude Code session and the plugin loads. It is the same on macOS, Linux and Windows. Nothing runs outside Claude Code, and the runtime needs only Bash 3.2, git and the POSIX tools that ship with them.
+
+If the marketplace clone fails over SSH, set `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` in that terminal and run the first command again.
+
+The plugin is 14 skills, 5 subagents, three hooks (session router, tool-call guard, stop check) and a small shell CLI, `overdrive`.
+
+## See it work
+
+In the critical lane the guard refuses to open or merge a pull request while a task has no critical review after its last change. The review is recorded when the reviewer is dispatched, and the reply ends with the lane the change was handled in.
+
+<p align="center"><img src="assets/gate.svg" alt="A terminal session: gh pr create is denied until overdrive:critical-reviewer has reviewed the task, then the pull request goes through and the reply ends with Risk: critical, money" width="820"></p>
+
+## How the lanes work
 
 | Lane | Planning | Review | Evidence |
 | --- | --- | --- | --- |
@@ -15,32 +55,6 @@ The plugin is 14 skills, 5 subagents, three hooks (session router, tool-call gua
 The classifier (`overdrive risk`) picks the lane from facts, not from size. It reads the paths a change touches, the lines it adds and removes, and, before any edit, the words of the request. Built-in floors put a change in `critical` for irreversible data and migrations, auth, tenant isolation, money, secrets, CI and delivery, public contracts, concurrency, a changed risk map, a removed or skipped test, a text file git shows as binary and a source file that no test covers. Dependency and test-configuration changes, deleted files and files made executable put it in `standard`. A change that raises nothing is `direct`.
 
 Claude may raise a lane when it sees risk the classifier cannot, and it never lowers one. A failed classification is `critical`. Only the user can lower a lane, by answering the stated risk, and the answer is recorded as a decision. Signals, floors and the steps of each lane are in [docs/lanes.md](docs/lanes.md).
-
-## Install
-
-Installation is the same on macOS, Linux and Windows, through Claude Code's plugin commands. The repository is private for now, so authenticate with GitHub first:
-
-```sh
-gh auth login && gh auth setup-git
-export CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1
-claude plugin marketplace add DavidZapataOh/overdrive
-claude plugin install overdrive@overdrive
-```
-
-### One-command setup on a new Mac
-
-Paste this block once into Terminal. It uses the GitHub CLI (`gh`) if it is installed and installs it with Homebrew if it is not. Homebrew may or may not be on the machine: without it the block stops and points to <https://cli.github.com> for `gh`. If any step fails, the block stops there; fix that step and paste the block again. It assumes the `claude` command is already installed.
-
-```sh
-{ command -v gh >/dev/null 2>&1 || { command -v brew >/dev/null 2>&1 && brew install gh; }; } \
-  && gh auth login && gh auth setup-git \
-  && export CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1 \
-  && claude plugin marketplace add DavidZapataOh/overdrive \
-  && claude plugin install overdrive@overdrive \
-  || echo "Setup stopped at the step above. If gh is missing, install it from https://cli.github.com, then paste the block again."
-```
-
-`gh auth login` asks you to sign in with a browser. The `export` only applies to that terminal window; add the same line to `~/.zshrc` if you want it in every new one. Start a new Claude Code session afterwards so the plugin loads.
 
 ## First run
 
@@ -97,6 +111,8 @@ Automatic skills are loaded by Claude when the situation matches their descripti
 
 ## Measured results
 
+<p align="center"><img src="assets/results.svg" alt="Bar chart of the eval score of each of the 14 skills with and without Overdrive: with Overdrive 0.90 to 1.00, baseline 0.46 to 0.83" width="860"></p>
+
 Each skill is measured with `claude plugin eval`: trigger cases (does Claude load the skill when it should, and stay out of the way when it should not) and behavior cases (does it do better with the skill than without it). Three runs per case and arm, agent and judge on `claude-sonnet-5-5`, Claude Code 2.1.322, results recorded 2026-11-10 and 2026-11-11. Scores are means over all trigger and behavior cases of a skill, from `plugins/overdrive/evals/<skill>/RESULTS.md`.
 
 | Skill | With Overdrive | Without (baseline) | Delta | Cases passed | Trigger accuracy, validation set |
@@ -128,6 +144,10 @@ Known gaps, recorded in the same files: the `decision-log` validation trigger ac
 - [docs/evaluation.md](docs/evaluation.md): how skills are evaluated and what was verified about the runner.
 - [CHANGELOG.md](CHANGELOG.md)
 
-## Development
+## Contributing
 
-Run the shell tests with `bash tests/run.sh [FILTER]`, where `FILTER` is an extended regular expression matched against test file paths. Contributor rules are in `.claude/CLAUDE.md`.
+Run the shell tests with `bash tests/run.sh [FILTER]`, where `FILTER` is an extended regular expression matched against test file paths. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## License
+
+[MIT](LICENSE)
