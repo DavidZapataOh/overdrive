@@ -321,7 +321,8 @@ test_critical_package_refuses_a_task_never_reviewed() {
   local out rc=0
   out=$(critical_package "$REPO" "$BASE" "$HEAD" 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
-  assert_line "$out" "overdrive: no critical review after the last change: task 2 has none; for each, run $SANDBOX/fp/bin/overdrive review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $SANDBOX/fp/bin/overdrive ledger add 'Task <N>: reviewing'; or, if this run was abandoned, $SANDBOX/fp/bin/overdrive ledger add 'Run: closed — <reason>'"
+  cli=$(cd -P "$SANDBOX/fp/bin" && pwd)/overdrive
+  assert_line "$out" "overdrive: no critical review after the last change: task 2 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $cli ledger add 'Task <N>: reviewing'; or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'"
   [ ! -e "$REPO/.overdrive/run/reviews" ] || [ -z "$(ls "$REPO/.overdrive/run/reviews")" ]
 }
 
@@ -332,7 +333,8 @@ test_critical_package_refuses_a_fix_round_without_a_new_review() {
   local out rc=0
   out=$(critical_package "$REPO" "$BASE" "$HEAD" 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
-  assert_line "$out" "overdrive: no critical review after the last change: task 1 has none; for each, run $SANDBOX/fp/bin/overdrive review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $SANDBOX/fp/bin/overdrive ledger add 'Task <N>: reviewing'; or, if this run was abandoned, $SANDBOX/fp/bin/overdrive ledger add 'Run: closed — <reason>'"
+  cli=$(cd -P "$SANDBOX/fp/bin" && pwd)/overdrive
+  assert_line "$out" "overdrive: no critical review after the last change: task 1 has none; for each, run $cli review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $cli ledger add 'Task <N>: reviewing'; or, if this run was abandoned, $cli ledger add 'Run: closed — <reason>'"
   # Re-reviewing after the fix lets it through.
   (cd "$REPO" && od ledger add 'Task 1: reviewing') > /dev/null
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
