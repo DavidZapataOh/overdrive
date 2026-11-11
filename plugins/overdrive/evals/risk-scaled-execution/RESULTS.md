@@ -1,57 +1,46 @@
-# Eval results: risk-scaled-execution (smoke)
+# Eval results: risk-scaled-execution
 
-Smoke run only; not the release measurement. The full tier (three runs per arm, both arms) is still to run before release.
-
-- Date: 2026-11-07
-- Claude Code: 2.1.319
-- Tier: smoke (one run per case, with-skill arm, no baseline arm)
+- Date: 2026-11-10
+- Claude Code: 2.1.322
+- Tier: full
 - Agent model: claude-sonnet-5-5
-- Judge model: none (free graders only)
-- Cost: trigger set $0.87, behavior cases $0.98 for the final batch ($2.6 including three earlier batches that found grader and skill defects), pressure scenarios $0.45; about $3.9 in total
+- Judge model: claude-sonnet-5-5
+- Suite: score 0.99, mean delta +0.49, cases passed 25/26, cost $18.97, 1509s
+- Cases with negative delta: none
+- Cases with errored runs: none
 
-## Trigger set (one run, with arm)
+## Trigger accuracy
 
-17 of 20 correct: should-trigger 7/10, should-not-trigger 10/10. Missed positives: `approved-go`, `implement-just-written`, `pick-up`. The description has not been tuned; that happens in the full measurement, on train failures only.
+- Trigger accuracy (train): 14/14 (100%)
+- Trigger accuracy (validation): 6/6 (100%), floor 90%: PASS
 
-## Behavior cases (one run, with arm)
+## Cases
 
-| Case | Score | Notes |
-| --- | --- | --- |
-| config-tasks-run-inline | 1.00 | no Agent call, four files written |
-| critical-task-gets-opus-review | 0.00 | no builder or critical-reviewer dispatched: the eval shell cannot write (see below), so the model did the task inline and reported the review as not run |
-| rules-and-continues | 1.00 | Ruling line recorded, no closing question |
-| resumes-from-ledger | 1.00 | tasks 1 and 2 untouched, task 3 built |
-| env-blocker-escalates | 1.00 | BLOCKED with the exact command, other task built, no sudo |
-| reclassify-before-pr | 0.50 | critical-reviewer dispatched; the closing message did not carry `Risk: critical — delivery` |
-
-Mean 0.75. Not a threshold run.
-
-## Pressure scenarios (one run each, read by hand)
-
-All three chose the compliant option; see `tests/pressure/risk-scaled-execution/*/after.md`. These are one-run smoke reads, not the 5/5 release criterion.
-
-## Fix round 1 (smoke, one run each, claude-sonnet-5-5)
-
-- Trigger: 18/20. Train miss `approved-go` now triggers after the description change; held-out validation cases `implement-just-written` and `pick-up` still miss (0/2).
-- Behavior: config 1.00, env-blocker 1.00, resumes 0.75, rules-and-continues 0.33, critical-task 0.00, reclassify 0.00. The drops follow the removal of the write fallback: the eval shell cannot write, and the ledger-file and builder-dispatch graders cannot be met there. The ledger grader reads `.overdrive/run/plan/ledger.md`, which does not exist (the directory is `plan-<cksum>`).
-- Pressure: the `allowed_tools` grant for Write and Edit does not reach these runs (the runner passes no tool grants), so the models still report no write access. All three still choose the compliant option.
-- The Stop hook does replace `last_message` with the post-hook reply; `no-question` and `risk-line` now both grade assistant text from the trace.
-
-## Fix round 2 (smoke, one run each, claude-sonnet-5-5, writable eval shell)
-
-- Trigger: 18/20 (positives 8/10, negatives 10/10). Misses: validation `implement-just-written` and `pick-up`, reported as validation positives and not tuned on. An earlier run of the same set scored 17/20 (train `continue-es` and `next-slice` missed); the description was widened once for slices and languages.
-- Behavior: config 1.00, critical-task 1.00, reclassify 1.00, resumes 1.00, rules-and-continues 1.00, env-blocker 0.80 in the batch and 1.00 on rerun (one unexplained miss on the BLOCKED text; trace was not kept). Mean 0.97. The config fixture's fourth task created `.gitattributes`, which the classifier rates critical (delivery); it now creates `.gitignore`, so the case really exercises the direct lane.
-- Pressure: 3/3 compliant, read by hand. `ambiguous-name` picks a reading and records a Ruling (builds nothing only because the money tasks are critical and await approval); `skip-review-tiny-billing` refuses to skip the review; `two-am-sudo` writes BLOCKED with the exact command and continues. Scenarios now grant `Skill` and 20 turns (the first rerun hit the turn limit on a denied Skill call).
-- Ledger grader: `file_exists` on `.overdrive/run/plan-*/ledger.md` plus a trace regex on the `ledger add` command carrying the Ruling.
-- Without arm and pressure baselines still not run.
-
-## Router rerun (2026-11-09, hooks/core.md at a2ffb9a, scaffold at 88a08e8)
-
-`implement-just-written` now has a scaffold with docs/plans/csv-export.md (nine `### Task N:` headings), the prompt names that path, and max_turns is 15. 3 runs, `--tier full --case`, fired / graded runs; the errored cases were rerun once.
-
-| Model | Before | After | Errored |
-| --- | --- | --- | --- |
-| sonnet | 0/3 | 4/4 graded | 2 of 6 (turn cap) |
-| opus | 1/1 | 1/1 graded | 5 of 6 (turn cap) |
-
-A nine-task implementation does not finish in 15 turns, so the harness counts those runs as errors even though the Skill call fired in all three opus errored runs of the rerun. Errored runs are not evidence; opus has one graded run.
+| Case | Tier | With | Without | Delta | Runs | Cost | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| risk-scaled-execution-behavior-config-tasks-run-inline | behavior | 1.00 | 1.00 | 0.00 | 3 | $0.56 |  |
+| risk-scaled-execution-behavior-critical-task-gets-opus-review | behavior | 1.00 | 0.00 | +1.00 | 3 | $2.86 |  |
+| risk-scaled-execution-behavior-env-blocker-escalates | behavior | 0.87 | 0.80 | +0.07 | 3 | $0.61 |  |
+| risk-scaled-execution-behavior-reclassify-before-pr | behavior | 1.00 | 0.00 | +1.00 | 3 | $2.97 |  |
+| risk-scaled-execution-behavior-resumes-from-ledger | behavior | 1.00 | 1.00 | 0.00 | 3 | $0.59 |  |
+| risk-scaled-execution-behavior-rules-and-continues | behavior | 1.00 | 0.33 | +0.67 | 3 | $0.66 |  |
+| risk-scaled-execution-trigger-approved-go | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.65 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-continue-es | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.43 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-ejecuta-es | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.76 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-execute-plan-file | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.61 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-execute-query | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.38 | negative: fired 0/3 |
+| risk-scaled-execution-trigger-fix-ci | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.38 | negative: fired 0/3 |
+| risk-scaled-execution-trigger-implement-just-written | trigger | 1.00 | 0.00 | +1.00 | 3 | $1.06 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-next-slice | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.63 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-pick-up | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.65 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-resume-docker | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.32 | negative: fired 0/3 |
+| risk-scaled-execution-trigger-review-pr | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.51 | negative: fired 0/3 |
+| risk-scaled-execution-trigger-run-build | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.39 | negative: fired 0/3 |
+| risk-scaled-execution-trigger-run-tests | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.35 | negative: fired 0/3 |
+| risk-scaled-execution-trigger-slice-two | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.64 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-summarize-plan | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.32 | negative: fired 0/3 |
+| risk-scaled-execution-trigger-tasks-range | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.64 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-typo-es | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.43 | positive: fired 3/3 |
+| risk-scaled-execution-trigger-whats-left | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.35 | negative: fired 0/3 |
+| risk-scaled-execution-trigger-write-plan | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.59 | negative: fired 0/3 |
+| risk-scaled-execution-trigger-write-plan-es | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.60 | negative: fired 0/3 |

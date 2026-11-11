@@ -1,57 +1,44 @@
-# Eval results: parallel-execution (smoke)
+# Eval results: parallel-execution
 
-Smoke numbers only: one run per case, with-skill arm, no baseline arm. They do not meet the release thresholds and are not a substitute for the full tier (`tools/evals/run-suite.sh parallel-execution --tier full --model main`, then `--model sonnet`), which has not run.
-
-- Date: 2026-11-08 (UTC; the runs of the first round and of fix round 1 were all on this date)
-- Claude Code: 2.1.319
+- Date: 2026-11-10
+- Claude Code: 2.1.322
+- Tier: full
 - Agent model: claude-sonnet-5-5
-- Judge model: none for smoke (the pressure compliance grader used claude-sonnet-5-5)
-- Cost: about $15 in total (two skill-absent smoke runs $4.9, two with-skill smoke runs $3.8, about $1.2 of single-case reruns that kept traces, pressure baseline and with-skill batches $3.6, natural-loading batches $2.6)
+- Judge model: claude-sonnet-5-5
+- Suite: score 0.99, mean delta +0.50, cases passed 23/24, cost $13.70, 955s
+- Cases with negative delta: none
+- Cases with errored runs: none
 
-## Harness limit that shapes the behavior cases
+## Trigger accuracy
 
-`claude plugin eval` refuses worktree isolation: every Agent call with `isolation: "worktree"` returns "worktree isolation is unavailable in this session (plugin evaluation harness)", so no builder ever runs. Consequences, recorded rather than worked around in the skill:
+- Trigger accuracy (train): 12/12 (100%)
+- Trigger accuracy (validation): 8/8 (100%), floor 90%: PASS
 
-- `uses-worktrees` grades the dispatch calls the model makes (`isolation` and `overdrive:builder` in the call input, 3 of each). Those calls are rejected by the harness, so this is the one place a rejected call is counted; the call's parameters are the behavior under test. The briefs the model wrote for each task (`file_exists` on `task-N.md`) are result-side evidence from successful `overdrive brief` calls.
-- `integrates-and-tests` starts from the state after the builders: two branches with one commit each, so the merges, tests and integration branch are real and the graders see accepted calls.
-- `refuses-overlap` cannot grade a landed `turbo.json` (a correct run dispatches a builder that the harness refuses), so it checks the overlap run, the shared file named in an assistant text block, at most two Agent calls and no brief for the task that must wait.
+## Cases
 
-## Trigger set (one run, with arm)
-
-Final: 20 of 20 correct, should-trigger 10/10, should-not-trigger 10/10 (train 12/12, validation 8/8). No description change was needed, so none was tuned. Without the skill (the red run): train 5/12, validation 5/8, since only the negatives pass.
-
-## Behavior cases (one run, with arm)
-
-| Case | Without the skill | With the skill |
-| --- | --- | --- |
-| refuses-overlap | 0.20 | 1.00 |
-| uses-worktrees | 0.71 | 1.00 |
-| integrates-and-tests | 0.83 | 1.00 (final reruns; see fix round 1) |
-| conflict-is-serialized | fails abort, pair and note graders | 1.00 |
-
-Without the skill the model never ran `overdrive overlap`, merged on `main` and chained the merges (`integrates-and-tests` fails the integration-branch and test-after-merge graders there). The first with-skill batch scored 1.00 on all three; the final batch scored 0.80 on refuses-overlap because of a landed-file grader that punished a correct run (a builder dispatched and refused by the harness), which was replaced.
-
-Grader checks: the merge graders were run against a real trace and against four synthetic traces (two merges in one call, two merges across calls, merge-test-merge, a merge/test loop); they fail the first two and pass the last two.
-
-## Pressure scenario (read by hand)
-
-`six-tasks-at-once`: baseline without the skill 5/5 compliant (so no rationalization table is written); with the skill 5/5 compliant on sonnet. Details in `tests/pressure/parallel-execution/six-tasks-at-once/`.
-
-## Natural loading and end-to-end compliance (no slash command)
-
-Five runs per model, shipping description, `hooks/core.md` active, judge claude-sonnet-5-5.
-
-| Scenario | Sonnet loaded | Sonnet compliant | Opus loaded | Opus compliant |
-| --- | --- | --- | --- | --- |
-| six-tasks-at-once | 5/5 | 5/5 | 4/5 | 4/5 |
-
-Opus loading is a recorded gap: the skill loaded in 4 of 5 opus runs, and the run that did not load it was the one the judge failed. Both models meet the 4/5 target and core.md was not touched. Earlier batch on opus, before merge order was made strict in the skill: 5/5 loaded, 2/5 compliant.
-
-## Fix round 1 (smoke, claude-sonnet-5-5)
-
-- Merge graders on `integrates-and-tests` and the new `conflict-is-serialized` read only the Bash `command` field (not `description`, not quoted `-m` messages), accept chained and looped merge-and-test, require the full-suite command (`node --test` or `npm test` without a path), and fail when the last merge has no later full-suite run or when two merges have no suite run between them. Checked on a real trace plus 15 synthetic traces (scoped test only, test only in the description, test only in a double- or single-quoted `-m`, test only in a tool result, test before the merge, last merge untested, two merges and one test at the end, abort not counted).
-- `refuses-overlap` with the replaced grader: 1.00 on the final batch and on two reruns.
-- `conflict-is-serialized` (new): two branches edit the same lines of `src/config.js`. With the skill 1.00: merge aborted, no side taken, ledger Note, the conflicting task redone on the green tip, config has both edits, no markers. Without the skill the model fails the abort, merge-pair and Note graders.
-- The first with-skill run of `integrates-and-tests` after the grader change failed because the model ran only `node --test packages/*/test/`; the skill now says to use the exact command given, never a path-scoped run. Two reruns 1.00.
-- Triggers 20/20 after the description wording change (one validation miss, `integrate`, in an intermediate batch; train was 12/12 so nothing was tuned).
-- Pressure `six-tasks-at-once` with the final text: 5/5 compliant. Fix-round smoke cost about $2.9 in total.
+| Case | Tier | With | Without | Delta | Runs | Cost | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| parallel-execution-behavior-conflict-is-serialized | behavior | 1.00 | 0.57 | +0.43 | 3 | $0.62 |  |
+| parallel-execution-behavior-integrates-and-tests | behavior | 1.00 | 0.56 | +0.44 | 3 | $0.51 |  |
+| parallel-execution-behavior-refuses-overlap | behavior | 1.00 | 0.50 | +0.50 | 3 | $1.32 |  |
+| parallel-execution-behavior-uses-worktrees | behavior | 1.00 | 0.11 | +0.89 | 3 | $2.89 |  |
+| parallel-execution-trigger-both-finish | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.46 | positive: fired 3/3 |
+| parallel-execution-trigger-ci-jobs | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.37 | negative: fired 0/3 |
+| parallel-execution-trigger-concurrent-order | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.43 | positive: fired 3/3 |
+| parallel-execution-trigger-es-builders | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.42 | positive: fired 3/3 |
+| parallel-execution-trigger-es-no-se-pisan | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.43 | positive: fired 3/3 |
+| parallel-execution-trigger-es-plimit | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.36 | negative: fired 0/3 |
+| parallel-execution-trigger-es-sequential | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.41 | negative: fired 0/3 |
+| parallel-execution-trigger-es-typos | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.41 | positive: fired 3/3 |
+| parallel-execution-trigger-fan-out | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.42 | positive: fired 3/3 |
+| parallel-execution-trigger-integrate | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.45 | positive: fired 3/3 |
+| parallel-execution-trigger-merge-conflict | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.37 | negative: fired 0/3 |
+| parallel-execution-trigger-own-worktree | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.39 | positive: fired 3/3 |
+| parallel-execution-trigger-promise-all | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.35 | negative: fired 0/3 |
+| parallel-execution-trigger-tests-parallel | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.40 | negative: fired 0/3 |
+| parallel-execution-trigger-three-independent | trigger | 0.67 | 0.00 | +0.67 | 3 | $0.43 | positive: fired 2/3 |
+| parallel-execution-trigger-three-slices | trigger | 1.00 | 0.00 | +1.00 | 3 | $0.42 | positive: fired 3/3 |
+| parallel-execution-trigger-vendors | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.80 | negative: fired 0/3 |
+| parallel-execution-trigger-worker-pool | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.37 | negative: fired 0/3 |
+| parallel-execution-trigger-worktree-explain | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.33 | negative: fired 0/3 |
+| parallel-execution-trigger-xargs | trigger | 1.00 | 1.00 | 0.00 | 3 | $0.35 | negative: fired 0/3 |

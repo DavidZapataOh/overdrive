@@ -215,3 +215,42 @@ Test-file conventions the classifier does not read yet, so changes there may be 
 - SwiftPM's `Tests/<Target>Tests/` mirrors `Sources/<Target>/` by target name, not by path, so a test there does not cover its source unless they share a directory.
 - .NET test projects (`*.Tests/`) mirror the product project by name, likewise; files there that are not named `*Test(s).cs` are not tests.
 - Kotest specs (`*Spec.kt`) are not recognized as tests. Two rules cover such cases. The model may raise a lane, never lower it: when the change plainly touches a floor that no signal names, the model adds the item. A project names its own exported surface, session code and secret helpers in `.overdrive/risk-map.conf` (`symbol`, `path`, `keyword` rules), so the classifier catches them from then on.
+
+## Release results
+
+Full tier, pinned models (`claude-sonnet-5-5`, `claude-opus-5-5` as main), Claude Code 2.1.322, run on 2026-11-10 (UTC; some reruns continued after midnight). Each skill's `RESULTS.md` holds the sonnet run. The pressure column counts scenarios (slash-invoked and `-natural` entries) whose runs were judged compliant in at least 80% of the runs, 5 runs each, with-skill arm only; main ran the `-natural` scenarios only. Cost is the full tier only. "—" means the run was not made (cost ceiling) or is not comparable (partial).
+
+| Skill | Model | Suite score (cases passed) | Trigger train / validation | Pressure | Full-tier cost |
+| --- | --- | --- | --- | --- | --- |
+| compound-learning | sonnet | 0.99 (24/25) | 15/15, 5/5 | 2/4 | $11.91 |
+| compound-learning | main | 0.99 (21/22, partial at the cost ceiling) | 11/13, 4/4 (2 errored) | 1/2 | $26.77 |
+| decision-log | sonnet | 0.92 (21/24) | 10/10, 8/10 (below the 90% floor) | 3/6 | $10.97 |
+| decision-log | main | 0.97 (22/24) | 10/10, 10/10 | 1/3 | $25.28 |
+| decision-planning | sonnet | 1.00 (26/26) | 11/11, 9/9 | 6/6 | $11.93 |
+| decision-planning | main | 1.00 (26/26) | 11/11, 9/9 | 2/3 | $27.64 |
+| deep-research | sonnet | 0.99 (16/17) | 7/7, 3/3 | 2/2 | $19.00 |
+| deep-research | main | — (partial at the cost ceiling) | — | — | — |
+| evidence-based-verification | sonnet | 0.98 (22/24) | 10/10, 10/10 | 6/6 | $9.63 |
+| evidence-based-verification | main | 0.99 (23/24) | 10/10, 10/10 | 3/3 | $20.81 |
+| intent-discovery | sonnet | 0.99 (23/24) | 13/13, 7/7 | 3/6 | $9.40 |
+| intent-discovery | main | — | — | 0/3 | — |
+| parallel-execution | sonnet | 0.99 (23/24) | 12/12, 8/8 | 1/2 | $13.70 |
+| parallel-execution | main | — | — | 0/1 | — |
+| release-gates | sonnet | 1.00 (6/6) | no trigger cases | 0/1 | $3.76 |
+| release-gates | main | 1.00 (6/6) | no trigger cases | — | $8.35 |
+| risk-scaled-execution | sonnet | 0.99 (25/26) | 14/14, 6/6 | 0/3 | $18.97 |
+| risk-scaled-execution | main | — (partial at the cost ceiling) | — | — | — |
+| risk-scaled-review | sonnet | 0.98 (24/25) | 9/9, 11/11 | 4/4 | $13.53 |
+| risk-scaled-review | main | 0.97 (23/25) | 9/9, 11/11 | 2/2 | $27.87 |
+| risk-triage | sonnet | 0.97 (30/32) | 14/15, 10/10 | 3/3 | $14.68 |
+| risk-triage | main | — | — | — | — |
+| root-cause-debugging | sonnet | 1.00 (23/24) | 15/15, 5/5 | 4/4 | $10.75 |
+| root-cause-debugging | main | 1.00 (24/24, 6 errored runs) | 12/15, 5/5 | 2/2 | $30.95 |
+| skill-evaluation | sonnet | 0.90 (4/5) | no trigger cases | 0/2 (2 errored runs) | $7.56 |
+| skill-evaluation | main | — | — | — | — |
+| test-driven-development | sonnet | 0.93 (21/24) | 12/14, 6/6 | 4/6 | $12.25 |
+| test-driven-development | main | 0.61 (14/24, 13 errored runs at the 15-turn cap) | 6/14, 4/6 | 3/3 | $36.35 |
+
+End-to-end suite (sonnet, 3 runs per case, $11.70): 5 of 7 cases at 1.00; `e2e-critical-after-approval` 0.90 and `e2e-looping-builder-stops` 0.92.
+
+These numbers meet the release thresholds only partly; the failures that remain are cases below 0.9, trigger misses, and pressure scenarios under 4 of 5. Errored runs are not evidence and are listed as such. The main-model column is incomplete on purpose: the cost ceiling for the suite stopped the remaining main runs.
