@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-11-11
 
-- The PreToolUse guard approves what the session router needs without a permission prompt: the read-only CLI commands (`risk`, `decisions next-id`, `decisions check`, `recall`) when run through a variable (`R`, or a name ending in `ROOT`) set to the plugin root (`R=<root>; $R/bin/overdrive risk ...`), and `Read` of files inside the plugin directory. The path is normalized before it is checked, and `..` that leaves the directory, a symbolic link that resolves outside it and any other value or variable name are not approved. A quoting is accepted only when the root can be written that way as one literal word, which also closes a way for a root containing a quote to turn arguments into part of the path in the existing absolute-path allow. The guard now also matches `Read`; an unrelated call still uses shell builtins only.
+- The PreToolUse guard approves what the session router needs without a permission prompt: the read-only CLI commands (`risk`, `decisions next-id`, `decisions check`, `recall`) when run through a variable (`R`, `ROOT`, `OD_ROOT` or `PLUGIN_ROOT`) set to the plugin root (`R=<root>; $R/bin/overdrive risk ...`), and `Read` of files inside the plugin directory. A path with a `.` or `..` segment, a symbolic link that resolves outside it and any other value or variable name are not approved. A quoting is accepted only when the root can be written that way as one literal word, which also closes a way for a root containing a quote to turn arguments into part of the path in the existing absolute-path allow. The guard now also matches `Read`; an unrelated call still uses shell builtins only.
 
 ## 0.1.0 — 2026-11-11
 

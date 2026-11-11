@@ -242,7 +242,7 @@ own_cli_form() {
   # Only names the router uses: variables the shell itself reads must not qualify.
   case $name in
     *[!A-Z0-9_]* | [!A-Z]*) return 1 ;;
-    R | *ROOT) ;;
+    R | ROOT | OD_ROOT | PLUGIN_ROOT) ;;
     *) return 1 ;;
   esac
   quoting_of "$plugin"
@@ -497,6 +497,8 @@ own_file() {
     /* | [A-Za-z]:*) ;;
     *) [ -n "$cwd" ] || return 1; p=$cwd/$p ;;
   esac
+  # A dot segment resolves differently opened as written than normalized, through a link.
+  case $p/ in */./* | */../*) return 1 ;; esac
   _od_normalize_path "$p"
   p=$_OD_PATH
   in_plugin "$p" || return 1

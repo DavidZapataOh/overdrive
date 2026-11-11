@@ -990,7 +990,7 @@ test_allows_the_read_only_cli_through_a_root_variable() {
     "R=\$(id); \$R/bin/overdrive risk" "R=$root\$(id); \$R/bin/overdrive risk" \
     "R=$root; \$Q/bin/overdrive risk" "R=$root; \$R/bin/overdrive-x risk" "R=$root; \$R/bin/other risk" \
     "R=$root \$R/bin/overdrive risk" "R=$root; cd src; \$R/bin/overdrive risk" \
-    "TMPDIR=$root; \$TMPDIR/bin/overdrive risk" "r=$root; \$r/bin/overdrive risk" "ROOTS=$root; \$ROOTS/bin/overdrive risk" "IFS=$root; \$IFS/bin/overdrive risk" "PATH=$root; \$PATH/bin/overdrive risk" \
+    "TMPDIR=$root; \$TMPDIR/bin/overdrive risk" "GOROOT=$root; \$GOROOT/bin/overdrive risk" "DOTNET_ROOT=$root; \$DOTNET_ROOT/bin/overdrive risk" "r=$root; \$r/bin/overdrive risk" "ROOTS=$root; \$ROOTS/bin/overdrive risk" "IFS=$root; \$IFS/bin/overdrive risk" "PATH=$root; \$PATH/bin/overdrive risk" \
     "R=$root; \$R/bin/overdrive risk
 rm -rf src" "R=$root; \${R:-x}/bin/overdrive risk" "R=$root; \${R/a/b}/bin/overdrive risk" \
     "R=\"$root\"x; \$R/bin/overdrive risk" "export R=$root; \$R/bin/overdrive risk"; do
@@ -1067,7 +1067,7 @@ test_allows_reading_the_plugins_own_files() {
   cwd=$(main_repo)
   assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/skills/risk-triage/SKILL.md")\"}" "$cwd")"
   assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/skills/risk-triage/SKILL.md")\",\"offset\":1,\"limit\":20}" "$cwd")"
-  assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/skills/../skills/risk-triage/SKILL.md")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/skills/../skills/risk-triage/SKILL.md")\"}" "$cwd")"
   assert_allowed_at "$root" "$(tool_event Read '{"file_path":"skills/risk-triage/SKILL.md"}' "$root")"
   # A symlinked spelling of the root is not the root.
   assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$b/root-link/skills/risk-triage/SKILL.md")\"}" "$cwd")"
@@ -1099,6 +1099,9 @@ test_read_checks_the_path_it_opens() {
   printf 'out\n' > "$b/outside/f"
   assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/link1/../x/f")\"}" "$cwd")"
   assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/sub/x/f")\"}" "$cwd")"
+  # Opened as written, x/.. leaves through the link; a dot segment is never allowed.
+  assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/x/../sub/x/f")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/./sub/x/f")\"}" "$cwd")"
 }
 
 test_reading_outside_the_plugin_gets_no_decision() {
