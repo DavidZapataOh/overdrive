@@ -25,6 +25,7 @@ fi
 . "$plugin/lib/path.sh" 2>/dev/null || exit 0
 
 PINS_FILE=.overdrive/run/pins
+proot=''
 
 # The plugin's own files (a skill's references) are not a project's change, even when the
 # plugin sits inside the repository (vendored, or a checkout under development).
@@ -216,16 +217,60 @@ plain_words() {
   [ -z "$q" ]
 }
 
-# own_read_only_cli: true when cmd runs this plugin's CLI, by its absolute path, for a
-# command that only reads: classification, decision ids and checks, recall. The router
-# runs these before every change, and a permission prompt for each would cost the user
-# a step on trivial work.
+# allow REASON: approve the call without a permission prompt. Deny and ask rules in the
+# user's settings still apply.
+allow() {
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"}}\n' "$1"
+}
+
+# own_cli_form: set CLI_CMD to cmd with the router's root variable expanded, when cmd is
+# one assignment of a variable to this plugin's root followed by one call through that
+# variable: R=ROOT; "$R"/bin/overdrive ... The assigned value must be the root exactly.
+own_cli_form() {
+  local name=${cmd%%=*} rest=${cmd#*=} bare='' v lead
+  case $name in
+    '' | [!A-Za-z_]* | *[!A-Za-z0-9_]* | IFS | PATH | ENV | CDPATH | GLOBIGNORE | HOME | PS4 | PROMPT_COMMAND | BASH* | LD_* | DYLD_*) return 1 ;;
+  esac
+  # An unquoted expansion splits and globs, so it is safe only for a plain path.
+  case $plugin in *[!A-Za-z0-9_./:@%+,=-]*) ;; *) bare=1 ;; esac
+  case $rest in
+    "\"$plugin\""*) rest=${rest#"\"$plugin\""} ;;
+    "'$plugin'"*) rest=${rest#"'$plugin'"} ;;
+    "$plugin"*) [ -n "$bare" ] || return 1; rest=${rest#"$plugin"} ;;
+    *) return 1 ;;
+  esac
+  rest=${rest#"${rest%%[! ]*}"}
+  case $rest in
+    ';'*) rest=${rest#;} ;;
+    '&&'*) rest=${rest#&&} ;;
+    *) return 1 ;;
+  esac
+  rest=${rest#"${rest%%[! ]*}"}
+  for v in "\"\$$name/bin/overdrive\"" "\"\${$name}/bin/overdrive\"" "\"\$$name\"/bin/overdrive" "\"\${$name}\"/bin/overdrive"; do
+    case $rest in "$v "* | "$v") lead=$v; break ;; esac
+  done
+  if [ -z "${lead-}" ] && [ -n "$bare" ]; then
+    for v in "\$$name/bin/overdrive" "\${$name}/bin/overdrive"; do
+      case $rest in "$v "* | "$v") lead=$v; break ;; esac
+    done
+  fi
+  [ -n "${lead-}" ] || return 1
+  CLI_CMD=$plugin/bin/overdrive${rest#"$lead"}
+}
+
+# own_read_only_cli: true when cmd runs this plugin's CLI, by its absolute path or through
+# the root variable the router describes, for a command that only reads: classification,
+# decision ids and checks, recall. The router runs these before every change, and a
+# permission prompt for each would cost the user a step on trivial work.
 own_read_only_cli() {
-  local exe=$plugin/bin/overdrive rest
+  local exe=$plugin/bin/overdrive rest CLI_CMD=$cmd
   case $cmd in
-    "$exe "*) rest=${cmd#"$exe"} ;;
-    "\"$exe\" "*) rest=${cmd#"\"$exe\""} ;;
-    "'$exe' "*) rest=${cmd#"'$exe'"} ;;
+    [A-Za-z_]*=*) own_cli_form || return 1 ;;
+  esac
+  case $CLI_CMD in
+    "$exe "*) rest=${CLI_CMD#"$exe"} ;;
+    "\"$exe\" "*) rest=${CLI_CMD#"\"$exe\""} ;;
+    "'$exe' "*) rest=${CLI_CMD#"'$exe'"} ;;
     *) return 1 ;;
   esac
   case $rest in
@@ -349,7 +394,7 @@ bash_tool() {
     esac
   fi
   if own_read_only_cli; then
-    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Overdrive read-only command"}}'
+    allow "Overdrive read-only command"
     return 0
   fi
   croot=''
@@ -427,6 +472,75 @@ scan() {
   done <<<"$records"
 }
 
+# skill_tool: the plugin's own skills load without a prompt.
+skill_tool() {
+  local name
+  json_extract_string skill "$input" || return 0
+  case $JSON_VALUE in overdrive:?*) name=${JSON_VALUE#overdrive:} ;; *) return 0 ;; esac
+  case $name in *[!A-Za-z0-9_-]* | -*) return 0 ;; esac
+  [ -f "$plugin/skills/$name/SKILL.md" ] || return 0
+  allow "Overdrive skill"
+}
+
+# own_file PATH: true when PATH, spelled as the tool will open it, is the plugin directory
+# or a file or directory inside it, and no symbolic link leads out. The lexical test comes
+# first so an unrelated path costs no change of directory.
+own_file() {
+  local p=$1 dir phys
+  _od_posix_path "$p"
+  p=$_OD_PATH
+  case $p in
+    /* | [A-Za-z]:*) ;;
+    *) [ -n "$cwd" ] || return 1; p=$cwd/$p ;;
+  esac
+  in_plugin "$p" || return 1
+  [ -n "$proot" ] || { cd -P -- "$plugin" 2>/dev/null && proot=$PWD; } || return 1
+  [ -e "$p" ] || return 1
+  if [ -d "$p" ]; then
+    dir=$p
+  else
+    [ ! -L "$p" ] || return 1
+    dir=${p%/*}
+  fi
+  cd -P -- "${dir:-/}" 2>/dev/null || return 1
+  phys=$PWD
+  case $phys/ in "$proot"/*) return 0 ;; esac
+  return 1
+}
+
+# read_tool: Read, Glob and Grep inside the plugin only read its own references.
+read_tool() {
+  local path='' pat='' lit='' wild=''
+  if [ "$tool" = Read ]; then
+    json_extract_string file_path "$input" && path=$JSON_VALUE
+  else
+    json_extract_string path "$input" && path=$JSON_VALUE
+    if [ "$tool" = Glob ] && json_extract_string pattern "$input"; then
+      pat=$JSON_VALUE
+      case $pat in *..*) return 0 ;; esac
+      case $pat in
+        /* | [A-Za-z]:*)
+          case $pat in *'{'*) return 0 ;; esac
+          lit=${pat%%[*?[]*}
+          if [ "$lit" = "$pat" ]; then
+            own_file "$pat" || return 0
+          else
+            case $lit in */*) lit=${lit%/*} ;; *) return 0 ;; esac
+            own_file "${lit:-/}" || return 0
+          fi
+          wild=1
+          ;;
+      esac
+    fi
+  fi
+  if [ -n "$path" ]; then
+    own_file "$path" || return 0
+  else
+    [ -n "$wild" ] || return 0
+  fi
+  allow "Overdrive plugin file"
+}
+
 input=''
 IFS= read -r -d '' input || :
 json_extract_strings "$input" tool_name session_id cwd
@@ -440,5 +554,7 @@ case $tool in
   Edit | Write | MultiEdit | NotebookEdit) file_tool ;;
   Bash) bash_tool ;;
   Agent | Task) agent_tool ;;
+  Read | Glob | Grep) read_tool ;;
+  Skill) skill_tool ;;
 esac
 exit 0
