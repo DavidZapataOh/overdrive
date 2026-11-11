@@ -977,7 +977,7 @@ test_allows_the_read_only_cli_through_a_root_variable() {
   assert_auto_allows "$(bash_event "R=$root; \"\$R\"/bin/overdrive risk --worktree" "$repo")"
   assert_auto_allows "$(bash_event "R=\"$root\"; \"\${R}/bin/overdrive\" decisions next-id" "$repo")"
   assert_auto_allows "$(bash_event "R='$root'; \${R}/bin/overdrive decisions check" "$repo")"
-  assert_auto_allows "$(bash_event "ROOT=$root && \"\$ROOT/bin/overdrive\" recall session ttl" "$repo")"
+  assert_auto_allows "$(bash_event "PLUGIN_ROOT=$root && \"\$PLUGIN_ROOT/bin/overdrive\" recall session ttl" "$repo")"
   assert_auto_allows "$(bash_event "R=$root ; \$R/bin/overdrive risk" "$repo")"
   [ ! -e "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "classification marked" >&2; return 1; }
   for c in "R=/tmp/x; \$R/bin/overdrive risk --worktree" "R=$root/; \$R/bin/overdrive risk" \
@@ -990,7 +990,7 @@ test_allows_the_read_only_cli_through_a_root_variable() {
     "R=\$(id); \$R/bin/overdrive risk" "R=$root\$(id); \$R/bin/overdrive risk" \
     "R=$root; \$Q/bin/overdrive risk" "R=$root; \$R/bin/overdrive-x risk" "R=$root; \$R/bin/other risk" \
     "R=$root \$R/bin/overdrive risk" "R=$root; cd src; \$R/bin/overdrive risk" \
-    "IFS=$root; \$IFS/bin/overdrive risk" "PATH=$root; \$PATH/bin/overdrive risk" \
+    "TMPDIR=$root; \$TMPDIR/bin/overdrive risk" "r=$root; \$r/bin/overdrive risk" "ROOTS=$root; \$ROOTS/bin/overdrive risk" "IFS=$root; \$IFS/bin/overdrive risk" "PATH=$root; \$PATH/bin/overdrive risk" \
     "R=$root; \$R/bin/overdrive risk
 rm -rf src" "R=$root; \${R:-x}/bin/overdrive risk" "R=$root; \${R/a/b}/bin/overdrive risk" \
     "R=\"$root\"x; \$R/bin/overdrive risk" "export R=$root; \$R/bin/overdrive risk"; do
@@ -1013,13 +1013,14 @@ test_a_root_variable_with_a_special_path_is_allowed_only_when_quoted() {
 
 skill_event() { tool_event Skill "{\"skill\":\"$(jstr "$1")\"}"; }
 
-test_allows_the_plugins_own_skills() {
+# Approving a skill would also grant its allowed-tools for the turn.
+test_skills_get_no_decision() {
   local s
   for s in "$(plugin_dir)"/skills/*/; do
     s=${s%/}
-    assert_allowed_at "$(plugin_dir)" "$(skill_event "overdrive:${s##*/}")"
+    assert_allows "$(skill_event "overdrive:${s##*/}")"
   done
-  assert_allowed_at "$(plugin_dir)" "$(tool_event Skill '{"skill":"overdrive:risk-triage","args":"x"}')"
+  assert_allows "$(skill_event overdrive:release-gates)"
 }
 
 test_other_skills_get_no_decision() {
@@ -1068,13 +1069,36 @@ test_allows_reading_the_plugins_own_files() {
   assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/skills/risk-triage/SKILL.md")\",\"offset\":1,\"limit\":20}" "$cwd")"
   assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/skills/../skills/risk-triage/SKILL.md")\"}" "$cwd")"
   assert_allowed_at "$root" "$(tool_event Read '{"file_path":"skills/risk-triage/SKILL.md"}' "$root")"
-  assert_allowed_at "$root" "$(tool_event Glob "{\"pattern\":\"*.md\",\"path\":\"$(jstr "$root/skills")\"}" "$cwd")"
-  assert_allowed_at "$root" "$(tool_event Glob "{\"pattern\":\"$(jstr "$root/skills/*/SKILL.md")\"}" "$cwd")"
-  assert_allowed_at "$root" "$(tool_event Glob "{\"pattern\":\"**/*.md\",\"path\":\"$(jstr "$root")\"}" "$cwd")"
-  assert_allowed_at "$root" "$(tool_event Grep "{\"pattern\":\"lane\",\"path\":\"$(jstr "$root/skills")\"}" "$cwd")"
-  assert_allowed_at "$root" "$(tool_event Grep "{\"pattern\":\"lane\",\"path\":\"$(jstr "$root/skills/risk-triage/SKILL.md")\",\"output_mode\":\"content\"}" "$cwd")"
   # A symlinked spelling of the root is not the root.
   assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$b/root-link/skills/risk-triage/SKILL.md")\"}" "$cwd")"
+}
+
+test_glob_and_grep_get_no_decision_even_inside_the_plugin() {
+  local b root cwd
+  b=$(mktemp -d)
+  link_plugin "$b"
+  root=$b/root
+  cwd=$(main_repo)
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"*.md\",\"path\":\"$(jstr "$root/skills")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"$(jstr "$root/skills/*/SKILL.md")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"\\\\Users\\\\x\\\\*\",\"path\":\"$(jstr "$root")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Grep "{\"pattern\":\"lane\",\"path\":\"$(jstr "$root/skills")\"}" "$cwd")"
+}
+
+# Read opens the lexically normalized path, so a link followed by .. must not be trusted.
+test_read_checks_the_path_it_opens() {
+  local b root cwd
+  b=$(mktemp -d)
+  link_plugin "$b"
+  root=$b/root
+  cwd=$(main_repo)
+  mkdir -p "$root/sub/deep" "$root/sub/x" "$b/outside/x"
+  ln -s "$root/sub/deep" "$root/link1"
+  ln -s "$b/outside" "$root/x"
+  printf 'in\n' > "$root/sub/x/f"
+  printf 'out\n' > "$b/outside/f"
+  assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/link1/../x/f")\"}" "$cwd")"
+  assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/sub/x/f")\"}" "$cwd")"
 }
 
 test_reading_outside_the_plugin_gets_no_decision() {
@@ -1120,4 +1144,38 @@ test_latency_p95_under_15ms_for_an_unrelated_read() {
   ev=$(tool_event Read '{"file_path":"/home/u/project/src/a.ts"}' /home/u/project)
   best=$(p95_us 50 run_alternating "$ev" "$ev")
   [ "$best" -lt 15000 ] || { echo "best p95 ${best} us over 15 ms" >&2; return 1; }
+}
+
+# A root with a quote in its name must never be spliced into a quoted form of the other kind.
+# shellcheck disable=SC2016
+test_quote_characters_in_the_root_refuse_that_quoting() {
+  local base root repo n out name
+  repo=$(main_repo)
+  base=$(mktemp -d)
+  for name in "o'neil" 'dq"x' 'dollar$x' 'back\\slash'; do
+    root="$base/$name/overdrive"
+    mkdir -p "$root"
+    cp -R "$(plugin_dir)/hooks" "$(plugin_dir)/lib" "$root/"
+    for n in 1 2 3 4 5 6; do
+      case $n in
+        1) cmd="R='$root'; \"\$R\"/bin/overdrive risk \"'; touch $base/PWNED; \"'\"\\'" ;;
+        2) cmd="'$root/bin/overdrive' risk \"'; touch $base/PWNED; \"'\"\\'" ;;
+        3) cmd="R='$root'; \"\$R\"/bin/overdrive risk --worktree" ;;
+        4) cmd="R=\"$root\"; \"\$R\"/bin/overdrive risk --worktree" ;;
+        5) cmd="'$root/bin/overdrive' risk --worktree" ;;
+        6) cmd="\"$root/bin/overdrive\" risk --worktree" ;;
+      esac
+      out=$(printf '%s' "$(bash_event "$cmd" "$repo")" | CLAUDE_PLUGIN_ROOT=$root "$root/hooks/pre-tool-use")
+      case $name:$n:$out in
+        "o'neil":1:*'"allow"'* | "o'neil":2:*'"allow"'* | "o'neil":3:*'"allow"'* | "o'neil":5:*'"allow"'*) echo "approved: $cmd" >&2; return 1 ;;
+        "o'neil":4:*'"allow"'* | "o'neil":6:*'"allow"'*) ;;
+        "o'neil":4:* | "o'neil":6:*) echo "refused safe: $cmd" >&2; return 1 ;;
+        'dq"x':4:*'"allow"'* | 'dq"x':6:*'"allow"'* | 'dollar$x':4:*'"allow"'* | 'dollar$x':6:*'"allow"'*) echo "approved: $cmd" >&2; return 1 ;;
+        'back\\slash':4:*'"allow"'* | 'back\\slash':6:*'"allow"'*) echo "approved: $cmd" >&2; return 1 ;;
+        'dq"x':3:*'"allow"'* | 'dq"x':5:*'"allow"'* | 'dollar$x':3:*'"allow"'* | 'dollar$x':5:*'"allow"'* | 'back\\slash':3:*'"allow"'* | 'back\\slash':5:*'"allow"'*) ;;
+        'dq"x':3:* | 'dq"x':5:* | 'dollar$x':3:* | 'dollar$x':5:* | 'back\\slash':3:* | 'back\\slash':5:*) echo "refused safe: $cmd" >&2; return 1 ;;
+      esac
+    done
+  done
+  [ ! -e "$base/PWNED" ] || { echo "command ran" >&2; return 1; }
 }
