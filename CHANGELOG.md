@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 — 2026-11-11
+
+- The PreToolUse guard approves what the session router needs without a permission prompt: the read-only CLI commands (`risk`, `decisions next-id`, `decisions check`, `recall`) when run through a variable (`R`, `ROOT`, `OD_ROOT` or `PLUGIN_ROOT`) set to the plugin root (`R=<root>; $R/bin/overdrive risk ...`), and `Read` of files inside the plugin directory. A path with a `.` or `..` segment, a symbolic link that resolves outside it and any other value or variable name are not approved. A quoting is accepted only when the root can be written that way as one literal word, which also closes a way for a root containing a quote to turn arguments into part of the path in the existing absolute-path allow. The guard now also matches `Read`; an unrelated call still uses shell builtins only.
+
 ## 0.1.0 — 2026-11-11
 
 First release. Overdrive scales process to the risk of each change: a deterministic classifier (`overdrive risk`) puts every change in the `direct`, `standard` or `critical` lane, and each lane brings only the planning, review and evidence it needs. The release ships 14 skills, five subagents (builder, reviewer, critical-reviewer, final-reviewer, researcher), a SessionStart router, a PreToolUse guard, a Stop check for the Risk line and the `overdrive` CLI (risk, brief, review-package, findings, ledger, evidence, pin, overlap, decisions, recall). In the critical lane the guard now holds the final review and the pull request until every critical task has been reviewed after its last change. Marketplace and plugin manifests are included.

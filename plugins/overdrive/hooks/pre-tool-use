@@ -25,6 +25,7 @@ fi
 . "$plugin/lib/path.sh" 2>/dev/null || exit 0
 
 PINS_FILE=.overdrive/run/pins
+proot=''
 
 # The plugin's own files (a skill's references) are not a project's change, even when the
 # plugin sits inside the repository (vendored, or a checkout under development).
@@ -216,16 +217,74 @@ plain_words() {
   [ -z "$q" ]
 }
 
-# own_read_only_cli: true when cmd runs this plugin's CLI, by its absolute path, for a
-# command that only reads: classification, decision ids and checks, recall. The router
-# runs these before every change, and a permission prompt for each would cost the user
-# a step on trivial work.
+# allow REASON: approve the call without a permission prompt. Deny and ask rules in the
+# user's settings still apply.
+allow() {
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"}}\n' "$1"
+}
+
+# quoting_of TEXT: set bare, sq and dq to 1 for each way TEXT can stand in a command as
+# one literal word: unquoted (a plain path only, since an expansion splits and globs),
+# in single quotes (no single quote inside) and in double quotes (nothing the shell
+# expands inside).
+quoting_of() {
+  bare='' sq='' dq=''
+  case $1 in *[!A-Za-z0-9_./:@%+,=-]*) ;; *) bare=1 ;; esac
+  case $1 in *"'"*) ;; *) sq=1 ;; esac
+  case $1 in *'"'* | *'$'* | *'`'* | *\\*) ;; *) dq=1 ;; esac
+}
+
+# own_cli_form: set CLI_CMD to cmd with the router's root variable expanded, when cmd is
+# one assignment of a variable to this plugin's root followed by one call through that
+# variable: R=ROOT; "$R"/bin/overdrive ... The assigned value must be the root exactly.
+own_cli_form() {
+  local name=${cmd%%=*} rest=${cmd#*=} v lead bare sq dq
+  # Only names the router uses: variables the shell itself reads must not qualify.
+  case $name in
+    *[!A-Z0-9_]* | [!A-Z]*) return 1 ;;
+    R | ROOT | OD_ROOT | PLUGIN_ROOT) ;;
+    *) return 1 ;;
+  esac
+  quoting_of "$plugin"
+  case $rest in
+    "\"$plugin\""*) [ -n "$dq" ] || return 1; rest=${rest#"\"$plugin\""} ;;
+    "'$plugin'"*) [ -n "$sq" ] || return 1; rest=${rest#"'$plugin'"} ;;
+    "$plugin"*) [ -n "$bare" ] || return 1; rest=${rest#"$plugin"} ;;
+    *) return 1 ;;
+  esac
+  rest=${rest#"${rest%%[! ]*}"}
+  case $rest in
+    ';'*) rest=${rest#;} ;;
+    '&&'*) rest=${rest#&&} ;;
+    *) return 1 ;;
+  esac
+  rest=${rest#"${rest%%[! ]*}"}
+  for v in "\"\$$name/bin/overdrive\"" "\"\${$name}/bin/overdrive\"" "\"\$$name\"/bin/overdrive" "\"\${$name}\"/bin/overdrive"; do
+    case $rest in "$v "* | "$v") lead=$v; break ;; esac
+  done
+  if [ -z "${lead-}" ] && [ -n "$bare" ]; then
+    for v in "\$$name/bin/overdrive" "\${$name}/bin/overdrive"; do
+      case $rest in "$v "* | "$v") lead=$v; break ;; esac
+    done
+  fi
+  [ -n "${lead-}" ] || return 1
+  CLI_CMD=$plugin/bin/overdrive${rest#"$lead"}
+}
+
+# own_read_only_cli: true when cmd runs this plugin's CLI, by its absolute path or through
+# the root variable the router describes, for a command that only reads: classification,
+# decision ids and checks, recall. The router runs these before every change, and a
+# permission prompt for each would cost the user a step on trivial work.
 own_read_only_cli() {
-  local exe=$plugin/bin/overdrive rest
+  local exe=$plugin/bin/overdrive rest bare sq dq
+  # A quoting that is not literal for this root (a quote inside it, say) would let the
+  # rest of the command be read as part of the path.
+  quoting_of "$exe"
   case $cmd in
-    "$exe "*) rest=${cmd#"$exe"} ;;
-    "\"$exe\" "*) rest=${cmd#"\"$exe\""} ;;
-    "'$exe' "*) rest=${cmd#"'$exe'"} ;;
+    [A-Za-z_]*=*) own_cli_form || return 1; rest=${CLI_CMD#"$exe"} ;;
+    "$exe "*) [ -n "$bare" ] || return 1; rest=${cmd#"$exe"} ;;
+    "\"$exe\" "*) [ -n "$dq" ] || return 1; rest=${cmd#"\"$exe\""} ;;
+    "'$exe' "*) [ -n "$sq" ] || return 1; rest=${cmd#"'$exe'"} ;;
     *) return 1 ;;
   esac
   case $rest in
@@ -349,7 +408,7 @@ bash_tool() {
     esac
   fi
   if own_read_only_cli; then
-    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Overdrive read-only command"}}'
+    allow "Overdrive read-only command"
     return 0
   fi
   croot=''
@@ -427,6 +486,43 @@ scan() {
   done <<<"$records"
 }
 
+# own_file PATH: true when PATH, spelled as the tool will open it, is the plugin directory
+# or a file or directory inside it, and no symbolic link leads out. The lexical test comes
+# first so an unrelated path costs no change of directory.
+own_file() {
+  local p=$1 dir phys
+  _od_posix_path "$p"
+  p=$_OD_PATH
+  case $p in
+    /* | [A-Za-z]:*) ;;
+    *) [ -n "$cwd" ] || return 1; p=$cwd/$p ;;
+  esac
+  # A dot segment resolves differently opened as written than normalized, through a link.
+  case $p/ in */./* | */../*) return 1 ;; esac
+  _od_normalize_path "$p"
+  p=$_OD_PATH
+  in_plugin "$p" || return 1
+  [ -n "$proot" ] || { cd -P -- "$plugin" 2>/dev/null && proot=$PWD; } || return 1
+  [ -e "$p" ] || return 1
+  if [ -d "$p" ]; then
+    dir=$p
+  else
+    [ ! -L "$p" ] || return 1
+    dir=${p%/*}
+  fi
+  cd -P -- "${dir:-/}" 2>/dev/null || return 1
+  phys=$PWD
+  case $phys/ in "$proot"/*) return 0 ;; esac
+  return 1
+}
+
+# read_tool: a Read inside the plugin only reads its own references.
+read_tool() {
+  json_extract_string file_path "$input" || return 0
+  own_file "$JSON_VALUE" || return 0
+  allow "Overdrive plugin file"
+}
+
 input=''
 IFS= read -r -d '' input || :
 json_extract_strings "$input" tool_name session_id cwd
@@ -440,5 +536,6 @@ case $tool in
   Edit | Write | MultiEdit | NotebookEdit) file_tool ;;
   Bash) bash_tool ;;
   Agent | Task) agent_tool ;;
+  Read) read_tool ;;
 esac
 exit 0

@@ -953,3 +953,238 @@ test_other_agents_never_write_a_review_record() {
   assert_allows "$(dispatch_event overdrive:builder 'Build Task 2' 'x' "$repo")"
   assert_eq 0 "$(ledger_text "$repo" | grep -c 'reviewed by')"
 }
+
+# tool_event TOOL INPUT_JSON [CWD]: a PreToolUse event for any tool.
+tool_event() {
+  printf '{"session_id":"sess-1","transcript_path":"/t.jsonl","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":%s,"tool_use_id":"toolu_1"}' \
+    "$(jstr "${3:-$PWD}")" "$1" "$2"
+}
+
+# refuse_allow EVENT COMMAND: fails when the hook approves the call.
+refuse_allow() {
+  local out
+  out=$(guard "$1")
+  case $out in *'"allow"'*) printf 'approved: %s\n' "$2" >&2; return 1 ;; esac
+}
+
+# The router tells the model to set R to the plugin root and call R/bin/overdrive, so the
+# expanded form is what a session actually runs.
+test_allows_the_read_only_cli_through_a_root_variable() {
+  local repo root c
+  repo=$(main_repo)
+  root=$(plugin_dir)
+  assert_auto_allows "$(bash_event "R=$root; \$R/bin/overdrive risk --intent 'Fix the typo in README.md' --paths README.md" "$repo")"
+  assert_auto_allows "$(bash_event "R=$root; \"\$R\"/bin/overdrive risk --worktree" "$repo")"
+  assert_auto_allows "$(bash_event "R=\"$root\"; \"\${R}/bin/overdrive\" decisions next-id" "$repo")"
+  assert_auto_allows "$(bash_event "R='$root'; \${R}/bin/overdrive decisions check" "$repo")"
+  assert_auto_allows "$(bash_event "PLUGIN_ROOT=$root && \"\$PLUGIN_ROOT/bin/overdrive\" recall session ttl" "$repo")"
+  assert_auto_allows "$(bash_event "R=$root ; \$R/bin/overdrive risk" "$repo")"
+  [ ! -e "$repo/.overdrive/run/markers/sess-1.changed" ] || { echo "classification marked" >&2; return 1; }
+  for c in "R=/tmp/x; \$R/bin/overdrive risk --worktree" "R=$root/; \$R/bin/overdrive risk" \
+    "R=$root/../overdrive; \$R/bin/overdrive risk" "R=${root}x; \$R/bin/overdrive risk" \
+    "R=$root; \$R/bin/overdrive pin src/a.test.ts" "R=$root; \$R/bin/overdrive evidence red -- npm test" \
+    "R=$root; R2=$root; \$R/bin/overdrive risk" "R=$root; \$R/bin/overdrive risk; rm -rf src" \
+    "R=$root; \$R/bin/overdrive risk && git push" "R=$root; \$R/bin/overdrive risk | tee out" \
+    "R=$root; \$R/bin/overdrive risk > out" "R=$root; \$R/bin/overdrive risk --paths \$HOME" \
+    "R=$root; \$R/bin/overdrive risk --paths \"\$X\"" "R=$root; \$R/bin/overdrive risk --paths *" \
+    "R=\$(id); \$R/bin/overdrive risk" "R=$root\$(id); \$R/bin/overdrive risk" \
+    "R=$root; \$Q/bin/overdrive risk" "R=$root; \$R/bin/overdrive-x risk" "R=$root; \$R/bin/other risk" \
+    "R=$root \$R/bin/overdrive risk" "R=$root; cd src; \$R/bin/overdrive risk" \
+    "TMPDIR=$root; \$TMPDIR/bin/overdrive risk" "GOROOT=$root; \$GOROOT/bin/overdrive risk" "DOTNET_ROOT=$root; \$DOTNET_ROOT/bin/overdrive risk" "r=$root; \$r/bin/overdrive risk" "ROOTS=$root; \$ROOTS/bin/overdrive risk" "IFS=$root; \$IFS/bin/overdrive risk" "PATH=$root; \$PATH/bin/overdrive risk" \
+    "R=$root; \$R/bin/overdrive risk
+rm -rf src" "R=$root; \${R:-x}/bin/overdrive risk" "R=$root; \${R/a/b}/bin/overdrive risk" \
+    "R=\"$root\"x; \$R/bin/overdrive risk" "export R=$root; \$R/bin/overdrive risk"; do
+    refuse_allow "$(bash_event "$c" "$repo")" "$c" || return 1
+  done
+}
+
+test_a_root_variable_with_a_special_path_is_allowed_only_when_quoted() {
+  local base root repo
+  base=$(mktemp -d)
+  root="$base/plug in"
+  mkdir -p "$root"
+  cp -R "$(plugin_dir)/hooks" "$(plugin_dir)/lib" "$root/"
+  repo=$(main_repo)
+  out=$(printf '%s' "$(bash_event "R=\"$root\"; \"\$R\"/bin/overdrive risk" "$repo")" | CLAUDE_PLUGIN_ROOT=$root "$root/hooks/pre-tool-use")
+  case $out in *'"allow"'*) ;; *) echo "quoted form not allowed: $out" >&2; return 1 ;; esac
+  out=$(printf '%s' "$(bash_event "R=$root; \$R/bin/overdrive risk" "$repo")" | CLAUDE_PLUGIN_ROOT=$root "$root/hooks/pre-tool-use")
+  case $out in *'"allow"'*) echo "unquoted form allowed: $out" >&2; return 1 ;; esac
+}
+
+skill_event() { tool_event Skill "{\"skill\":\"$(jstr "$1")\"}"; }
+
+# Approving a skill would also grant its allowed-tools for the turn.
+test_skills_get_no_decision() {
+  local s
+  for s in "$(plugin_dir)"/skills/*/; do
+    s=${s%/}
+    assert_allows "$(skill_event "overdrive:${s##*/}")"
+  done
+  assert_allows "$(skill_event overdrive:release-gates)"
+}
+
+test_other_skills_get_no_decision() {
+  local s
+  for s in other:risk-triage risk-triage overdrive:nope overdrive: overdrive:../x overdrive:risk-triage/x \
+    'overdrive:risk-triage x' overdrive:.. overdrive:. ''; do
+    assert_allows "$(skill_event "$s")"
+  done
+}
+
+# A plugin copy with a skill, a secret beside it and links that point outside it.
+link_plugin() {
+  local base=$1
+  mkdir -p "$base/root/skills/risk-triage" "$base/root/references" "$base/outside"
+  cp -R "$(plugin_dir)/hooks" "$(plugin_dir)/lib" "$base/root/"
+  printf 'x\n' > "$base/root/skills/risk-triage/SKILL.md"
+  printf 'secret\n' > "$base/outside/secret.txt"
+  ln -s "$base/outside" "$base/root/references/dir-link"
+  ln -s "$base/outside/secret.txt" "$base/root/references/file-link"
+  ln -s "$base/root" "$base/root-link"
+  # Git Bash copies instead of linking unless native links are enabled; a copy inside the
+  # plugin is not the escape these fixtures stand for.
+  local l
+  for l in "$base/root/references/dir-link" "$base/root/references/file-link" "$base/root-link"; do
+    [ -L "$l" ] || rm -rf "$l"
+  done
+}
+
+guard_at() {
+  printf '%s' "$2" | CLAUDE_PLUGIN_ROOT=$1 CLAUDE_PROJECT_DIR=/nonexistent "$1/hooks/pre-tool-use"
+}
+
+assert_allowed_at() {
+  local out
+  out=$(guard_at "$1" "$2")
+  case $out in *'"permissionDecision":"allow"'*) ;; *) printf 'not allowed: %s\n  got: %s\n' "$2" "$out" >&2; return 1 ;; esac
+}
+
+assert_silent_at() {
+  local out
+  out=$(guard_at "$1" "$2")
+  [ -z "$out" ] || { printf 'decision for: %s\n  got: %s\n' "$2" "$out" >&2; return 1; }
+}
+
+test_allows_reading_the_plugins_own_files() {
+  local b root cwd
+  b=$(mktemp -d)
+  link_plugin "$b"
+  root=$b/root
+  cwd=$(main_repo)
+  assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/skills/risk-triage/SKILL.md")\"}" "$cwd")"
+  assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/skills/risk-triage/SKILL.md")\",\"offset\":1,\"limit\":20}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/skills/../skills/risk-triage/SKILL.md")\"}" "$cwd")"
+  assert_allowed_at "$root" "$(tool_event Read '{"file_path":"skills/risk-triage/SKILL.md"}' "$root")"
+  # A symlinked spelling of the root is not the root.
+  assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$b/root-link/skills/risk-triage/SKILL.md")\"}" "$cwd")"
+}
+
+test_glob_and_grep_get_no_decision_even_inside_the_plugin() {
+  local b root cwd
+  b=$(mktemp -d)
+  link_plugin "$b"
+  root=$b/root
+  cwd=$(main_repo)
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"*.md\",\"path\":\"$(jstr "$root/skills")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"$(jstr "$root/skills/*/SKILL.md")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"\\\\Users\\\\x\\\\*\",\"path\":\"$(jstr "$root")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Grep "{\"pattern\":\"lane\",\"path\":\"$(jstr "$root/skills")\"}" "$cwd")"
+}
+
+# Read opens the lexically normalized path, so a link followed by .. must not be trusted.
+test_read_checks_the_path_it_opens() {
+  local b root cwd
+  b=$(mktemp -d)
+  link_plugin "$b"
+  root=$b/root
+  cwd=$(main_repo)
+  mkdir -p "$root/sub/deep" "$root/sub/x" "$b/outside/x"
+  ln -s "$root/sub/deep" "$root/link1"
+  ln -s "$b/outside" "$root/x"
+  printf 'in\n' > "$root/sub/x/f"
+  printf 'out\n' > "$b/outside/f"
+  assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/link1/../x/f")\"}" "$cwd")"
+  assert_allowed_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/sub/x/f")\"}" "$cwd")"
+  # Opened as written, x/.. leaves through the link; a dot segment is never allowed.
+  assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/x/../sub/x/f")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$root/./sub/x/f")\"}" "$cwd")"
+}
+
+test_reading_outside_the_plugin_gets_no_decision() {
+  local b root cwd r
+  b=$(mktemp -d)
+  link_plugin "$b"
+  root=$b/root
+  cwd=$(main_repo)
+  for r in "$b/outside/secret.txt" "$root/../outside/secret.txt" "$root/skills/../../outside/secret.txt" \
+    "${root}-evil/x" "$root/references/dir-link/secret.txt" "$root/references/file-link" \
+    "$root/references/dir-link" "$root/skills/missing/x.md" "$cwd/README.md" /etc/passwd; do
+    assert_silent_at "$root" "$(tool_event Read "{\"file_path\":\"$(jstr "$r")\"}" "$cwd")" || return 1
+  done
+  assert_silent_at "$root" "$(tool_event Read '{"file_path":"../outside/secret.txt"}' "$root/skills")"
+  assert_silent_at "$root" "$(tool_event Read '{"file_path":"README.md"}' "$cwd")"
+  assert_silent_at "$root" "$(tool_event Read '{}' "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"*\",\"path\":\"$(jstr "$b/outside")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"*\",\"path\":\"$(jstr "$root/references/dir-link")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"$(jstr "$root/../outside/*")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"$(jstr "$root/skills/../../outside/*")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"$(jstr "$b/outside/*")\",\"path\":\"$(jstr "$root")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Glob "{\"pattern\":\"*.md\"}" "$root")"
+  assert_silent_at "$root" "$(tool_event Grep "{\"pattern\":\"x\",\"path\":\"$(jstr "$b/outside")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Grep "{\"pattern\":\"x\",\"path\":\"$(jstr "$root/references/dir-link")\"}" "$cwd")"
+  assert_silent_at "$root" "$(tool_event Grep '{"pattern":"x"}' "$root")"
+}
+
+# The guard sits on every read now, so an unrelated one must not fork.
+test_an_unrelated_read_forks_nothing() {
+  local out
+  out=$(printf '%s' "$(tool_event Read '{"file_path":"/etc/hostname"}')" | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$(plugin_dir)" "$BASH" "$(plugin_dir)/hooks/pre-tool-use" 2>&1)
+  assert_eq '' "$out"
+  out=$(printf '%s' "$(tool_event Grep '{"pattern":"x","path":"/etc"}')" | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$(plugin_dir)" "$BASH" "$(plugin_dir)/hooks/pre-tool-use" 2>&1)
+  assert_eq '' "$out"
+  out=$(printf '%s' "$(skill_event other:thing)" | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$(plugin_dir)" "$BASH" "$(plugin_dir)/hooks/pre-tool-use" 2>&1)
+  assert_eq '' "$out"
+}
+
+test_latency_p95_under_15ms_for_an_unrelated_read() {
+  local best ev
+  latency_skipped && return 0
+  _root=$(plugin_dir)
+  ev=$(tool_event Read '{"file_path":"/home/u/project/src/a.ts"}' /home/u/project)
+  best=$(p95_us 50 run_alternating "$ev" "$ev")
+  [ "$best" -lt 15000 ] || { echo "best p95 ${best} us over 15 ms" >&2; return 1; }
+}
+
+# A root with a quote in its name must never be spliced into a quoted form of the other kind.
+# shellcheck disable=SC2016
+test_quote_characters_in_the_root_refuse_that_quoting() {
+  local base root repo n out name
+  repo=$(main_repo)
+  base=$(mktemp -d)
+  for name in "o'neil" 'dq"x' 'dollar$x' 'back\\slash'; do
+    root="$base/$name/overdrive"
+    mkdir -p "$root"
+    cp -R "$(plugin_dir)/hooks" "$(plugin_dir)/lib" "$root/"
+    for n in 1 2 3 4 5 6; do
+      case $n in
+        1) cmd="R='$root'; \"\$R\"/bin/overdrive risk \"'; touch $base/PWNED; \"'\"\\'" ;;
+        2) cmd="'$root/bin/overdrive' risk \"'; touch $base/PWNED; \"'\"\\'" ;;
+        3) cmd="R='$root'; \"\$R\"/bin/overdrive risk --worktree" ;;
+        4) cmd="R=\"$root\"; \"\$R\"/bin/overdrive risk --worktree" ;;
+        5) cmd="'$root/bin/overdrive' risk --worktree" ;;
+        6) cmd="\"$root/bin/overdrive\" risk --worktree" ;;
+      esac
+      out=$(printf '%s' "$(bash_event "$cmd" "$repo")" | CLAUDE_PLUGIN_ROOT=$root "$root/hooks/pre-tool-use")
+      case $name:$n:$out in
+        "o'neil":1:*'"allow"'* | "o'neil":2:*'"allow"'* | "o'neil":3:*'"allow"'* | "o'neil":5:*'"allow"'*) echo "approved: $cmd" >&2; return 1 ;;
+        "o'neil":4:*'"allow"'* | "o'neil":6:*'"allow"'*) ;;
+        "o'neil":4:* | "o'neil":6:*) echo "refused safe: $cmd" >&2; return 1 ;;
+        'dq"x':4:*'"allow"'* | 'dq"x':6:*'"allow"'* | 'dollar$x':4:*'"allow"'* | 'dollar$x':6:*'"allow"'*) echo "approved: $cmd" >&2; return 1 ;;
+        'back\\slash':4:*'"allow"'* | 'back\\slash':6:*'"allow"'*) echo "approved: $cmd" >&2; return 1 ;;
+        'dq"x':3:*'"allow"'* | 'dq"x':5:*'"allow"'* | 'dollar$x':3:*'"allow"'* | 'dollar$x':5:*'"allow"'* | 'back\\slash':3:*'"allow"'* | 'back\\slash':5:*'"allow"'*) ;;
+        'dq"x':3:* | 'dq"x':5:* | 'dollar$x':3:* | 'dollar$x':5:* | 'back\\slash':3:* | 'back\\slash':5:*) echo "refused safe: $cmd" >&2; return 1 ;;
+      esac
+    done
+  done
+  [ ! -e "$base/PWNED" ] || { echo "command ran" >&2; return 1; }
+}

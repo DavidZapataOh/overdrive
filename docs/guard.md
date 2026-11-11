@@ -1,6 +1,6 @@
 # Tool-call guard
 
-Overdrive registers a `PreToolUse` hook on `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`, `Agent` and `Task`. It enforces the rules that must hold on every call: pinned tests stay untouched until green, the default branch is never pushed to, and a critical-lane run does not reach its final review or its pull request while a task lacks a review. Everything else is left to the skills and the review.
+Overdrive registers a `PreToolUse` hook on `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`, `Agent`, `Task` and `Read`. It enforces the rules that must hold on every call: pinned tests stay untouched until green, the default branch is never pushed to, and a critical-lane run does not reach its final review or its pull request while a task lacks a review. Everything else is left to the skills and the review.
 
 ## What it does
 
@@ -21,7 +21,9 @@ It denies only what it recognizes: edits through the file tools, the shell forms
 | Dispatching `overdrive:critical-reviewer` with `Task N` in its description (or `Tasks 1-2`, or a `task-N.md` brief path in the prompt) | allowed; the guard appends `Task N: reviewed by critical-reviewer` to the active ledger |
 | Dispatching `overdrive:builder` with `Task N` in its description | allowed; the guard appends `Task N: changed by builder`, which makes the task need a new review |
 | A file tool call, or a shell command outside a small read-only allowlist, that goes ahead | writes `.overdrive/run/markers/<session_id>.changed` in every repository it runs in, once: the commit the change starts from and a checksum of the branches, tags and stash; a file tool also leaves `<session_id>.edited`. Paths inside the plugin's own directory and writes under `.overdrive/run/` are not marked |
-| The plugin's own read-only commands, run by the CLI's absolute path: `overdrive risk`, `overdrive decisions next-id`, `overdrive decisions check`, `overdrive recall`, with only plain words and quoted strings after them (no `;`, `&`, `\|`, redirection, `$`, backquote, glob or `~` outside quotes) | allowed without a permission prompt (`permissionDecision: allow`); deny and ask rules in the user's settings still apply |
+| The plugin's own read-only commands, run by the CLI's absolute path: `overdrive risk`, `overdrive decisions next-id`, `overdrive decisions check`, `overdrive recall`, with only plain words and quoted strings after them (no `;`, `&`, `\|`, redirection, `$`, backquote, glob or `~` outside quotes) | allowed without a permission prompt (`permissionDecision: allow`); deny and ask rules in the user's settings still apply. A quoting is used only when the root can be written that way as one literal word: a root with a single quote is never written in single quotes, one with a double quote, `$`, a backquote or a backslash never in double quotes, and unquoted needs a plain path |
+| The same commands run through the router's root variable: one assignment of a variable named `R`, `ROOT`, `OD_ROOT` or `PLUGIN_ROOT` to the plugin's root (`R=<root>;` or `&&`, quoted or not), then `$R/bin/overdrive`, `"$R"/bin/overdrive` or `"${R}/bin/overdrive"` with the same arguments | allowed; a different value, a second assignment or any other variable name (`IFS`, `PATH`, `TMPDIR`, `GOROOT`) is not |
+| `Read` of a file inside the plugin's directory | allowed (`permissionDecision: allow`); a path with a `.` or `..` segment gets no decision; otherwise it must exist and be a regular file or directory that resolves, through every symbolic link, inside the directory; anything else gets no decision |
 
 The shell reader follows quotes, escapes, comments, line continuations, here-documents, `cd`, `pushd`/`popd`, subshells and `$(...)` (a `cd` inside them ends with them), `git -C`, the wrappers `sudo`, `env`, `nice`, `timeout`, `stdbuf`, `nohup`, `command`, `builtin`, `exec`, `time`, `xargs` and `ionice`, and the strings run by `sh -c`, `bash -c` and `eval`.
 
@@ -37,7 +39,7 @@ The review is recorded by the dispatch, not by the verdict: the guard does not r
 
 ## Cost
 
-These calls use shell builtins only: a file tool with no pins, and any shell command on the read-only allowlist (it can neither write nor push). Any other shell command needs reading when it runs outside a repository, when it mentions `push`, when pins are active and it mentions a write form or a change of directory, or, without pins, when it changes directory (`cd`, `-C`, `-c`, `eval`). Pins add one `cksum` to check the seal, and reading a command adds one `awk`. CI asserts p95 under 15 ms without pins and under 30 ms with pins on Linux.
+These calls use shell builtins only: a file tool with no pins, `Read` (a path inside the plugin costs a change of directory, still a builtin), and any shell command on the read-only allowlist (it can neither write nor push). Any other shell command needs reading when it runs outside a repository, when it mentions `push`, when pins are active and it mentions a write form or a change of directory, or, without pins, when it changes directory (`cd`, `-C`, `-c`, `eval`). Pins add one `cksum` to check the seal, and reading a command adds one `awk`. CI asserts p95 under 15 ms without pins and under 30 ms with pins on Linux.
 
 ## Failure mode
 
