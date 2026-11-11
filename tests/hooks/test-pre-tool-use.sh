@@ -1041,6 +1041,12 @@ link_plugin() {
   ln -s "$base/outside" "$base/root/references/dir-link"
   ln -s "$base/outside/secret.txt" "$base/root/references/file-link"
   ln -s "$base/root" "$base/root-link"
+  # Git Bash copies instead of linking unless native links are enabled; a copy inside the
+  # plugin is not the escape these fixtures stand for.
+  local l
+  for l in "$base/root/references/dir-link" "$base/root/references/file-link" "$base/root-link"; do
+    [ -L "$l" ] || rm -rf "$l"
+  done
 }
 
 guard_at() {
