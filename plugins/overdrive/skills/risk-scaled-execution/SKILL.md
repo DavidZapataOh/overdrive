@@ -10,7 +10,7 @@ Runs a plan task by task. Process scales with each task's lane; the rules below 
 
 ## Rules
 
-1. **Ledger first.** Resuming a plan ("continue", "pick it up", a ledger under `.overdrive/run/`) runs `OD ledger status` before you read code or edit anything. Otherwise `OD ledger init --plan FILE`, then `OD ledger status`. Resume at its `next` line: a task the ledger shows `complete` is never reopened, redone or re-edited. Record each state change with `OD ledger add 'Task N: in-progress'` (then `implemented`, `reviewing`, `fixing round K`, `complete`, `blocked <text>`).
+1. **Ledger first.** Resuming a plan ("continue", "pick it up", a ledger under `.overdrive/run/`) runs `OD ledger status` before you read code or edit anything. Otherwise `OD ledger init --plan FILE`, then `OD ledger status`. Resume at its `next` line: a task the ledger shows `complete` is never reopened, redone or re-edited. Record each state change with `OD ledger add 'Task N: in-progress'` (then `implemented`, `reviewing`, `fixing round K`, `complete`, `blocked <text>`). A critical-lane task is recorded `Task N: in-progress critical` as soon as it is classified: the mark is what makes the ledger hold the final review and the PR until that task has a `reviewing` line after its last change. Standard and direct tasks go in-progress, implemented, complete, unmarked.
 2. **Classify every task before touching it.** `OD risk --intent '<task title>' --paths <its Files>`. Lane = max(script, your judgment): raise it for risk the script misses, never lower it. A failed classification is critical.
 3. **Run inline; dispatch only for a named reason.** Direct and standard tasks run in this session, whatever their size or file count; about 100 changed lines or fewer is always inline. This never applies to the critical lane: a critical-lane task is always built by an `overdrive:builder`, however small. Dispatch a builder only for: a critical-lane task (isolation), parallel independent tasks (read `${CLAUDE_PLUGIN_ROOT}/skills/parallel-execution/SKILL.md`), or this session's context nearing ~150k tokens. [references/inline-vs-dispatch.md](references/inline-vs-dispatch.md)
 4. **Pass paths, never pasted history.** Every dispatch gets a file: the brief from `OD brief --plan FILE --task N`, the package from `OD review-package --base SHA --head SHA --brief BRIEF`. Subagents never dispatch. If `overdrive` is not on PATH, call `${CLAUDE_PLUGIN_ROOT}/bin/overdrive`.
@@ -26,7 +26,7 @@ Runs a plan task by task. Process scales with each task's lane; the rules below 
 |---|---|---|
 | direct | inline; test first if testable; verify with the change's own evidence | none |
 | standard | inline; test-driven where it applies (`${CLAUDE_PLUGIN_ROOT}/skills/test-driven-development/SKILL.md`) | one `overdrive:reviewer` at slice end, by surface |
-| critical | one `overdrive:builder` per task, in order, from a brief | `overdrive:critical-reviewer` after each task, then the fix loop |
+| critical | one `overdrive:builder` per task, in order, from a brief; ledger `Task N: in-progress critical` | `overdrive:critical-reviewer` after each task, then the fix loop |
 
 Critical tasks need the plan approved by the user before they start. Ask for it once, then keep building every independent non-critical task while you wait. [references/approval-while-building.md](references/approval-while-building.md)
 

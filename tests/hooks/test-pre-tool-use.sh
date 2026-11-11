@@ -626,35 +626,44 @@ ledger_repo() {
   printf '%s\n' "$repo"
 }
 
-GATE_TAIL="has no critical review after its last change. For each, run $(plugin_dir)/bin/overdrive review-package"
+GATE_TAIL="no critical review after the last change. For each, run '$(plugin_dir)/bin/overdrive' review-package"
 
 test_denies_final_reviewer_while_a_task_is_unreviewed() {
   local repo
-  repo=$(ledger_repo 'Task 1: implemented' 'Task 1: reviewing' 'Task 2: implemented')
-  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 2 $GATE_TAIL"
-  assert_denies "$(agent_event final-reviewer "$repo")" "task 2 $GATE_TAIL"
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 2: in-progress critical' 'Task 2: implemented')
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 2 has $GATE_TAIL"
+  assert_denies "$(agent_event final-reviewer "$repo")" "task 2 has $GATE_TAIL"
   (cd "$repo" && od ledger add 'Task 2: reviewing') >/dev/null
   assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
 }
 
 test_denies_final_reviewer_after_the_observed_sequence() {
   local repo
-  repo=$(ledger_repo 'Task 1: in-progress' 'Task 1: reviewing' 'Task 1: fixing round 1 done, builder reported' 'Task 2: implemented')
-  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "task 1, 2 $GATE_TAIL"
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: reviewing' 'Task 1: fixing round 1 done, builder reported' 'Task 2: in-progress critical' 'Task 2: implemented')
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "tasks 1, 2 have $GATE_TAIL"
 }
 
 test_denies_pull_request_while_a_task_is_unreviewed() {
   local repo
-  repo=$(ledger_repo 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: fixing round 1' 'Task 2: implemented')
-  assert_denies "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")" "task 1, 2 $GATE_TAIL"
-  assert_denies "$(bash_event 'gh pr merge 5 --squash' "$repo")" "task 1, 2 $GATE_TAIL"
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: fixing round 1' 'Task 2: in-progress critical' 'Task 2: implemented')
+  assert_denies "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")" "tasks 1, 2 have $GATE_TAIL"
+  assert_denies "$(bash_event 'gh pr merge 5 --squash' "$repo")" "tasks 1, 2 have $GATE_TAIL"
   (cd "$repo" && od ledger add 'Task 1: reviewing' && od ledger add 'Task 2: reviewing') >/dev/null
   assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
 }
 
-test_allows_pull_request_in_a_run_without_critical_reviews() {
+test_allows_pull_request_for_standard_tasks_of_a_mixed_slice() {
   local repo
-  repo=$(ledger_repo 'Task 1: implemented' 'Task 2: implemented')
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete' \
+    'Task 2: in-progress' 'Task 2: implemented' 'Task 2: complete' 'Task 3: blocked sudo apt install libfoo')
+  assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
+  assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
+}
+
+test_final_reviewer_gates_unmarked_tasks_still_open() {
+  local repo
+  repo=$(ledger_repo 'Task 1: in-progress' 'Task 1: fixing round 1 done' 'Task 2: implemented')
+  assert_denies "$(agent_event overdrive:final-reviewer "$repo")" "tasks 1, 2 have $GATE_TAIL"
   assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
 }
 
@@ -665,13 +674,48 @@ test_allows_gated_calls_without_a_ledger() {
   assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
 }
 
-test_allows_unrelated_agent_and_shell_calls_without_reading_the_ledger() {
+test_allows_gated_calls_with_a_finished_or_other_branch_ledger() {
   local repo
-  repo=$(ledger_repo 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: fixing round 1')
-  # A ledger that would fail the read proves it is never consulted.
-  printf 'broken\n' > "$(cd "$repo" && od ledger path)"
-  assert_allows "$(agent_event overdrive:critical-reviewer "$repo")"
-  assert_allows "$(agent_event overdrive:builder "$repo")"
-  assert_allows "$(bash_event 'gh pr view 5' "$repo")"
-  assert_allows "$(bash_event 'ls' "$repo")"
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented')
+  git -C "$repo" checkout -q -b new-change
+  assert_allows "$(agent_event overdrive:final-reviewer "$repo")"
+  assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
+  git -C "$repo" checkout -q -
+  assert_denies "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")" "task 1 has $GATE_TAIL"
+  (cd "$repo" && od ledger add 'Task 1: complete') >/dev/null
+  assert_allows "$(bash_event 'gh pr create --base main --title t --body-file b' "$repo")"
+}
+
+test_pull_request_pattern_needs_the_command_itself() {
+  local repo
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented')
+  assert_allows "$(bash_event 'git commit -m "high priority: create widget"' "$repo")"
+  assert_allows "$(bash_event 'grep -rn "gh pr create" docs' "$repo")"
+  assert_denies "$(bash_event 'FOO=1 gh --repo a/b pr create --title t' "$repo")" "task 1 has $GATE_TAIL"
+  assert_denies "$(bash_event 'cd x && gh pr merge 3 --squash' "$repo")" "task 1 has $GATE_TAIL"
+}
+
+# counting_plugin DIR: a copy of the plugin whose ledger command logs each call to DIR/calls.
+counting_plugin() {
+  mkdir -p "$1/plugin"
+  cp -R "$(plugin_dir)/." "$1/plugin/"
+  printf '#!/usr/bin/env bash\necho "$*" >> "%s/calls"\n' "$1" > "$1/plugin/libexec/overdrive-ledger"
+}
+
+counted_guard() {
+  printf '%s' "$2" | CLAUDE_PLUGIN_ROOT="$1/plugin" CLAUDE_PROJECT_DIR=/nonexistent "$1/plugin/hooks/pre-tool-use"
+}
+
+test_unrelated_calls_never_read_the_ledger() {
+  local repo dir=$PWD/counted
+  repo=$(ledger_repo 'Task 1: in-progress critical' 'Task 1: implemented')
+  counting_plugin "$dir"
+  counted_guard "$dir" "$(agent_event overdrive:critical-reviewer "$repo")" >/dev/null
+  counted_guard "$dir" "$(agent_event overdrive:builder "$repo")" >/dev/null
+  counted_guard "$dir" "$(bash_event 'gh pr view 5' "$repo")" >/dev/null
+  counted_guard "$dir" "$(bash_event 'git commit -m "create widget"' "$repo")" >/dev/null
+  counted_guard "$dir" "$(bash_event 'ls' "$repo")" >/dev/null
+  [ ! -e "$dir/calls" ]
+  counted_guard "$dir" "$(bash_event 'gh pr create --title t' "$repo")" >/dev/null
+  assert_eq 'unreviewed' "$(cat "$dir/calls")"
 }

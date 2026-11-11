@@ -10,7 +10,7 @@ Standard slice (no critical task):
 
 Critical slice (at least one critical task, or the real diff is critical):
 
-1. Package for the whole slice with `--lane critical --require-green`; dispatch `overdrive:final-reviewer` with the package path. It is refused (exit 65) while a started task has no `Task N: reviewing` line after its last `implemented` or `fixing round` line: run that task's critical review first.
+1. Package for the whole slice with `--lane critical --require-green`; dispatch `overdrive:final-reviewer` with the package path. It is refused (exit 65) while a task marked critical has no `Task N: reviewing` line after its last `in-progress`, `implemented` or `fixing round` line: run that task's critical review first.
 2. Collect its findings into one fix wave: all P0 and P1 fixed together by the builder (or inline if each is small), one commit per finding.
 3. One scoped re-review: a new package whose base is the end of the first review's head, so the reviewer reads only the fix wave. `overdrive:critical-reviewer` for this pass.
 4. Anything still open follows the end of the fix loop (Ruling or stop condition). There is no second wave.

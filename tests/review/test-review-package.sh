@@ -310,29 +310,29 @@ EOS
 
 test_critical_package_passes_when_every_task_is_reviewed_after_its_last_change() {
   critical_range
-  task_ledger "$REPO" 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete' \
-    'Task 2: implemented' 'Task 2: reviewing' 'Task 2: fixing round 1' 'Task 2: reviewing' 'Task 2: complete'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete' \
+    'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewing' 'Task 2: fixing round 1' 'Task 2: reviewing' 'Task 2: complete'
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
 }
 
 test_critical_package_refuses_a_task_never_reviewed() {
   critical_range
-  task_ledger "$REPO" 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete' 'Task 2: implemented'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: complete' 'Task 2: in-progress critical' 'Task 2: implemented'
   local out rc=0
   out=$(critical_package "$REPO" "$BASE" "$HEAD" 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
-  assert_line "$out" "overdrive: no critical review after the last change of task 2: for each, run overdrive review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then overdrive ledger add 'Task <N>: reviewing'"
+  assert_line "$out" "overdrive: no critical review after the last change: task 2 has none; for each, run $SANDBOX/fp/bin/overdrive review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $SANDBOX/fp/bin/overdrive ledger add 'Task <N>: reviewing'"
   [ ! -e "$REPO/.overdrive/run/reviews" ] || [ -z "$(ls "$REPO/.overdrive/run/reviews")" ]
 }
 
 test_critical_package_refuses_a_fix_round_without_a_new_review() {
   critical_range
-  task_ledger "$REPO" 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: fixing round 1' \
-    'Task 2: implemented' 'Task 2: reviewing' 'Task 2: complete'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 1: fixing round 1' \
+    'Task 2: in-progress critical' 'Task 2: implemented' 'Task 2: reviewing' 'Task 2: complete'
   local out rc=0
   out=$(critical_package "$REPO" "$BASE" "$HEAD" 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
-  assert_line "$out" "overdrive: no critical review after the last change of task 1: for each, run overdrive review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then overdrive ledger add 'Task <N>: reviewing'"
+  assert_line "$out" "overdrive: no critical review after the last change: task 1 has none; for each, run $SANDBOX/fp/bin/overdrive review-package --base <task base> --head HEAD --brief <brief> --lane critical, dispatch overdrive:critical-reviewer on it, then $SANDBOX/fp/bin/overdrive ledger add 'Task <N>: reviewing'"
   # Re-reviewing after the fix lets it through.
   (cd "$REPO" && od ledger add 'Task 1: reviewing') > /dev/null
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
@@ -340,22 +340,22 @@ test_critical_package_refuses_a_fix_round_without_a_new_review() {
 
 test_critical_package_names_every_uncovered_task() {
   critical_range
-  task_ledger "$REPO" 'Task 1: implemented' 'Task 2: in-progress'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 2: in-progress critical'
   local out rc=0
   out=$(critical_package "$REPO" "$BASE" "$HEAD" 2>&1) || rc=$?
   assert_eq 65 "$rc" "exit code"
-  case $out in *"change of task 1, 2:"*) ;; *) fail "tasks not named: $out" ;; esac
+  case $out in *"tasks 1, 2 have none"*) ;; *) fail "tasks not named: $out" ;; esac
 }
 
 test_critical_package_ignores_tasks_not_started() {
   critical_range
-  task_ledger "$REPO" 'Task 1: implemented' 'Task 1: reviewing' 'Task 2: pending'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' 'Task 2: pending'
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
 }
 
 test_per_task_critical_package_is_not_gated() {
   critical_range
-  task_ledger "$REPO" 'Task 1: implemented'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented'
   [ -f "$(cd "$REPO" && od review-package --base "$BASE" --head "$HEAD" --lane critical)" ]
 }
 
@@ -375,7 +375,24 @@ test_critical_package_without_a_ledger_keeps_its_behavior() {
   critical_range
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
   # A pointer to a ledger that is gone is no ledger either.
-  task_ledger "$REPO" 'Task 1: implemented'
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented'
   rm -f "$(cd "$REPO" && od ledger path)"
+  [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
+}
+
+test_critical_package_ignores_a_ledger_of_another_branch_and_finished_ones() {
+  critical_range
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented'
+  git -C "$REPO" checkout -q -b next-change
+  [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
+  git -C "$REPO" checkout -q -
+  (cd "$REPO" && od ledger add 'Task 1: complete') >/dev/null
+  [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
+}
+
+test_critical_package_ignores_standard_tasks_of_a_mixed_slice() {
+  critical_range
+  task_ledger "$REPO" 'Task 1: in-progress critical' 'Task 1: implemented' 'Task 1: reviewing' \
+    'Task 2: in-progress' 'Task 2: implemented'
   [ -f "$(critical_package "$REPO" "$BASE" "$HEAD")" ]
 }

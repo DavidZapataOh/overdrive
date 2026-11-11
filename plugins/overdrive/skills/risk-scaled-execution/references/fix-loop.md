@@ -6,7 +6,7 @@ After a critical task is `implemented`:
 2. Read its report. Run `OD findings merge FILE` on the findings file it names; act on the merged list only.
 3. No P0 or P1 and both verdicts PASS: `Task N: complete`.
 4. Otherwise `OD ledger add 'Task N: fixing round K'` and:
-   - Round 1 and 2: resume the same builder (SendMessage to its id) with the findings file path, not the findings text. It fixes, commits, and reports. Build a new package for the new head and re-review; the ledger needs a new `Task N: reviewing` after every fix, or the slice package is refused.
+   - Round 1 and 2: resume the same builder (SendMessage to its id) with the findings file path, not the findings text. It fixes, commits, and reports. Build a new package for the new head and re-review; the ledger needs a new `Task N: reviewing` after every fix, or the final review and the PR are refused.
    - Round 3: a fresh `overdrive:builder` with `model: opus`, given the brief path and the findings file path.
 5. Findings still open after round 3: choose one and write it down.
    - The finding is wrong or accepted risk below P0: `Ruling: <finding> accepted — <why, with the reviewer's own evidence> — <cost if wrong>`.

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `overdrive review-package --require-green` in the critical lane refuses (exit 65) while a started ledger task has no `reviewing` line after its last change; `overdrive ledger unreviewed` lists those tasks. The PreToolUse guard also denies dispatching `overdrive:final-reviewer` and `gh pr create` / `gh pr merge` while any are listed.
+- Critical lane: the PreToolUse guard denies dispatching `overdrive:final-reviewer` and `gh pr create` / `gh pr merge`, and `overdrive review-package --require-green` refuses, while a task the ledger marks critical (`Task N: in-progress critical`) has no `reviewing` line after its last change. `overdrive ledger init` records the run's branch; ledgers of another branch and finished ledgers do not gate. `overdrive ledger unreviewed [--all-started]` lists the tasks.
 - `risk-triage`: classifies every repository change before its first edit and again on the diff, raises lanes the classifier cannot see, lets only the user lower a floor after hearing the risk (recorded as a decision), and proposes a project risk map once. The session router names the CLI by its absolute path and loads this skill for every change.
 - Briefs and review packages carry an `Overdrive CLI:` line with the CLI's absolute path for agents.
 - `overdrive risk` works when `TMPDIR` is not writable, falling back to `/tmp` and then the repository's run directory.
