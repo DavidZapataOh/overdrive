@@ -17,7 +17,7 @@ trim() {
 # shellcheck disable=SC2154,SC2034  # plugin and the D_* results belong to the caller
 decision() {
   local file=$1/.overdrive/decisions.md out line
-  D_TITLE='' D_STATUS='' D_SOURCE='' D_DECISION=''
+  D_TITLE='' D_STATUS='' D_SOURCE='' D_DECISION='' D_SCOPE=''
   [ -f "$file" ] || return 1
   out=$("$BASH" "$plugin/bin/overdrive" decisions show "$2" "$file" 2>/dev/null) || return 1
   while IFS= read -r line; do
@@ -26,6 +26,7 @@ decision() {
       "## $2 — "*) [ -n "$D_TITLE" ] || D_TITLE=${line#"## $2 — "} ;;
       '- Status:'*) trim "${line#- Status:}"; D_STATUS=$TRIMMED ;;
       '- Source:'*) trim "${line#- Source:}"; D_SOURCE=$TRIMMED ;;
+      '- Scope:'*) trim "${line#- Scope:}"; D_SCOPE=$TRIMMED ;;
       '- Decision:'*) trim "${line#- Decision:}"; D_DECISION=$TRIMMED ;;
     esac
   done <<<"$out"
@@ -56,5 +57,31 @@ in_base() {
   [ -n "$BASE" ] || return 1
   log=$(git -C "$1" cat-file -p "$BASE:.overdrive/decisions.md" 2>/dev/null) || return 1
   case $'\n'$log in *$'\n'"## $2 "* | *$'\n'"## $2"$'\n'* | *$'\n'"## $2"$'\r'*) return 0 ;; esac
+  return 1
+}
+
+# lowers_lane: true when the entry read by decision() has the wording of a lowering,
+# "Handle this change as direct instead of critical.", and not merely a mention of a lane.
+lowers_lane() {
+  [[ $D_DECISION =~ [Aa]s\ (direct|standard)\ instead\ of\ (critical|standard) ]]
+}
+
+# scope_covers PATH: true when the entry's Scope names PATH, a directory above it or a
+# glob that matches it. Words of the Scope without a "/" or "." are prose.
+scope_covers() {
+  local tok
+  for tok in ${D_SCOPE//[,;\`\"\'()]/ }; do
+    case $tok in */* | *.*) ;; *) continue ;; esac
+    tok=${tok%.}
+    case $tok in
+      "$1" | "$1"/*) return 0 ;;
+    esac
+    tok=${tok%/}
+    tok=${tok%/\*\*}
+    tok=${tok%/\*}
+    case $1 in "$tok"/*) return 0 ;; esac
+    # shellcheck disable=SC2254  # the Scope's own glob
+    case $1 in $tok) return 0 ;; esac
+  done
   return 1
 }

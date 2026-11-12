@@ -456,7 +456,7 @@ bash_tool() {
 # scan: check the records shell-words.awk prints for cmd, and add the repository of
 # every directory a mutating command runs in to roots.
 scan() {
-  local records rec f a dir
+  local records rec f a dir prior=''
   records=$(OD_CWD=$cwd awk -f "$plugin/lib/shell-words.awk" <<<"$cmd" 2>/dev/null) || records=''
   while IFS= read -r rec; do
     [ -n "$rec" ] || continue
@@ -469,7 +469,8 @@ scan() {
         case $'\n'$roots in *$'\n'"$_OD_ROOT"$'\n'*) ;; *) roots=$roots$_OD_ROOT$'\n' ;; esac
         ;;
       P) check_push "$dir" "${f[@]:2}" ;;
-      K) commit_gate "$dir" "${f[2]-}" "${f[3]-}" "${f[4]-}" "${f[@]:5}" ;;
+      A) prior=$prior$rec$'\n' ;;
+      K) PRIOR_ADDS=$prior; commit_gate "$dir" "${f[2]-}" "${f[3]-}" "${f[4]-}" "${f[@]:5}" ;;
       S) check_switch "$dir" "${f[@]:2}" ;;
       W)
         absolute "$dir" "${f[2]-}"

@@ -7,6 +7,7 @@
 #   P DIR ARG...         git push run in DIR, with its arguments
 #   S DIR switch         git switch, or a git checkout that creates, detaches or goes back (-)
 #   S DIR OP...          git checkout without --: a switch unless every OP is a path
+#   A DIR add|rm ARG...  git add, stage or rm that a later commit sees; replayed on a copy of the index
 #   K DIR FLAGS mMSG fFILE PATH...  git commit: see commit() below
 # Quotes, escapes, comments, line continuations, here-documents (bodies skipped),
 # subshells, cd, pushd/popd, git -C, common wrappers (sudo, env, nice, timeout...) and
@@ -35,7 +36,7 @@ function resolve(base, p) {
 function endword() {
   if (word == "" && !has) return
   if (redir == "out" || (redir == "dup" && word !~ /^([0-9]+-?|-)$/)) {
-    if (word !~ /^\/dev\//) out("W", dir, word)
+    if (word !~ /^\/dev\//) { out("W", dir, word); segw = 1 }
   } else if (redir == "hd" || redir == "hdstrip") {
     hd[++nhd] = word; hdstrip[nhd] = (redir == "hdstrip")
   } else if (redir == "") w[++nw] = word
@@ -138,6 +139,7 @@ function uniqout(d, j,   n, o, ops) {
 # Then the message text from -m/--message ("m" + text), the -F/--file path ("f" + path)
 # and the pathspec operands. Options that take a value consume the next word.
 function commit(d, j,   k, o, c, n, flags, ops, dd, msg, mfile, v) {
+  # Counts commands that may have changed files or the index in ways the A records do not show.
   flags = nprior > 0 ? "s" : ""
   for (k = j; k <= nw; k++) {
     o = w[k]
@@ -174,6 +176,14 @@ function git(d, j,   g, k, dd, sw, any) {
   }
   ran(g)
   if (j > nw) return
+  # What a later commit has to account for: staging commands are replayed on a scratch
+  # index (A), commands that only read are ignored, anything else may change content.
+  if (w[j] == "add" || w[j] == "stage" || w[j] == "rm") {
+    for (k = j + 1; k <= nw; k++) if (w[k] ~ /^(-p|--patch|-i|--interactive|-e|--edit|--pathspec-from-file.*)$/) any = 1
+    if (any) nprior++
+    else rec("A", g, j)
+    any = 0
+  } else if (w[j] != "commit" && w[j] !~ /^(status|diff|log|show|rev-parse|ls-files|ls-tree|blame|describe|shortlog|grep|cat-file|reflog|show-ref|merge-base|rev-list|fetch|remote|branch|config|tag)$/) nprior++
   if (w[j] == "push") rec("P", g, j + 1)
   else if (w[j] == "commit") commit(g, j + 1)
   else if (w[j] == "switch") out("S", g, "switch")
@@ -245,7 +255,9 @@ function endseg(   i, c, j, d, t) {
       }
     }
   }
-  if (i <= nw && c != "cd" && c != "pushd" && c != "popd") nprior++
+  if (i <= nw && c != "git" && !(c in harmless)) nprior++
+  if (segw) nprior++
+  segw = 0
   nw = 0
 }
 # feed LINE: read one line of the command; here-document bodies are skipped.
@@ -303,6 +315,9 @@ BEGIN {
   US = "\037"; dir = ENVIRON["OD_CWD"]; home = ENVIRON["HOME"]; sq = "\047"; dq = "\""; bs = "\\"
   # Wrappers that run the command after their options; each lists its options that
   # take a separate argument.
+  # Commands that leave the index and the files alone, for deciding what a commit sees.
+  n = split("cd pushd popd ls cat head tail grep rg wc pwd echo printf which date true false test npm pnpm yarn bun npx node pytest jest vitest mocha go cargo", hl, " ")
+  for (hi = 1; hi <= n; hi++) harmless[hl[hi]] = 1
   wrapper["sudo"] = " -u -g -C -D -h -p -U -r -t -T "
   wrapper["env"] = " -u -S -C "
   wrapper["nice"] = " -n "
