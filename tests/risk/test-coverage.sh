@@ -234,3 +234,141 @@ test_test_suffix_counts_only_under_a_test_directory() {
   assert_line "$out" "item test-removed critical computed path app/src/androidTest/java/com/acme/CartTest.kt"
   assert_line "$out" "item test-removed critical computed path Tests/AppTests/RouterTests.swift"
 }
+
+# import_repo: a package with src/app.js and src/lib/index.js, tests that import them
+# only through helpers, committed as the base.
+import_repo() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" package.json '{}'
+  write_file "$repo" src/app.js 'module.exports = {};'
+  write_file "$repo" src/lib/index.js 'module.exports = {};'
+  write_file "$repo" src/orphan.js 'module.exports = {};'
+  write_file "$repo" test/helpers.js "const { createApp } = require('../src/app.js');"
+  commit_all "$repo" base
+  printf '%s\n' "$repo"
+}
+
+change_sources() {
+  printf '// more\n' >> "$1/src/app.js"
+  printf '// more\n' >> "$1/src/lib/index.js"
+  printf '// more\n' >> "$1/src/orphan.js"
+}
+
+test_a_test_the_change_carries_covers_the_sources_it_imports() {
+  local repo
+  repo=$(import_repo)
+  change_sources "$repo"
+  write_file "$repo" test/export.test.js "const { createApp } = require('../src/app.js');
+const lib = require('../src/lib');
+test('x', () => {});"
+  risk "$repo" --worktree
+  assert_eq 0 "$rc" "exit code: $(cat err)"
+  assert_eq "src/orphan.js" "$(untested)"
+}
+
+test_imports_through_a_helper_cover_the_source() {
+  local repo
+  repo=$(import_repo)
+  printf '// more\n' >> "$repo/src/app.js"
+  write_file "$repo" test/products.test.js "const { withApp } = require('./helpers.js');
+test('x', () => {});"
+  risk "$repo" --worktree
+  assert_eq 0 "$rc" "exit code: $(cat err)"
+  assert_eq "" "$(untested)"
+}
+
+test_a_carried_test_that_imports_nothing_changed_covers_nothing() {
+  local repo
+  repo=$(import_repo)
+  printf '// more\n' >> "$repo/src/orphan.js"
+  write_file "$repo" test/export.test.js "const { withApp } = require('./helpers.js');
+test('x', () => {});"
+  risk "$repo" --worktree
+  assert_eq "src/orphan.js" "$(untested)"
+}
+
+test_an_edited_test_keeps_the_imports_it_already_had() {
+  local repo
+  repo=$(import_repo)
+  write_file "$repo" test/export.test.js "const { createApp } = require('../src/app');
+test('a', () => {});"
+  commit_all "$repo" 'add test'
+  printf '// more\n' >> "$repo/src/app.js"
+  printf "test('b', () => {});\n" >> "$repo/test/export.test.js"
+  risk "$repo" --worktree
+  assert_eq "" "$(untested)"
+}
+
+test_import_coverage_is_the_same_in_every_mode() {
+  local repo base
+  repo=$(import_repo)
+  base=$(git -C "$repo" rev-parse HEAD)
+  printf '// more\n' >> "$repo/src/app.js"
+  printf '// more\n' >> "$repo/src/orphan.js"
+  write_file "$repo" test/export.test.js "const { createApp } = require('../src/app.js');
+test('x', () => {});"
+  risk "$repo" --worktree
+  assert_eq "src/orphan.js" "$(untested)" worktree
+  git -C "$repo" add -A
+  risk "$repo" --staged
+  assert_eq "src/orphan.js" "$(untested)" staged
+  git -C "$repo" commit -q -m change
+  risk "$repo" --diff "$base...HEAD"
+  assert_eq "src/orphan.js" "$(untested)" "diff three dots"
+  risk "$repo" --diff "$base..HEAD"
+  assert_eq "src/orphan.js" "$(untested)" "diff two dots"
+}
+
+test_import_coverage_ignores_files_outside_the_repository_listing() {
+  local repo
+  repo=$(import_repo)
+  printf '// more\n' >> "$repo/src/orphan.js"
+  write_file "$repo" test/export.test.js "const x = require('../../elsewhere/src/orphan.js');
+test('x', () => {});"
+  risk "$repo" --worktree
+  assert_eq "src/orphan.js" "$(untested)"
+}
+
+test_only_import_syntax_covers() {
+  local repo
+  repo=$(import_repo)
+  printf '// more\n' >> "$repo/src/orphan.js"
+  write_file "$repo" test/mock.test.js "jest.mock('../src/orphan');
+vi.mock('../src/orphan.js');
+// const o = require('../src/orphan');
+const text = fs.readFileSync('../src/orphan.js');
+test('x', () => {});"
+  risk "$repo" --worktree
+  assert_eq "src/orphan.js" "$(untested)"
+  write_file "$repo" test/real.test.js "import { o } from '../src/orphan';
+test('x', () => {});"
+  risk "$repo" --worktree
+  assert_eq "" "$(untested)"
+}
+
+test_every_import_form_covers() {
+  local repo form
+  for form in "import '../src/orphan.js';" "export * from '../src/orphan';" "const o = await import('../src/orphan');" "const o = require( '../src/orphan' );"; do
+    repo=$(import_repo)
+    printf '// more\n' >> "$repo/src/orphan.js"
+    write_file "$repo" test/forms.test.js "$form
+test('x', () => {});"
+    risk "$repo" --worktree
+    assert_eq "" "$(untested)" "$form"
+  done
+}
+
+test_imports_reach_two_hops() {
+  local repo
+  repo=$(import_repo)
+  write_file "$repo" test/mid.js "const h = require('./helpers.js');"
+  commit_all "$repo" more
+  printf '// more\n' >> "$repo/src/app.js"
+  write_file "$repo" test/one.test.js "require('./helpers.js');"
+  risk "$repo" --worktree
+  assert_eq "" "$(untested)"
+  write_file "$repo" test/one.test.js "require('./mid.js');"
+  risk "$repo" --worktree
+  assert_eq "src/app.js" "$(untested)"
+}

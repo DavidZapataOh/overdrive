@@ -102,7 +102,7 @@ Automatic skills are loaded by Claude when the situation matches their descripti
 | `overdrive brief` | Write the brief for a plan task (`--plan FILE --task N`) or a text task (`--text`), or a neutral research brief (`--neutral`). |
 | `overdrive review-package` | Write the review package for a commit range: classification, commits, stat and diff; `--require-green` demands green evidence and, in the critical lane, a review of every critical task. |
 | `overdrive findings` | `check` and `merge` review findings in the one-line nine-field format. |
-| `overdrive ledger` | The run ledger of a plan: `init`, `add`, `status`, `path`, `rulings`, `unreviewed`, `mark-critical`. |
+| `overdrive ledger` | The run ledger of a plan: `init`, `add`, `status`, `path`, `rulings`, `unreviewed`, `mark-critical`, `critical-flow`. |
 | `overdrive evidence` | `red`, `green` and `list`: run a test command and record its result as evidence. |
 | `overdrive pin` | Pin committed test files so they cannot change between red and green; `--status`, `--release`, `--clear`. |
 | `overdrive overlap` | Show which plan tasks touch the same paths and which are independent. |

@@ -200,6 +200,11 @@ for range in ${ranges[@]+"${ranges[@]}"}; do
 done
 # A range side may be a tree (the empty tree before a root commit), so sides peel to trees.
 sides=('HEAD^{commit}')
+# A range of trees needs no commit: with none yet, HEAD stands for the empty tree.
+if [ -z "$staged$worktree" ] && [ "${#ranges[@]}" -gt 0 ] &&
+  ! git -C "$gitdir" rev-parse -q --verify 'HEAD^{commit}' >/dev/null 2>&1; then
+  sides=("$(git -C "$gitdir" hash-object -t tree --stdin </dev/null)^{tree}")
+fi
 for rev in "${revs[@]:1}"; do sides+=("$rev^{tree}"); done
 if ! resolved=$(git -C "$gitdir" rev-parse "${sides[@]}" 2>"$work/git.err"); then
   # Without a first commit there is nothing to compare against, in any mode.
@@ -343,8 +348,21 @@ if [ -n "$staged" ] || [ -n "$worktree" ]; then
     fail_closed "cannot list the files of the index: $(git_error)"
 fi
 
-signals_path_items "$work/records" "$work/rules" "$work/listing" > "$work/items" ||
+signals_path_items "$work/records" "$work/rules" "$work/listing" "$work/coverage" > "$work/items" ||
   fail_closed "path signals failed"
+# Sources no test is named after may be reached by the tests the change carries. Failing
+# to read the imports keeps the items as they are, which can only leave the lane higher.
+if [ -s "$work/coverage" ]; then
+  if [ -n "$worktree" ]; then cover_state=worktree
+  elif [ -n "$staged" ]; then cover_state=index
+  else cover_state=rev
+  fi
+  last=''
+  for range in ${ranges[@]+"${ranges[@]}"}; do last=${range##*..}; done
+  if signals_import_cover "$gitdir" "$work" "$work/items" "$work/listing" "$cover_state" "${last:-HEAD}" > "$work/items.covered" 2>/dev/null; then
+    mv -f "$work/items.covered" "$work/items" || fail_closed "cannot record the import coverage"
+  fi
+fi
 
 # Item lines are ordered critical first, then standard, by item, keeping evidence in the
 # order the changes were read; the Risk line lists each item once in the same order.

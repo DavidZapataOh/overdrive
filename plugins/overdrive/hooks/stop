@@ -22,6 +22,9 @@ if ! . "$plugin/lib/json.sh" 2>/dev/null || ! . "$plugin/lib/path.sh" 2>/dev/nul
   exit 0
 fi
 
+# shellcheck source=../lib/lowering.sh
+. "$plugin/lib/lowering.sh" 2>/dev/null || exit 0
+
 MISSING="Close this change with its Risk line: run $plugin/bin/overdrive risk --worktree (or --diff <base>...HEAD) and end with the Risk line it prints."
 LANES=(direct standard critical)
 
@@ -81,57 +84,6 @@ classify() {
     WHY=${out%%$'\n'*}
     WHY=${WHY:-the classifier exited with status $rc}
   fi
-}
-
-# trim VALUE: set TRIMMED to VALUE without surrounding whitespace.
-trim() {
-  TRIMMED=${1#"${1%%[![:space:]]*}"}
-  TRIMMED=${TRIMMED%"${TRIMMED##*[![:space:]]}"}
-}
-
-# decision ROOT ID: read entry ID of ROOT's decisions log into D_TITLE, D_STATUS and
-# D_SOURCE. Fails when the log or the entry cannot be read.
-decision() {
-  local file=$1/.overdrive/decisions.md out line
-  D_TITLE='' D_STATUS='' D_SOURCE=''
-  [ -f "$file" ] || return 1
-  out=$("$BASH" "$plugin/bin/overdrive" decisions show "$2" "$file" 2>/dev/null) || return 1
-  while IFS= read -r line; do
-    line=${line%$'\r'}
-    case $line in
-      "## $2 — "*) [ -n "$D_TITLE" ] || D_TITLE=${line#"## $2 — "} ;;
-      '- Status:'*) trim "${line#- Status:}"; D_STATUS=$TRIMMED ;;
-      '- Source:'*) trim "${line#- Source:}"; D_SOURCE=$TRIMMED ;;
-    esac
-  done <<<"$out"
-  trim "$D_TITLE"
-  D_TITLE=$TRIMMED
-}
-
-# users_words SOURCE: true when SOURCE quotes someone other than the agent:
-# "<quote>" — <who>, <date>, where no whole word of the attribution names an agent.
-users_words() {
-  local who w
-  case $1 in '"'*'" — '?*', '?*) ;; *) return 1 ;; esac
-  who=${1##*'" — '}
-  shopt -s nocasematch
-  for w in ${who//[!A-Za-z0-9]/ }; do
-    case $w in
-      claude | assistant | agent | overdrive | model | ai) shopt -u nocasematch; return 1 ;;
-    esac
-  done
-  shopt -u nocasematch
-  return 0
-}
-
-# in_base ROOT ID: true when entry ID is already in the decisions log at BASE, so it
-# predates this change.
-in_base() {
-  local log
-  [ -n "$BASE" ] || return 1
-  log=$(git -C "$1" cat-file -p "$BASE:.overdrive/decisions.md" 2>/dev/null) || return 1
-  case $'\n'$log in *$'\n'"## $2 "* | *$'\n'"## $2"$'\n'* | *$'\n'"## $2"$'\r'*) return 0 ;; esac
-  return 1
 }
 
 input=''

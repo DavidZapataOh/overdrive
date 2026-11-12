@@ -370,3 +370,34 @@ test_a_closed_run_gates_only_its_bound_branch() {
   assert_eq '' "$(cd "$repo" && od ledger unreviewed)"
   assert_eq 1 "$(cd "$repo" && od ledger unreviewed --any-branch)"
 }
+
+test_critical_flow_is_true_only_for_a_live_run_with_a_critical_task() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" docs/plan.md '# Plan
+
+### Task 1: One'
+  (cd "$repo" && od ledger init --plan docs/plan.md) >/dev/null
+  ! (cd "$repo" && od ledger critical-flow)
+  (cd "$repo" && od ledger add 'Task 1: in-progress')
+  ! (cd "$repo" && od ledger critical-flow)
+  (cd "$repo" && od ledger mark-critical 1)
+  (cd "$repo" && od ledger critical-flow)
+  (cd "$repo" && od ledger add 'Task 1: complete')
+  (cd "$repo" && od ledger critical-flow)
+  (cd "$repo" && od ledger add 'Run: closed — abandoned')
+  ! (cd "$repo" && od ledger critical-flow)
+}
+
+test_critical_flow_follows_the_branch_binding() {
+  local repo
+  repo=$(make_repo)
+  git -C "$repo" checkout -q -b feat-a
+  write_file "$repo" docs/plan.md '# Plan
+
+### Task 1: One'
+  (cd "$repo" && od ledger init --plan docs/plan.md && od ledger mark-critical 1) >/dev/null
+  (cd "$repo" && od ledger critical-flow)
+  git -C "$repo" checkout -q -b feat-b
+  ! (cd "$repo" && od ledger critical-flow)
+}

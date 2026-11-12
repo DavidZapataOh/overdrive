@@ -12,7 +12,7 @@ Before a repo change's first edit, classify it (outside the repo add `--repo <di
 `overdrive risk --intent '<request>' --paths <files to touch>`
 Lane = max(script, your judgment); failed classification = critical. Load overdrive:risk-triage before replying or acting when the lane is above direct, the output names it, you raise it, or the user asks to change a lane. The user may raise any lane; a lane drops only on their explicit yes to the risk you state, recorded as a decision; the Risk line ends `(lowered by user, D-NNNN)`.
 
-- direct: clear in one batch of ≤ 3 reads, no risk items. No plan or skill; test first if testable; verify inline.
+- direct: a fix or tweak clear in one batch of ≤ 3 reads, no risk items; new behavior (endpoint, export, command) is at least standard. No plan or skill; test first if testable; verify inline.
 - standard: neither. Short decision plan; TDD where testable; one review per slice, before any PR (read release-gates first).
 - critical: a floor or a risk-map rule. Full TDD plan approved before building (other work goes on); hard cases, real deps; review per task + final.
 
