@@ -1,7 +1,7 @@
 ---
 name: builder
 description: Implements one briefed task test-first and commits it. Dispatched by Overdrive skills with a brief file; not for direct use.
-model: sonnet
+model: opus
 effort: high
 maxTurns: 120
 ---

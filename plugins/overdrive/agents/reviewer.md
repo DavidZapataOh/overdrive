@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Reviews one standard-lane change from a review package, returning spec and quality verdicts. Dispatched by Overdrive skills with a package file; read-only.
-model: sonnet
+model: opus
 effort: high
 maxTurns: 40
 tools: Read, Grep, Glob, Bash

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 — 2026-11-12
+
+- The standard reviewer and the builder run on `opus`, like the critical and final reviewers: on real tasks the standard lane's `sonnet` review let defects through that the other side caught. Every agent that writes or judges code now uses the strongest model; the lane's savings come from its method.
+
 ## 0.2.1 — 2026-11-12
 
 - `overdrive ledger init --plan FILE --start N` records the earlier tasks as done, for a plan whose first tasks were finished before the ledger existed.

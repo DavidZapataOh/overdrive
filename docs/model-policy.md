@@ -4,7 +4,7 @@ Which model and effort each Overdrive agent runs on, and the measurements behind
 
 ## Standing rules
 
-- Builders and the standard reviewer and researcher run on `sonnet`.
+- Every agent that writes or judges code runs on `opus`: the builder, the standard reviewer, the critical reviewer and the final reviewer. Quality never drops below the strongest available model; cost is saved by the method (building in the main session, one review per slice, one correction), never by a cheaper reviewer. The researcher runs on `sonnet`.
 - The critical-lane reviewer and the final reviewer run on `opus`. A run on real tasks with them on `sonnet` let a production-only check go unrun through three reviews; the critical lane saves its cost by building in the main session and by one review and one correction, never by a cheaper reviewer.
 - An effort setting changes only when the cheaper one is non-inferior on defects caught and measurably cheaper.
 - A skill that fails pressure tests or evals on `sonnet` after the fix cap is re-dispatched on `opus` with the reason recorded; that is a one-off, not a policy change.
@@ -14,8 +14,8 @@ Which model and effort each Overdrive agent runs on, and the measurements behind
 
 | Agent | Model | Effort | Decision from the sweep |
 | --- | --- | --- | --- |
-| builder | sonnet | high | keep: medium saved nothing measurable |
-| reviewer | sonnet | high | keep: opus caught the same defects for about 1.7 times the cost |
+| builder | opus | high | keep: medium saved nothing measurable |
+| reviewer | opus | high | changed: the sweep found no difference on seeded defects, but on real tasks the sonnet review missed defects the other side caught |
 | critical-reviewer | opus | high | keep: xhigh caught the same defects for about 1.2 to 1.6 times the cost |
 | final-reviewer | opus | xhigh | only for slices with two or more critical tasks |
 | researcher | sonnet | medium | not swept |
