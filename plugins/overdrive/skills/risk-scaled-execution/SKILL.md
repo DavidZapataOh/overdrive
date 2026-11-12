@@ -28,7 +28,7 @@ Runs a plan task by task. Process scales with each task's lane; the rules below 
 | standard | inline; test-driven where it applies (`${CLAUDE_PLUGIN_ROOT}/skills/test-driven-development/SKILL.md`) | one `overdrive:reviewer` at slice end, by surface |
 | critical | one `overdrive:builder` per task, in order, from a brief; ledger `Task N: in-progress critical` | `overdrive:critical-reviewer` after each task, then the fix loop |
 
-Critical tasks need the plan approved by the user before they start. Ask for it once, then keep building every independent non-critical task while you wait. [references/approval-while-building.md](references/approval-while-building.md)
+Critical tasks need the plan approved by the user before they start. A pre-approval in the request ("I approve the plan", "use your default method") is that approval of the plan's content; it does not replace the ledger, the builder or the critical review, and the guard refuses a `git commit` of a critical change made outside them. Ask for it once, then keep building every independent non-critical task while you wait. [references/approval-while-building.md](references/approval-while-building.md)
 
 Critical review and fix loop: the reviewer writes findings; rounds 1 and 2 resume the same builder with the findings file; round 3 is a fresh builder with `model: opus`; if findings remain, that is a ledgered ruling or a stop condition, never a fourth round. Stop an agent only when it loops (same check fails 3 attempts in a row, or 3 fix rounds without fewer failures); builders never wait on CI, you watch it in the background. [references/fix-loop.md](references/fix-loop.md)
 

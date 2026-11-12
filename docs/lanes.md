@@ -4,7 +4,7 @@ Every repository change is handled in one of three lanes. The lane sets how much
 
 | Lane | Meant for | Plan | Tests | Review |
 | --- | --- | --- | --- | --- |
-| `direct` | a change that is clear after at most three reads and raises no risk item | none | test first if testable; otherwise `TDD: n/a — <reason>` | none; reread the diff and run the change's own check |
+| `direct` | a fix or adjustment that is clear after at most three reads and raises no risk item; new behavior is at least standard | none | test first if testable; otherwise `TDD: n/a — <reason>` | none; reread the diff and run the change's own check |
 | `standard` | work that is neither trivial nor risky | short decision plan | test-driven where it applies | one `overdrive:reviewer` per slice, before any pull request |
 | `critical` | a floor or a project risk-map rule | full test-first plan, approved by the user before the critical part is touched | test-driven with a hard-case list, real dependencies you own and a non-regression check | `overdrive:critical-reviewer` per task and after every change, then one `overdrive:final-reviewer` on the slice |
 
@@ -94,7 +94,8 @@ A critical change is built only after the user approves its plan, and it cannot 
 The skills carry the steps; the guard enforces the ordering that must not depend on Claude's discipline. While the active ledger holds a critical task with no `reviewed by critical-reviewer` line after its last change:
 
 - the PreToolUse hook denies dispatching `overdrive:final-reviewer` and denies `gh pr create` and `gh pr merge`;
-- `overdrive review-package --require-green` in the critical lane exits 65.
+- `overdrive review-package --require-green` in the critical lane exits 65;
+- the PreToolUse hook classifies each `git commit` and denies one that classifies critical unless the critical flow is under way: the commit comes from the dispatched `overdrive:builder`, the active ledger of the branch has a task marked critical (`overdrive ledger critical-flow`), or the commit message cites `(lowered by user, D-NNNN)` for an active decision of the user. A request that already approves the plan ("I approve the design and the plan; use your default execution method") approves the plan's content and waives the wait for approval; it does not skip the plan file, the ledger, the builder or the critical review, and building the change inline ends in a denied commit.
 
 The guard writes the review and change records itself. Dispatching `overdrive:critical-reviewer` with `Task N` in its description (or a `task-N` brief path in its prompt) records `Task N: reviewed by critical-reviewer`; dispatching `overdrive:builder` the same way records `Task N: changed by builder`, which makes the task need a new review. A `Task N: reviewing` line written by hand is only a state, `overdrive ledger add` refuses the guard's record lines, and a file tool cannot write the ledger. Details, the branch binding and the known limits (a review is recorded by the dispatch and not by its verdict; pull requests made outside the shell are not seen; a ledger that cannot be read lets the call through) are in [guard.md](guard.md#critical-lane-gate).
 

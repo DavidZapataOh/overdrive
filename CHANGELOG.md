@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Critical lane: the PreToolUse guard now classifies every `git commit` (the index, plus tracked changes for `-a` and pathspec operands, plus the working tree when the same command stages with `git add`) and denies one that classifies critical unless the critical flow is under way. The flow is under way when the dispatched `overdrive:builder` commits (the hook input names the agent), when the active ledger of the current branch holds a task marked critical and its run is not closed (`overdrive ledger critical-flow`), or when the commit message cites an active decision of the user lowering the lane (`(lowered by user, D-NNNN)`). The deny text lists the steps: plan, `ledger init`, `brief`, `overdrive:builder`, critical review. A request that pre-approves the plan now reads, in `risk-triage`, `risk-scaled-execution` and `decision-planning`, as approval of the plan's content and not of skipping the lane. Only `git commit` calls pay for a classification; a classifier that cannot run lets the commit through.
+- `overdrive ledger critical-flow`: exits 0 when the ledger applies to the current branch, its run is open and a task is marked critical.
+- `untested-change` also treats a source as covered when a test the change carries imports it, directly or through up to three relative imports (a route file reached by an endpoint test, a module reached through a shared test helper). The import lines are read from the files as the change leaves them, so `--diff`, `--staged` and `--worktree` agree.
+- Risk-map proposals: lint, formatter, type-check and task-runner configuration is not a floor, rules need evidence in the repository, and a proposal never classifies the request that prompted it.
+- The Stop hook and the guard share the code that reads a decision of the user (`lib/lowering.sh`).
+
 ## 0.1.1 — 2026-11-11
 
 - The PreToolUse guard approves what the session router needs without a permission prompt: the read-only CLI commands (`risk`, `decisions next-id`, `decisions check`, `recall`) when run through a variable (`R`, `ROOT`, `OD_ROOT` or `PLUGIN_ROOT`) set to the plugin root (`R=<root>; $R/bin/overdrive risk ...`), and `Read` of files inside the plugin directory. A path with a `.` or `..` segment, a symbolic link that resolves outside it and any other value or variable name are not approved. A quoting is accepted only when the root can be written that way as one literal word, which also closes a way for a root containing a quote to turn arguments into part of the path in the existing absolute-path allow. The guard now also matches `Read`; an unrelated call still uses shell builtins only.

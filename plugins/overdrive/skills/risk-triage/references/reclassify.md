@@ -10,7 +10,7 @@ overdrive risk --worktree --diff <base>...HEAD   # both
 
 Classify again as soon as the work needs a file you did not name in the first call, before editing it: `overdrive risk --intent '<request>' --paths <every file, old and new>`. A docs fix that turns out to need `.github/workflows/ci.yml` is a delivery change from the moment you know it.
 
-Uncommitted direct work that stayed inside the paths of the first call keeps that call's Risk line; it is not classified again (the Stop hook reclassifies the diff and blocks a lower line).
+Uncommitted direct work that stayed inside the paths of the first call keeps that call's Risk line until you commit it. Before the commit run `overdrive risk --staged` (or `--worktree` when the commit stages with `-a` or `git add`): the commit hook classifies what it records and refuses a critical diff outside the critical flow, so a lane learned at that point is learned before the commit, not after it. The Stop hook reclassifies the diff and blocks a lower line.
 
 ## When the lane goes up
 

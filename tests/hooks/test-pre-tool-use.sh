@@ -1188,3 +1188,217 @@ test_quote_characters_in_the_root_refuse_that_quoting() {
   done
   [ ! -e "$base/PWNED" ] || { echo "command ran" >&2; return 1; }
 }
+
+# Commit gate: a critical change is committed only inside the critical flow.
+
+# agent_bash_event AGENT COMMAND CWD: a shell command run from inside a subagent.
+agent_bash_event() {
+  printf '{"session_id":"sess-1","transcript_path":"/t.jsonl","cwd":"%s","permission_mode":"default","hook_event_name":"PreToolUse","agent_id":"agent-1","agent_type":"%s","tool_name":"Bash","tool_input":{"command":"%s","description":"x"},"tool_use_id":"toolu_1"}' \
+    "$(jstr "$3")" "$(jstr "$1")" "$(jstr "$2")"
+}
+
+COMMIT_TAIL="ledger init --plan"
+
+# critical_repo: a repo with a staged money change.
+critical_repo() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" src/payments/charge.js 'module.exports = {};'
+  stage_all "$repo"
+  printf '%s\n' "$repo"
+}
+
+test_commit_of_a_critical_change_without_the_flow_is_denied_with_the_steps() {
+  local repo
+  repo=$(critical_repo)
+  assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "Committing this change is blocked: it classifies critical (money"
+  assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "overdrive:decision-planning"
+  assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "overdrive:builder"
+  assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "approves the plan's content"
+  assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "(lowered by user, D-NNNN)"
+}
+
+test_commit_of_a_direct_or_standard_change_is_allowed() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" src/util.js 'x'
+  write_file "$repo" test/util.test.js 'x'
+  stage_all "$repo"
+  assert_allows "$(bash_event 'git commit -m "add util"' "$repo")"
+  repo=$(make_repo)
+  write_file "$repo" package.json '{}'
+  stage_all "$repo"
+  assert_allows "$(bash_event 'git commit -m "deps"' "$repo")"
+}
+
+test_commit_with_nothing_staged_is_allowed() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" src/payments/charge.js 'x'
+  assert_allows "$(bash_event 'git commit -m "nothing staged"' "$repo")"
+}
+
+test_commit_gate_reads_every_form_of_the_command() {
+  local repo
+  repo=$(critical_repo)
+  assert_denies "$(bash_event 'git -C . commit -qm x' "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event "git -C '$repo' commit -m x" "$PWD")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event "cd '$repo' && git commit -m x" "$PWD")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event 'git commit --amend --no-edit' "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event 'FOO=1 git -c user.name=a commit -m x' "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event "bash -c 'git commit -m x'" "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event 'git status && git commit -F msg.txt' "$repo")" "$COMMIT_TAIL"
+}
+
+test_commit_gate_ignores_text_that_only_mentions_a_commit() {
+  local repo
+  repo=$(critical_repo)
+  assert_allows "$(bash_event 'echo "git commit -m x"' "$repo")"
+  assert_allows "$(bash_event 'git log --grep="git commit"' "$repo")"
+  assert_allows "$(bash_event 'git commit --dry-run' "$repo")"
+  assert_allows "$(bash_event 'grep -rn commit docs' "$repo")"
+}
+
+test_commit_all_classifies_tracked_changes_but_not_untracked_files() {
+  local repo
+  repo=$(make_repo)
+  commit_file "$repo" src/payments/charge.js 'v1'
+  write_file "$repo" src/payments/charge.js 'v2'
+  assert_denies "$(bash_event 'git commit -am "retry"' "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event 'git commit -a -m "retry"' "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event 'git commit --all -m "retry"' "$repo")" "$COMMIT_TAIL"
+  # Without -a the unstaged edit is not part of the commit.
+  assert_allows "$(bash_event 'git commit -m "retry"' "$repo")"
+  git -C "$repo" checkout -q -- .
+  write_file "$repo" src/payments/new.js 'x'
+  assert_allows "$(bash_event 'git commit -am "nothing tracked changed"' "$repo")"
+}
+
+test_commit_after_staging_in_the_same_command_classifies_what_it_stages() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" src/payments/charge.js 'x'
+  assert_denies "$(bash_event 'git add -A && git commit -m x' "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event 'git add . ; git commit -m x' "$repo")" "$COMMIT_TAIL"
+  assert_allows "$(bash_event 'git add -A' "$repo")"
+}
+
+test_commit_message_text_does_not_look_like_staging() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" src/payments/charge.js 'x'
+  assert_allows "$(bash_event 'git commit -m "git add everything"' "$repo")"
+}
+
+test_commit_is_allowed_while_the_critical_flow_is_active() {
+  local repo
+  repo=$(critical_repo)
+  ledger_repo_at "$repo" 'Task 1: in-progress critical' >/dev/null
+  assert_allows "$(bash_event 'git commit -m "tests"' "$repo")"
+  git -C "$repo" checkout -q -b other
+  # A task builds and is reviewed; the flow stays active for the fix commits that follow.
+  add_line "$repo" 'Task 1: implemented'
+  add_line "$repo" 'Task 1: reviewed by critical-reviewer'
+  assert_allows "$(bash_event 'git commit -m "fix"' "$repo")"
+}
+
+test_commit_is_denied_when_the_ledger_has_no_critical_task() {
+  local repo
+  repo=$(critical_repo)
+  ledger_repo_at "$repo" 'Task 1: in-progress' 'Task 1: implemented' >/dev/null
+  assert_denies "$(bash_event 'git commit -m x' "$repo")" "$COMMIT_TAIL"
+}
+
+test_commit_is_denied_when_the_critical_run_is_closed_or_belongs_to_another_branch() {
+  local repo
+  repo=$(critical_repo)
+  git -C "$repo" checkout -q -b feat-a
+  ledger_repo_at "$repo" 'Task 1: in-progress critical' >/dev/null
+  assert_allows "$(bash_event 'git commit -m x' "$repo")"
+  git -C "$repo" checkout -q -b feat-b
+  assert_denies "$(bash_event 'git commit -m x' "$repo")" "$COMMIT_TAIL"
+  git -C "$repo" checkout -q feat-a
+  add_line "$repo" 'Run: closed — abandoned'
+  assert_denies "$(bash_event 'git commit -m x' "$repo")" "$COMMIT_TAIL"
+}
+
+test_the_dispatched_builder_commits_without_a_ledger() {
+  local repo
+  repo=$(critical_repo)
+  assert_allows "$(agent_bash_event overdrive:builder 'git commit -m "tests first"' "$repo")"
+  assert_allows "$(agent_bash_event builder 'git commit -m "tests first"' "$repo")"
+  assert_denies "$(agent_bash_event overdrive:reviewer 'git commit -m "x"' "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(agent_bash_event general-purpose 'git commit -m "x"' "$repo")" "$COMMIT_TAIL"
+}
+
+# decision_repo SOURCE STATUS: a critical repo whose log holds D-0001 with that source and status.
+decision_repo() {
+  local repo
+  repo=$(critical_repo)
+  write_file "$repo" .overdrive/decisions.md "# Decisions
+Rules live in: CLAUDE.md files and the project memory index. This file holds rulings only.
+
+## D-0001 — Handle the charge as direct
+- Date: 2026-11-07
+- Scope: src/payments/charge.js
+- Decision: Handle this change as direct instead of critical.
+- Source: $1
+- Why: spike
+- Cost if wrong: a bad charge
+- Status: $2"
+  printf '%s\n' "$repo"
+}
+
+test_a_cited_active_decision_of_the_user_lowers_the_lane_for_the_commit() {
+  local repo
+  repo=$(decision_repo '"yes, handle it as direct" — user, 2026-11-07' active)
+  assert_allows "$(bash_event 'git commit -m "charge (lowered by user, D-0001)"' "$repo")"
+  assert_denies "$(bash_event 'git commit -m "charge"' "$repo")" "$COMMIT_TAIL"
+  assert_denies "$(bash_event 'git commit -m "charge (lowered by user, D-0002)"' "$repo")" "D-0002 is not an active decision"
+}
+
+test_a_decision_the_user_did_not_make_or_that_is_superseded_lowers_nothing() {
+  local repo
+  repo=$(decision_repo 'Ruling — Claude, 2026-11-07' active)
+  assert_denies "$(bash_event 'git commit -m "x (lowered by user, D-0001)"' "$repo")" "D-0001"
+  repo=$(decision_repo '"yes" — user, 2026-11-07' 'superseded by D-0002')
+  assert_denies "$(bash_event 'git commit -m "x (lowered by user, D-0001)"' "$repo")" "D-0001"
+}
+
+test_only_commits_pay_for_a_classification() {
+  local repo dir=$PWD/counted_risk
+  repo=$(critical_repo)
+  mkdir -p "$dir/plugin"
+  cp -R "$(plugin_dir)/." "$dir/plugin/"
+  printf '#!/usr/bin/env bash\necho "$*" >> "%s/calls"\nprintf "lane direct\\nRisk: direct — none\\n"\n' "$dir" > "$dir/plugin/libexec/overdrive-risk"
+  local cmd
+  for cmd in 'ls' 'git status' 'git log --oneline' 'npm test' 'git push origin feat' 'git add -A' 'cat README.md' 'echo "git commit"'; do
+    counted_guard "$dir" "$(bash_event "$cmd" "$repo")" >/dev/null
+  done
+  [ ! -e "$dir/calls" ]
+  counted_guard "$dir" "$(bash_event 'git commit -m x' "$repo")" >/dev/null
+  assert_eq 1 "$(wc -l < "$dir/calls" | tr -d ' ')"
+}
+
+test_a_classifier_that_cannot_run_never_blocks_a_commit() {
+  local repo dir=$PWD/broken_risk
+  repo=$(critical_repo)
+  mkdir -p "$dir/plugin"
+  cp -R "$(plugin_dir)/." "$dir/plugin/"
+  printf '#!/usr/bin/env bash\nprintf "lane critical\\nitem classification-failed critical failure x\\nRisk: critical — classification-failed\\n"\nexit 3\n' > "$dir/plugin/libexec/overdrive-risk"
+  assert_eq '' "$(counted_guard "$dir" "$(bash_event 'git commit -m x' "$repo")")"
+}
+
+test_commit_all_in_a_linked_worktree_is_classified() {
+  local repo wt
+  repo=$(make_repo)
+  commit_file "$repo" src/payments/charge.js 'v1'
+  wt=$(mktemp -d)/wt
+  git -C "$repo" worktree add -q -b task "$wt"
+  write_file "$wt" src/payments/charge.js 'v2'
+  assert_denies "$(bash_event 'git commit -am retry' "$wt")" "$COMMIT_TAIL"
+  assert_allows "$(agent_bash_event overdrive:builder 'git commit -am retry' "$wt")"
+  # The scratch index never outlives the call.
+  ! ls "$repo"/.git/worktrees/*/od-index.* >/dev/null 2>&1
+}

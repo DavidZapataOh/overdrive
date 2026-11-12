@@ -7,6 +7,9 @@
 #   P DIR ARG...         git push run in DIR, with its arguments
 #   S DIR switch         git switch, or a git checkout that creates, detaches or goes back (-)
 #   S DIR OP...          git checkout without --: a switch unless every OP is a path
+#   G DIR                git add or git stage: the index changes before a later commit
+#   K DIR FLAGS PATH...  git commit; FLAGS is "-" or letters: a (-a/--all), n (--dry-run);
+#                        PATH... are the pathspec operands
 # Quotes, escapes, comments, line continuations, here-documents (bodies skipped),
 # subshells, cd, pushd/popd, git -C, common wrappers (sudo, env, nice, timeout...) and
 # the strings of sh -c and eval are followed; variables, globs and command
@@ -131,6 +134,29 @@ function uniqout(d, j,   n, o, ops) {
   }
   if (n >= 2) out("W", d, ops[2])
 }
+# commit D J: git commit with its words from J: which of -a and --dry-run it carries, and
+# its pathspec operands. Options that take a value consume the next word.
+function commit(d, j,   k, o, c, n, flags, ops, dd) {
+  flags = ""
+  for (k = j; k <= nw; k++) {
+    o = w[k]
+    if (dd || o !~ /^-./) { if (o == "--") { dd = 1; continue }; ops = ops US o; continue }
+    if (o == "--") { dd = 1; continue }
+    if (o ~ /^--/) {
+      if (o == "--all") flags = flags "a"
+      else if (o == "--dry-run") flags = flags "n"
+      else if (o ~ /^--(message|file|author|date|reuse-message|reedit-message|fixup|squash|template|cleanup|trailer|pathspec-from-file)$/) k++
+      continue
+    }
+    n = length(o)
+    for (c = 2; c <= n; c++) {
+      if (substr(o, c, 1) == "a") flags = flags "a"
+      else if (substr(o, c, 1) ~ /[mFCct]/) { if (c == n) k++; break }
+      else if (substr(o, c, 1) ~ /[uS]/) break
+    }
+  }
+  print "K" US d US (flags == "" ? "-" : flags) ops
+}
 function git(d, j,   g, k, dd, sw, any) {
   g = d
   while (j <= nw && w[j] ~ /^-/) {
@@ -141,6 +167,8 @@ function git(d, j,   g, k, dd, sw, any) {
   ran(g)
   if (j > nw) return
   if (w[j] == "push") rec("P", g, j + 1)
+  else if (w[j] == "commit") commit(g, j + 1)
+  else if (w[j] == "add" || w[j] == "stage") out("G", g, "add")
   else if (w[j] == "switch") out("S", g, "switch")
   else if (w[j] == "restore" || w[j] == "rm" || w[j] == "mv") operands(g, j + 1, "W")
   else if (w[j] == "checkout") {
