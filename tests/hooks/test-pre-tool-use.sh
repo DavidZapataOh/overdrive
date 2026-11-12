@@ -1576,6 +1576,9 @@ test_concluding_a_merge_in_a_linked_worktree_finds_the_main_worktrees_ledger() {
   write_file "$wt" src/payments/more.js 'x'
   stage_all "$wt"
   assert_denies "$(bash_event 'git commit -m x' "$wt")" "$COMMIT_TAIL"
-  printf 'abc\n' > "$(git -C "$wt" rev-parse --git-path MERGE_HEAD | sed "s|^[^/]|$wt/&|")"
+  local mh
+  mh=$(git -C "$wt" rev-parse --git-path MERGE_HEAD)
+  case $mh in /* | [A-Za-z]:*) ;; *) mh=$wt/$mh ;; esac
+  printf 'abc\n' > "$mh"
   assert_allows "$(bash_event 'git commit -m "Merge feat-a"' "$wt")"
 }
