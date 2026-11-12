@@ -29,8 +29,8 @@ test_every_agent_sets_model_and_effort() {
   ro="Read, Grep, Glob, Bash"
   expect builder sonnet high 120 -
   expect reviewer sonnet high 40 "$ro"
-  expect critical-reviewer sonnet high 60 "$ro"
-  expect final-reviewer sonnet xhigh 80 "$ro"
+  expect critical-reviewer opus high 60 "$ro"
+  expect final-reviewer opus xhigh 80 "$ro"
   expect researcher sonnet medium 80 "Read, Grep, Glob, Bash, WebFetch, WebSearch"
 }
 

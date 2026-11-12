@@ -7,7 +7,7 @@ OVERDRIVE_HOME=${OVERDRIVE_HOME:-$(cd "$(dirname "$0")/.." && pwd)}
 
 usage() {
   cat <<'USAGE'
-Usage: overdrive ledger init --plan FILE
+Usage: overdrive ledger init --plan FILE [--start N]
        overdrive ledger add [--plan FILE] LINE
        overdrive ledger status [--plan FILE]
        overdrive ledger path [--plan FILE]
@@ -20,7 +20,8 @@ The ledger of plan dir/<stem>.md is .overdrive/run/<stem>-<cksum>/ledger.md (ste
 to [A-Za-z0-9._-], cksum of the plan's absolute path); its first line is
 "# Overdrive ledger — plan: <absolute plan path>". init creates it (or reopens it when it
 belongs to the same plan) and makes it the active ledger, the one used when --plan is
-not given. Each added line is one of:
+not given. --start N records every earlier task the ledger does not mention as complete, for a
+plan whose first tasks were done before the ledger existed. Each added line is one of:
   Task <N>: pending|in-progress|implemented|reviewing|fixing round <k>|complete|blocked [text]
   Ruling: <what> — <why> — <cost if wrong>
   Note: <text>
@@ -235,6 +236,12 @@ fi
 
 case $sub in
   init)
+    start=''
+    if [ "${1-}" = --start ]; then
+      case ${2-} in '' | *[!0-9]* | 0*) usage >&2; exit 64 ;; esac
+      start=$2
+      shift 2
+    fi
     [ -n "$plan" ] && [ $# -eq 0 ] || { usage >&2; exit 64; }
     plan_ledger "$plan"
     mkdir -p "$plan_dir" || od_die "cannot create $plan_dir"
@@ -245,6 +252,18 @@ case $sub in
       printf '%s%s\n' "$header_prefix" "$plan_abs" > "$ledger" ||
         { od_unlock "$ledger.lock"; od_die "cannot write $ledger"; }
       bind_branch
+    fi
+    if [ -n "$start" ] && [ "$start" -gt 1 ]; then
+      k=1 marked=''
+      while [ "$k" -lt "$start" ]; do
+        if ! grep -q "^Task $k: " "$ledger"; then
+          printf 'Task %s: complete\n' "$k" >> "$ledger" || { od_unlock "$ledger.lock"; od_die "cannot write $ledger"; }
+          marked=1
+        fi
+        k=$((k + 1))
+      done
+      [ -z "$marked" ] || printf 'Note: tasks before %s were done before this ledger\n' "$start" >> "$ledger" ||
+        { od_unlock "$ledger.lock"; od_die "cannot write $ledger"; }
     fi
     od_unlock "$ledger.lock"
     tmp=$run/active-ledger.$$.tmp

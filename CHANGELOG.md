@@ -1,11 +1,17 @@
 # Changelog
 
+## 0.2.1 — 2026-11-12
+
+- `overdrive ledger init --plan FILE --start N` records the earlier tasks as done, for a plan whose first tasks were finished before the ledger existed.
+- Critical reviews run on `opus` again; the critical lane keeps its saving from building in the main session and from one review and one correction.
+- A workflow run started with `gh workflow run` is awaited like pull request checks: one background `gh run watch`.
+
 ## 0.2.0 — 2026-11-12
 
 Lighter critical lane, measured on real tasks: the separate builder and the opus reviews made up most of the critical lane's time and cost without catching more defects.
 
 - Critical tasks are built in the main session; `overdrive:builder` is dispatched only for parallel independent tasks or when the context nears its limit.
-- One `overdrive:critical-reviewer` per task, on `sonnet` by default and on `opus` when the task's items include money, data-migration, tenant-isolation or secrets. One inline correction (`Task N: fixing round 1`) and one re-review of only that correction; what is left becomes a ruling or a question to the user.
+- One `overdrive:critical-reviewer` per task, on `opus`. One inline correction (`Task N: fixing round 1`) and one re-review of only that correction; what is left becomes a ruling or a question to the user.
 - `overdrive:final-reviewer` runs only for slices with two or more critical tasks, with the same model rule.
 - Reviewers report only findings with a concrete failure mode.
 - Reviewers are awaited inside the turn; a turn never ends waiting for a subagent.

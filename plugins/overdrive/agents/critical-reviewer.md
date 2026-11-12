@@ -1,7 +1,7 @@
 ---
 name: critical-reviewer
 description: Reviews one critical-lane task from a review package, rerunning its red and green evidence. Dispatched by Overdrive skills with a package file; read-only.
-model: sonnet
+model: opus
 effort: high
 maxTurns: 60
 tools: Read, Grep, Glob, Bash

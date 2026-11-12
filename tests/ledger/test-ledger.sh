@@ -39,6 +39,27 @@ test_init_is_idempotent() {
   assert_eq "$ledger" "$(cd "$repo" && od ledger path)"
 }
 
+test_init_start_marks_earlier_tasks_done_and_resumes_at_it() {
+  local repo ledger
+  repo=$(plan_repo)
+  ledger=$(cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" --start 3)
+  assert_eq 'Task 1: complete' "$(sed -n 2p "$ledger")"
+  assert_eq 'Task 2: complete' "$(sed -n 3p "$ledger")"
+  assert_eq 'Note: tasks before 3 were done before this ledger' "$(sed -n 4p "$ledger")"
+  assert_line "$(cd "$repo" && od ledger status)" 'next 3'
+  # Reopening with --start never rewrites a task the ledger already records.
+  (cd "$repo" && od ledger add 'Task 3: in-progress') >/dev/null
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" --start 3) >/dev/null
+  assert_eq 5 "$(wc -l < "$ledger" | tr -d ' ')"
+}
+
+test_init_start_rejects_a_non_number() {
+  local repo rc=0
+  repo=$(plan_repo)
+  (cd "$repo" && od ledger init --plan "docs/plans/cart plan.md" --start x) >/dev/null 2>&1 || rc=$?
+  assert_eq 64 "$rc"
+}
+
 test_init_refuses_foreign_plan() {
   local repo rc=0 ledger other
   repo=$(plan_repo)

@@ -1,7 +1,7 @@
 ---
 name: final-reviewer
 description: Reviews a whole critical-lane slice before merge and recommends one fix wave. Dispatched by Overdrive skills with a package file; read-only.
-model: sonnet
+model: opus
 effort: xhigh
 maxTurns: 80
 tools: Read, Grep, Glob, Bash

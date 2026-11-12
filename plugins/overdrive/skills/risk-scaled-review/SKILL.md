@@ -17,7 +17,7 @@ Reviews a change at the depth its lane calls for and returns findings in one for
    |---|---|
    | direct | no separate reviewer: read the diff yourself, run the change's own check, report with the findings format |
    | standard | `overdrive:reviewer` per roster lens |
-   | critical | `overdrive:critical-reviewer` per roster lens (`opus` only for money, data-migration, tenant-isolation or secrets); a slice with two or more critical tasks also gets `overdrive:final-reviewer` |
+   | critical | `overdrive:critical-reviewer` per roster lens; a slice with two or more critical tasks also gets `overdrive:final-reviewer` |
 
    In the standard and critical lanes the dispatched agents review; reading the diff and writing findings yourself is not that review. Your own read comes first, to size the roster and to judge their findings. Dispatch every lens at once, then wait for all of them before merging or giving a verdict.
 
