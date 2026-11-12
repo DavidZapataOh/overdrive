@@ -578,3 +578,50 @@ test_special_file_exclusion_survives_literal_pathspecs_in_the_environment() {
   assert_eq 0 "$rc" "exit code"
   assert_line "$out" "item secrets critical floor line notes/key.txt:1"
 }
+
+test_lint_and_build_configuration_is_not_critical() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" eslint.config.js 'module.exports = [];'
+  write_file "$repo" tsconfig.json '{}'
+  write_file "$repo" vite.config.ts 'export default {};'
+  write_file "$repo" .prettierrc '{}'
+  commit_all "$repo" base
+  write_file "$repo" eslint.config.js 'module.exports = [{ ignores: ["dist/**", "coverage/**"] }];'
+  write_file "$repo" tsconfig.json '{"compilerOptions":{"strict":true}}'
+  write_file "$repo" vite.config.ts 'export default { build: {} };'
+  write_file "$repo" .prettierrc '{"semi":false}'
+  risk "$repo" --worktree
+  assert_line "$out" "lane direct"
+  assert_no_line "$out" "^item "
+}
+
+test_a_task_runner_pipeline_change_is_standard() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" package.json '{"scripts":{"build":"turbo run build"}}'
+  write_file "$repo" turbo.json '{"tasks":{"build":{}}}'
+  write_file "$repo" packages/lib/package.json '{"scripts":{"build":"tsc"}}'
+  commit_all "$repo" base
+  write_file "$repo" package.json '{"scripts":{"build":"turbo run build","typecheck":"turbo run typecheck"}}'
+  write_file "$repo" turbo.json '{"tasks":{"build":{},"typecheck":{"dependsOn":["^build"],"outputs":[]}}}'
+  write_file "$repo" packages/lib/package.json '{"scripts":{"build":"tsc","typecheck":"tsc --noEmit"}}'
+  risk "$repo" --worktree
+  assert_line "$out" "lane standard"
+  assert_line "$out" "item test-harness standard floor path turbo.json"
+  assert_no_line "$out" "^item [a-z-]* critical"
+  assert_eq "Risk: standard — dependencies, test-harness" "$(risk_line)"
+}
+
+test_pipelines_that_ship_and_migrations_stay_critical() {
+  local repo
+  repo=$(make_repo)
+  write_file "$repo" .github/workflows/ci.yml 'name: ci'
+  write_file "$repo" deploy/release.sh 'echo release'
+  write_file "$repo" db/migrations/0001_init.sql 'select 1;'
+  risk "$repo" --worktree
+  assert_line "$out" "lane critical"
+  assert_line "$out" "item delivery critical floor path .github/workflows/ci.yml"
+  assert_line "$out" "item delivery critical floor path deploy/release.sh"
+  assert_line "$out" "item data-migration critical floor path db/migrations/0001_init.sql"
+}

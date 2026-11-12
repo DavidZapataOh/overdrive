@@ -450,14 +450,24 @@ END {
   }
   for (k = 1; k <= nsource; k++) {
     i = source[k]
-    if (!(shown[i] in link) && !covered(raw[i])) hit(i, "untested-change", "critical", "computed")
+    if (!(shown[i] in link) && !covered(raw[i])) {
+      hit(i, "untested-change", "critical", "computed")
+      untested[++nuntested] = raw[i]
+    }
+  }
+  # Sources no test is named after may still be reached by the tests the change carries,
+  # through the modules they import: the caller follows those imports.
+  if (coverage != "" && nuntested && ncarried) {
+    for (k = 1; k <= ncarried; k++) if (carried[k] !~ /[\t\n]/) print "T\t" carried[k] > coverage
+    for (k = 1; k <= nuntested; k++) if (untested[k] !~ /[\t\n]/) print "U\t" untested[k] > coverage
+    close(coverage)
   }
   for (i = 1; i <= npaths; i++)
     for (k = 1; k <= nhit[i]; k++) print line[i, k]
 }
 '
 
-# signals_path_items RECORDS RULES LISTING: print item<TAB>lane<TAB>source<TAB>path <p>
+# signals_path_items RECORDS RULES LISTING [COVERAGE]: print item<TAB>lane<TAB>source<TAB>path <p>
 # for the items the paths of RECORDS raise under RULES (from signals_rules), and the
 # items computed from the changes themselves (deletion, exec-bit, test-removed for a
 # deleted test, untested-change), in one awk pass. LISTING names the repository's files
@@ -465,7 +475,114 @@ END {
 # Renames are judged by both paths: moving a file out of auth/ is an auth change.
 # Named paths (P) are plans rather than changes, so nothing is computed from them.
 signals_path_items() {
-  awk "$_OD_SIGNALS_LIB_AWK$_OD_SIGNALS_PATHS_AWK" "$2" "$3" "$1"
+  awk -v coverage="${4-}" "$_OD_SIGNALS_LIB_AWK$_OD_SIGNALS_PATHS_AWK" "$2" "$3" "$1"
+}
+
+# Import coverage. Tests are named after the sources they cover, which misses the
+# route file an endpoint test reaches over HTTP and the module a test only touches through
+# a shared helper. A source also counts as covered when a test the change carries imports
+# it, directly or through up to three relative imports. The import lines are read from the
+# files as the change leaves them, so a test edited without touching its imports counts
+# too. Only run for the sources the path rules found untested.
+# shellcheck disable=SC2016
+_OD_SIGNALS_COVER_AWK='
+function noext(p) { sub(/\.[^.\/]*$/, "", p); return p }
+function cdir(p) { return sub(/\/[^\/]*$/, "", p) ? p : "" }
+
+function normalize(p,    n, seg, i, k, out) {
+  n = split(p, seg, "/"); k = 0
+  for (i = 1; i <= n; i++) {
+    if (seg[i] == "" || seg[i] == ".") continue
+    if (seg[i] == ".." && k > 0 && st[k] != "..") { k--; continue }
+    st[++k] = seg[i]
+  }
+  out = ""
+  for (i = 1; i <= k; i++) out = out (i > 1 ? "/" : "") st[i]
+  return out
+}
+
+function edge(file, spec,    d, r, u) {
+  d = cdir(file)
+  r = normalize((d == "" ? "" : d "/") spec)
+  if (r in files) u = r
+  else if (r in stem) u = stem[r]
+  else if (noext(r) in stem) u = stem[noext(r)]
+  else if (r in dir_index) u = dir_index[r]
+  if (u != "") adj[file] = adj[file] "\n" u
+}
+
+BEGIN {
+  FS = "\t"
+  sq = sprintf("%c", 39)
+  spec_re = "[" sq "\"]\\.\\.?/[^" sq "\"]*[" sq "\"]"
+}
+
+FILENAME == ARGV[1] {
+  if ($1 == "T") { if (!seen[$2]) { seen[$2] = 1; depth[$2] = 0; queue[++tail] = $2 } }
+  else if ($1 == "U") untested[substr($0, 3)] = 1
+  next
+}
+
+FILENAME == ARGV[2] {
+  p = unquote($0)
+  files[p] = 1
+  if (!(noext(p) in stem)) stem[noext(p)] = p
+  if (noext(p) ~ /(^|\/)index$/ && !(cdir(p) in dir_index)) dir_index[cdir(p)] = p
+  next
+}
+
+FILENAME == ARGV[3] {
+  line = $0
+  if (prefix != "" && index(line, prefix) == 1) line = substr(line, length(prefix) + 1)
+  c = index(line, ":")
+  if (c < 2) next
+  file = substr(line, 1, c - 1)
+  rest = substr(line, c + 1)
+  c = index(rest, ":")
+  rest = substr(rest, c + 1)
+  while (match(rest, spec_re)) {
+    edge(file, substr(rest, RSTART + 1, RLENGTH - 2))
+    rest = substr(rest, RSTART + RLENGTH)
+  }
+  next
+}
+
+FILENAME == ARGV[4] && !done_walk {
+  done_walk = 1
+  for (head = 1; head <= tail; head++) {
+    f = queue[head]
+    if (depth[f] >= 3) continue
+    n = split(adj[f], to, "\n")
+    for (k = 1; k <= n; k++)
+      if (to[k] != "" && !(to[k] in seen)) { seen[to[k]] = 1; depth[to[k]] = depth[f] + 1; queue[++tail] = to[k] }
+  }
+  for (f in untested) if (f in seen) reached["path " esc(f)] = 1
+}
+
+FILENAME == ARGV[4] {
+  if ($1 == "untested-change" && ($4 in reached)) next
+  print
+}
+'
+
+# signals_import_cover GIT_DIR WORK ITEMS LISTING WHERE [REV]: print ITEMS without the
+# untested-change entries that WORK/coverage (written by signals_path_items) shows
+# reached by a carried test through its imports. WHERE is worktree, index or rev (the
+# state the change leaves: REV is the end of the last range). Fails, so the caller keeps
+# ITEMS as they are, when git cannot read the files.
+signals_import_cover() {
+  local dir=$1 work=$2 opt=() rev=() prefix='' rc=0
+  case $5 in
+    worktree) opt=(--untracked) ;;
+    index) opt=(--cached) ;;
+    rev) rev=("$6"); prefix=$6: ;;
+    *) return 2 ;;
+  esac
+  git --no-pager -c core.quotePath=false -C "$dir" grep -I -n --no-color -E ${opt[@]+"${opt[@]}"} \
+    -e "[\"']\\.\\.?/[^\"']*[\"']" ${rev[@]+"${rev[@]}"} -- > "$work/imports" 2>/dev/null || rc=$?
+  # No matching line at all is status 1: no test imports anything.
+  [ "$rc" -le 1 ] || return 1
+  awk -v prefix="$prefix" "$_OD_SIGNALS_LIB_AWK$_OD_SIGNALS_COVER_AWK" "$work/coverage" "$4" "$work/imports" "$3"
 }
 
 # The changed lines are read from one -U0 patch stream. Hunk headers give the line counts,
