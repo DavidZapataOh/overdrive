@@ -14,7 +14,7 @@ Usage: overdrive ledger init --plan FILE
        overdrive ledger rulings [--plan FILE]
        overdrive ledger unreviewed [--all-started] [--any-branch] [--plan FILE]
        overdrive ledger mark-critical [--plan FILE] N
-       overdrive ledger critical-flow [--plan FILE]
+       overdrive ledger critical-flow [--any-branch] [--plan FILE]
 
 The ledger of plan dir/<stem>.md is .overdrive/run/<stem>-<cksum>/ledger.md (stem limited
 to [A-Za-z0-9._-], cksum of the plan's absolute path); its first line is
@@ -41,7 +41,7 @@ critical task stays listed after "complete" until a review follows its last chan
 branch (an unbound closed run gates nowhere); on that branch it keeps gating.
 mark-critical appends "Task N: in-progress critical" unless task N is already marked;
 overdrive brief calls it for a critical task.
-critical-flow exits 0 when the ledger applies to the current branch, its run is not closed and
+critical-flow exits 0 when the ledger applies to the current branch (any branch with --any-branch), its run is not closed and
 at least one task is marked critical: the critical flow is under way, whatever the tasks' states.
 The PreToolUse guard asks it before letting a critical change be committed.
 A ledger binds to the run's branch with a "Run: branch <name>" line, written by init or
@@ -219,9 +219,9 @@ applies() {
 sub=${1-}
 [ $# -eq 0 ] || shift
 plan='' all_started='' any_branch=''
-while [ "$sub" = unreviewed ]; do
+while [ "$sub" = unreviewed ] || [ "$sub" = critical-flow ]; do
   case ${1-} in
-    --all-started) all_started=1 ;;
+    --all-started) [ "$sub" = unreviewed ] || break; all_started=1 ;;
     --any-branch) any_branch=1 ;;
     *) break ;;
   esac
@@ -272,7 +272,7 @@ case $sub in
   critical-flow)
     [ $# -eq 0 ] || { usage >&2; exit 64; }
     resolve "$plan"
-    applies || exit 1
+    applies "$any_branch" || exit 1
     ! grep -q '^Run: closed — ' "$ledger" || exit 1
     grep -Eq '^Task [0-9]+: [^ ]+( round [0-9]+)? critical( |$)' "$ledger"
     ;;

@@ -17,7 +17,7 @@ trim() {
 # shellcheck disable=SC2154,SC2034  # plugin and the D_* results belong to the caller
 decision() {
   local file=$1/.overdrive/decisions.md out line
-  D_TITLE='' D_STATUS='' D_SOURCE=''
+  D_TITLE='' D_STATUS='' D_SOURCE='' D_DECISION=''
   [ -f "$file" ] || return 1
   out=$("$BASH" "$plugin/bin/overdrive" decisions show "$2" "$file" 2>/dev/null) || return 1
   while IFS= read -r line; do
@@ -26,6 +26,7 @@ decision() {
       "## $2 — "*) [ -n "$D_TITLE" ] || D_TITLE=${line#"## $2 — "} ;;
       '- Status:'*) trim "${line#- Status:}"; D_STATUS=$TRIMMED ;;
       '- Source:'*) trim "${line#- Source:}"; D_SOURCE=$TRIMMED ;;
+      '- Decision:'*) trim "${line#- Decision:}"; D_DECISION=$TRIMMED ;;
     esac
   done <<<"$out"
   trim "$D_TITLE"
@@ -46,4 +47,14 @@ users_words() {
   done
   shopt -u nocasematch
   return 0
+}
+
+# in_base ROOT ID: true when entry ID is already in the decisions log at BASE (a commit),
+# so it predates this change.
+in_base() {
+  local log
+  [ -n "$BASE" ] || return 1
+  log=$(git -C "$1" cat-file -p "$BASE:.overdrive/decisions.md" 2>/dev/null) || return 1
+  case $'\n'$log in *$'\n'"## $2 "* | *$'\n'"## $2"$'\n'* | *$'\n'"## $2"$'\r'*) return 0 ;; esac
+  return 1
 }

@@ -418,6 +418,18 @@ test_unborn_head_fails_closed() {
   done
 }
 
+test_a_range_of_trees_classifies_without_a_first_commit() {
+  local repo=$PWD/unborn2 empty tree
+  git init -q "$repo"
+  write_file "$repo" src/payments/charge.js 'x'
+  git -C "$repo" add -A
+  empty=$(git -C "$repo" hash-object -t tree --stdin </dev/null)
+  tree=$(git -C "$repo" write-tree)
+  risk "$repo" --diff "$empty..$tree"
+  assert_eq 0 "$rc" "exit code: $(cat err)"
+  assert_line "$out" "item money critical floor path src/payments/charge.js"
+}
+
 test_paths_relative_to_cwd_inside_repo() {
   local repo
   repo=$(make_repo)

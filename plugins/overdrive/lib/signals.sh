@@ -481,7 +481,7 @@ signals_path_items() {
 # Import coverage. Tests are named after the sources they cover, which misses the
 # route file an endpoint test reaches over HTTP and the module a test only touches through
 # a shared helper. A source also counts as covered when a test the change carries imports
-# it, directly or through up to three relative imports. The import lines are read from the
+# it, directly or through one intermediate module. The import lines are read from the
 # files as the change leaves them, so a test edited without touching its imports counts
 # too. Only run for the sources the path rules found untested.
 # shellcheck disable=SC2016
@@ -540,8 +540,15 @@ FILENAME == ARGV[3] {
   rest = substr(line, c + 1)
   c = index(rest, ":")
   rest = substr(rest, c + 1)
+  # Only import syntax counts: a mock, a comment or a file read names a path without
+  # making the test run the module.
+  if (rest ~ /^[[:space:]]*(\/\/|\/\*|\*|#)/) next
+  before = ""
   while (match(rest, spec_re)) {
-    edge(file, substr(rest, RSTART + 1, RLENGTH - 2))
+    before = before substr(rest, 1, RSTART - 1)
+    if (before ~ /(^|[^A-Za-z0-9_$.])(from|import|require)[[:space:]]*[(]?[[:space:]]*$/)
+      edge(file, substr(rest, RSTART + 1, RLENGTH - 2))
+    before = before substr(rest, RSTART, RLENGTH)
     rest = substr(rest, RSTART + RLENGTH)
   }
   next
@@ -551,7 +558,7 @@ FILENAME == ARGV[4] && !done_walk {
   done_walk = 1
   for (head = 1; head <= tail; head++) {
     f = queue[head]
-    if (depth[f] >= 3) continue
+    if (depth[f] >= 2) continue
     n = split(adj[f], to, "\n")
     for (k = 1; k <= n; k++)
       if (to[k] != "" && !(to[k] in seen)) { seen[to[k]] = 1; depth[to[k]] = depth[f] + 1; queue[++tail] = to[k] }

@@ -7,9 +7,7 @@
 #   P DIR ARG...         git push run in DIR, with its arguments
 #   S DIR switch         git switch, or a git checkout that creates, detaches or goes back (-)
 #   S DIR OP...          git checkout without --: a switch unless every OP is a path
-#   G DIR                git add or git stage: the index changes before a later commit
-#   K DIR FLAGS PATH...  git commit; FLAGS is "-" or letters: a (-a/--all), n (--dry-run);
-#                        PATH... are the pathspec operands
+#   K DIR FLAGS mMSG fFILE PATH...  git commit: see commit() below
 # Quotes, escapes, comments, line continuations, here-documents (bodies skipped),
 # subshells, cd, pushd/popd, git -C, common wrappers (sudo, env, nice, timeout...) and
 # the strings of sh -c and eval are followed; variables, globs and command
@@ -134,28 +132,38 @@ function uniqout(d, j,   n, o, ops) {
   }
   if (n >= 2) out("W", d, ops[2])
 }
-# commit D J: git commit with its words from J: which of -a and --dry-run it carries, and
-# its pathspec operands. Options that take a value consume the next word.
-function commit(d, j,   k, o, c, n, flags, ops, dd) {
-  flags = ""
+# commit D J: git commit with its words from J. FLAGS: a (-a/--all), n (--dry-run), s
+# (the index may not be what the commit records: another command ran before it in this
+# command line, or -p, --interactive, --include or --pathspec-from-file selects content).
+# Then the message text from -m/--message ("m" + text), the -F/--file path ("f" + path)
+# and the pathspec operands. Options that take a value consume the next word.
+function commit(d, j,   k, o, c, n, flags, ops, dd, msg, mfile, v) {
+  flags = nprior > 0 ? "s" : ""
   for (k = j; k <= nw; k++) {
     o = w[k]
     if (dd || o !~ /^-./) { if (o == "--") { dd = 1; continue }; ops = ops US o; continue }
-    if (o == "--") { dd = 1; continue }
     if (o ~ /^--/) {
       if (o == "--all") flags = flags "a"
       else if (o == "--dry-run") flags = flags "n"
-      else if (o ~ /^--(message|file|author|date|reuse-message|reedit-message|fixup|squash|template|cleanup|trailer|pathspec-from-file)$/) k++
+      else if (o == "--patch" || o == "--interactive" || o == "--include" || o ~ /^--pathspec-from-file/) flags = flags "s"
+      else if (o == "--message" || o ~ /^--message=/) { v = o == "--message" ? w[++k] : substr(o, 11); msg = msg (msg == "" ? "" : " ") v }
+      else if (o == "--file" || o ~ /^--file=/) mfile = o == "--file" ? w[++k] : substr(o, 8)
+      else if (o ~ /^--(author|date|reuse-message|reedit-message|fixup|squash|template|cleanup|trailer)$/) k++
       continue
     }
     n = length(o)
     for (c = 2; c <= n; c++) {
-      if (substr(o, c, 1) == "a") flags = flags "a"
-      else if (substr(o, c, 1) ~ /[mFCct]/) { if (c == n) k++; break }
-      else if (substr(o, c, 1) ~ /[uS]/) break
+      v = substr(o, c, 1)
+      if (v == "a") flags = flags "a"
+      else if (v == "p" || v == "i") flags = flags "s"
+      else if (v == "m") { msg = msg (msg == "" ? "" : " ") (c < n ? substr(o, c + 1) : w[++k]); break }
+      else if (v == "F") { mfile = c < n ? substr(o, c + 1) : w[++k]; break }
+      else if (v ~ /[Cct]/) { if (c == n) k++; break }
+      else if (v ~ /[uS]/) break
     }
   }
-  print "K" US d US (flags == "" ? "-" : flags) ops
+  gsub(/\n/, " ", msg)
+  print "K" US d US (flags == "" ? "-" : flags) US "m" msg US "f" mfile ops
 }
 function git(d, j,   g, k, dd, sw, any) {
   g = d
@@ -168,7 +176,6 @@ function git(d, j,   g, k, dd, sw, any) {
   if (j > nw) return
   if (w[j] == "push") rec("P", g, j + 1)
   else if (w[j] == "commit") commit(g, j + 1)
-  else if (w[j] == "add" || w[j] == "stage") out("G", g, "add")
   else if (w[j] == "switch") out("S", g, "switch")
   else if (w[j] == "restore" || w[j] == "rm" || w[j] == "mv") operands(g, j + 1, "W")
   else if (w[j] == "checkout") {
@@ -238,6 +245,7 @@ function endseg(   i, c, j, d, t) {
       }
     }
   }
+  if (i <= nw && c != "cd" && c != "pushd" && c != "popd") nprior++
   nw = 0
 }
 # feed LINE: read one line of the command; here-document bodies are skipped.

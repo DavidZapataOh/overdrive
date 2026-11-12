@@ -241,30 +241,42 @@ check_push() {
 }
 
 
-# commit_classify ROOT DIR FLAGS STAGING [PATH...]: set COMMIT_LANE and COMMIT_ITEMS to the
-# classification of what a git commit would record. -a and pathspec operands take the
-# tracked changes, through a scratch copy of the index so the real one is never touched;
-# a command that stages first (git add ... && git commit) takes the whole working tree.
-# Fails when the classifier cannot say.
+# commit_classify ROOT DIR FLAGS [PATH...]: set COMMIT_ITEMS to the domain items (floor and
+# project-map items that are critical; not untested-change, risk-map or the computed
+# ones) of what a git commit would record, and COMMIT_OK. The index by default; the
+# tracked changes for -a and pathspec operands, through a scratch copy of the index so the
+# real one is never touched; the whole working tree when another command ran first or
+# the commit selects content itself (flag s), since either may have changed the index.
+# An unborn HEAD classifies against the empty tree. Fails when the classifier cannot say.
 commit_classify() {
-  local root=$1 dir=$2 flags=$3 staging=$4 out line idx='' rc=0 src
-  shift 4
-  COMMIT_LANE='' COMMIT_ITEMS=''
-  if [ -n "$staging" ]; then
+  local root=$1 dir=$2 flags=$3 out='' line rc=0 idx='' src unborn='' tree empty
+  shift 3
+  COMMIT_ITEMS=''
+  git -C "$root" rev-parse -q --verify 'HEAD^{commit}' >/dev/null 2>&1 || unborn=1
+  if [ -z "$unborn" ] && [[ $flags == *s* ]]; then
     out=$(cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" risk --worktree 2>/dev/null </dev/null) || rc=$?
-  elif [ -n "${flags//[!a]/}" ] || [ "$#" -gt 0 ]; then
+  elif [ -n "$unborn" ] || [ -n "${flags//[!a]/}" ] || [ "$#" -gt 0 ]; then
     # Inside the git directory, which git can always write, and named for this process.
     idx=$(git -C "$root" rev-parse --git-path "od-index.$$" 2>/dev/null) || return 1
     src=$(git -C "$root" rev-parse --git-path index 2>/dev/null) || return 1
     case $idx in /* | [A-Za-z]:*) ;; *) idx=$root/$idx src=$root/$src ;; esac
     # -p keeps the index time git compares with file times to spot same-second edits.
     { [ ! -f "$src" ] || cp -p "$src" "$idx"; } 2>/dev/null
-    if [ "$#" -gt 0 ]; then
+    if [[ $flags == *s* ]]; then
+      GIT_INDEX_FILE=$idx git -C "$root" add -A >/dev/null 2>&1 </dev/null || { rm -f "$idx"; return 1; }
+    elif [ "$#" -gt 0 ]; then
       GIT_INDEX_FILE=$idx git -C "$dir" add -u -- "$@" >/dev/null 2>&1 </dev/null || { rm -f "$idx"; return 1; }
-    else
+    elif [ -n "${flags//[!a]/}" ]; then
       GIT_INDEX_FILE=$idx git -C "$root" add -u >/dev/null 2>&1 </dev/null || { rm -f "$idx"; return 1; }
     fi
-    out=$(cd "$root" 2>/dev/null && GIT_INDEX_FILE=$idx "${BASH:-bash}" "$plugin/bin/overdrive" risk --staged 2>/dev/null </dev/null) || rc=$?
+    if [ -n "$unborn" ]; then
+      # With no first commit the classifier has nothing to compare against: use the empty tree.
+      tree=$(GIT_INDEX_FILE=$idx git -C "$root" write-tree 2>/dev/null </dev/null) || { rm -f "$idx"; return 1; }
+      empty=$(git -C "$root" hash-object -t tree --stdin 2>/dev/null </dev/null) || { rm -f "$idx"; return 1; }
+      out=$(cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" risk --diff "$empty..$tree" 2>/dev/null </dev/null) || rc=$?
+    else
+      out=$(cd "$root" 2>/dev/null && GIT_INDEX_FILE=$idx "${BASH:-bash}" "$plugin/bin/overdrive" risk --staged 2>/dev/null </dev/null) || rc=$?
+    fi
     rm -f "$idx"
   else
     out=$(cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" risk --staged 2>/dev/null </dev/null) || rc=$?
@@ -272,51 +284,71 @@ commit_classify() {
   [ "$rc" -eq 0 ] || return 1
   while IFS= read -r line; do
     case $line in
-      'lane '*) COMMIT_LANE=${line#lane } ;;
-      'Risk: '*' — '*) COMMIT_ITEMS=${line#*' — '} ;;
+      'item '*)
+        # item NAME LANE SOURCE evidence: computed items are about the change's shape,
+        # not its domain, and the risk map is gated by its own review.
+        # shellcheck disable=SC2086  # globbing is off in the hook
+        set -- $line
+        [ "${3-}" = critical ] && [ "${4-}" != computed ] && [ "$2" != risk-map ] || continue
+        case ", $COMMIT_ITEMS," in *", $2,"*) ;; *) COMMIT_ITEMS=$COMMIT_ITEMS${COMMIT_ITEMS:+, }$2 ;; esac
+        ;;
     esac
   done <<<"$out"
-  [ -n "$COMMIT_LANE" ]
+  return 0
 }
 
-# commit_gate DIR FLAGS STAGING [PATH...]: deny a git commit whose content classifies
-# critical unless the critical flow is under way (an active, unclosed ledger of this
-# branch with a task marked critical), the commit comes from the dispatched builder
-# (which commits its own task before the review that the flow then requires), or the
-# commit message cites an active decision in which the user lowered the lane. The
-# classifier is run only for commits, and a classifier that cannot run lets the call
-# through like every other failure of the guard.
+# commit_message MSG FILE: print the commit message the command gives: -m text and the
+# content of a -F file (relative to the commit's directory).
+commit_message() {
+  local file=${2#f}
+  printf '%s\n' "${1#m}"
+  [ -z "$file" ] || [ ! -f "$file" ] || cat -- "$file" 2>/dev/null
+}
+
+# commit_gate DIR FLAGS MSG FILE [PATH...]: deny a git commit whose content has a domain
+# risk item unless the critical flow is under way: the dispatched builder commits (it
+# commits its own task before the review the flow then requires), the active ledger of
+# this branch (any branch while a merge is being concluded) has a task marked critical,
+# or the commit message cites an active decision in which the user lowered the lane. The
+# classifier runs only for commits, and one that cannot run lets the call through like
+# every other failure of the guard.
 # shellcheck disable=SC2154  # input and cmd belong to the hook
 commit_gate() {
-  local dir=$1 flags=$2 staging=$3 root id='' why='' cli
-  shift 3
+  local dir=$1 flags=$2 msg=$3 mfile=$4 root id='' why='' cli any='' text gd
+  shift 4
   case $flags in *n*) return 0 ;; esac
-  [ "$flags" != - ] || flags=''
   _od_find_root "$dir" || return 0
   root=$_OD_ROOT
   in_plugin "$dir" && return 0
   if json_extract_string agent_type "$input"; then
-    case $JSON_VALUE in builder | overdrive:builder) return 0 ;; esac
+    [ "$JSON_VALUE" != overdrive:builder ] || return 0
   fi
-  commit_classify "$root" "$dir" "$flags" "$staging" "$@" || return 0
-  [ "$COMMIT_LANE" = critical ] || return 0
-  case $COMMIT_ITEMS in *classification-failed*) return 0 ;; esac
-  if [[ $cmd =~ \(lowered\ by\ user,\ (D-[0-9]{4,})\) ]]; then
+  commit_classify "$root" "$dir" "$flags" "$@" || return 0
+  [ -n "$COMMIT_ITEMS" ] || return 0
+  text=$(cd "$dir" 2>/dev/null && commit_message "$msg" "$mfile")
+  if [[ $text =~ \(lowered\ by\ user,\ (D-[0-9]{4,})\) ]]; then
     id=${BASH_REMATCH[1]}
     # shellcheck source=lowering.sh
     . "$plugin/lib/lowering.sh"
+    BASE=HEAD
     if ! decision "$root" "$id" || [ "$D_STATUS" != active ]; then
       why=" $id is not an active decision in .overdrive/decisions.md."
-    elif ! users_words "$D_SOURCE"; then
+    elif ! [[ $D_DECISION =~ [Dd]irect|[Ss]tandard ]]; then
+      why=" $id does not lower a lane."
+    elif ! in_base "$root" "$id" && ! users_words "$D_SOURCE"; then
       why=" $id has no Source quoting the user's own words, so it cannot lower the lane."
     else
       return 0
     fi
   fi
+  # Concluding a merge or squash of a reviewed critical slice happens on another branch.
+  for gd in MERGE_HEAD SQUASH_MSG; do
+    [ ! -e "$(git -C "$root" rev-parse --git-path "$gd" 2>/dev/null | sed "s|^\([^/]\)|$root/\1|")" ] || any=--any-branch
+  done
   if [ -f "$root/.overdrive/run/active-ledger" ] &&
-    (cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" ledger critical-flow >/dev/null 2>&1 </dev/null); then
+    (cd "$root" 2>/dev/null && "${BASH:-bash}" "$plugin/bin/overdrive" ledger critical-flow $any >/dev/null 2>&1 </dev/null); then
     return 0
   fi
   cli="'$plugin/bin/overdrive'"
-  deny "Committing this change is blocked: it classifies critical ($COMMIT_ITEMS) and no critical flow is active on this branch. The user's approval of a plan approves the plan's content, not skipping the lane. Load overdrive:decision-planning and write the plan, run $cli ledger init --plan <plan file>, then for each task run $cli brief --plan <plan file> --task <N>, dispatch overdrive:builder with that brief (it commits its own task) and review the task with overdrive:critical-reviewer. If the user lowers the lane instead (overdrive:risk-triage, rule 5), record the decision and cite it in the commit message as (lowered by user, D-NNNN).$why"
+  deny "Committing this change is blocked: it has critical risk ($COMMIT_ITEMS) and no critical flow is active on this branch. The user's approval of a plan approves the plan's content, not skipping the lane. Load overdrive:decision-planning and write the plan, run $cli ledger init --plan <plan file>, then for each task run $cli brief --plan <plan file> --task <N>, dispatch overdrive:builder with that brief (it commits its own task) and review the task with overdrive:critical-reviewer. If the user lowers the lane instead (overdrive:risk-triage, rule 5), record the decision and cite it in the commit message as (lowered by user, D-NNNN).$why"
 }

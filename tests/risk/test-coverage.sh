@@ -329,3 +329,46 @@ test('x', () => {});"
   risk "$repo" --worktree
   assert_eq "src/orphan.js" "$(untested)"
 }
+
+test_only_import_syntax_covers() {
+  local repo
+  repo=$(import_repo)
+  printf '// more\n' >> "$repo/src/orphan.js"
+  write_file "$repo" test/mock.test.js "jest.mock('../src/orphan');
+vi.mock('../src/orphan.js');
+// const o = require('../src/orphan');
+const text = fs.readFileSync('../src/orphan.js');
+test('x', () => {});"
+  risk "$repo" --worktree
+  assert_eq "src/orphan.js" "$(untested)"
+  write_file "$repo" test/real.test.js "import { o } from '../src/orphan';
+test('x', () => {});"
+  risk "$repo" --worktree
+  assert_eq "" "$(untested)"
+}
+
+test_every_import_form_covers() {
+  local repo form
+  for form in "import '../src/orphan.js';" "export * from '../src/orphan';" "const o = await import('../src/orphan');" "const o = require( '../src/orphan' );"; do
+    repo=$(import_repo)
+    printf '// more\n' >> "$repo/src/orphan.js"
+    write_file "$repo" test/forms.test.js "$form
+test('x', () => {});"
+    risk "$repo" --worktree
+    assert_eq "" "$(untested)" "$form"
+  done
+}
+
+test_imports_reach_two_hops() {
+  local repo
+  repo=$(import_repo)
+  write_file "$repo" test/mid.js "const h = require('./helpers.js');"
+  commit_all "$repo" more
+  printf '// more\n' >> "$repo/src/app.js"
+  write_file "$repo" test/one.test.js "require('./helpers.js');"
+  risk "$repo" --worktree
+  assert_eq "" "$(untested)"
+  write_file "$repo" test/one.test.js "require('./mid.js');"
+  risk "$repo" --worktree
+  assert_eq "src/app.js" "$(untested)"
+}

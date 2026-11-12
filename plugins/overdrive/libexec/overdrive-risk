@@ -200,6 +200,11 @@ for range in ${ranges[@]+"${ranges[@]}"}; do
 done
 # A range side may be a tree (the empty tree before a root commit), so sides peel to trees.
 sides=('HEAD^{commit}')
+# A range of trees needs no commit: with none yet, HEAD stands for the empty tree.
+if [ -z "$staged$worktree" ] && [ "${#ranges[@]}" -gt 0 ] &&
+  ! git -C "$gitdir" rev-parse -q --verify 'HEAD^{commit}' >/dev/null 2>&1; then
+  sides=("$(git -C "$gitdir" hash-object -t tree --stdin </dev/null)^{tree}")
+fi
 for rev in "${revs[@]:1}"; do sides+=("$rev^{tree}"); done
 if ! resolved=$(git -C "$gitdir" rev-parse "${sides[@]}" 2>"$work/git.err"); then
   # Without a first commit there is nothing to compare against, in any mode.

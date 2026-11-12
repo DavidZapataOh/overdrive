@@ -86,16 +86,6 @@ classify() {
   fi
 }
 
-# in_base ROOT ID: true when entry ID is already in the decisions log at BASE, so it
-# predates this change.
-in_base() {
-  local log
-  [ -n "$BASE" ] || return 1
-  log=$(git -C "$1" cat-file -p "$BASE:.overdrive/decisions.md" 2>/dev/null) || return 1
-  case $'\n'$log in *$'\n'"## $2 "* | *$'\n'"## $2"$'\n'* | *$'\n'"## $2"$'\r'*) return 0 ;; esac
-  return 1
-}
-
 input=''
 IFS= read -r -d '' input || :
 json_extract_strings "$input" session_id cwd
