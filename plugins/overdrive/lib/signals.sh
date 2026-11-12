@@ -451,7 +451,7 @@ END {
   for (k = 1; k <= nsource; k++) {
     i = source[k]
     if (!(shown[i] in link) && !covered(raw[i])) {
-      hit(i, "untested-change", "critical", "computed")
+      hit(i, "untested-change", "standard", "computed")
       untested[++nuntested] = raw[i]
     }
   }

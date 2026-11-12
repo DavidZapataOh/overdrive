@@ -1214,7 +1214,7 @@ test_commit_of_a_critical_change_without_the_flow_is_denied_with_the_steps() {
   assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "Committing this change is blocked: it has critical risk (money"
   assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "$COMMIT_TAIL"
   assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "overdrive:decision-planning"
-  assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "overdrive:builder"
+  assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "build and commit it here test-first"
   assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "approves the plan's content"
   assert_denies "$(bash_event 'git commit -m "add charge"' "$repo")" "(lowered by user, D-NNNN)"
 }

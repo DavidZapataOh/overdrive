@@ -214,7 +214,7 @@ test_changed_test_covers_same_stem_only_in_its_package() {
   printf '// more\n' >> "$repo/packages/a/src/format.ts"
   write_file "$repo" packages/b/test/format.test.ts 'test("f", () => {});'
   risk "$repo" --worktree
-  assert_line "$out" "item untested-change critical computed path packages/a/src/format.ts"
+  assert_line "$out" "item untested-change standard computed path packages/a/src/format.ts"
   write_file "$repo" packages/a/e2e/format.spec.ts 'test("f", () => {});'
   risk "$repo" --worktree
   assert_no_line "$out" "untested-change"
@@ -230,7 +230,7 @@ test_test_suffix_counts_only_under_a_test_directory() {
   git -C "$repo" rm -q app/src/androidTest/java/com/acme/CartTest.kt Tests/AppTests/RouterTests.swift
   printf '// more\n' >> "$repo/src/main/java/com/acme/LoadTest.java"
   risk "$repo" --worktree
-  assert_line "$out" "item untested-change critical computed path src/main/java/com/acme/LoadTest.java"
+  assert_line "$out" "item untested-change standard computed path src/main/java/com/acme/LoadTest.java"
   assert_line "$out" "item test-removed critical computed path app/src/androidTest/java/com/acme/CartTest.kt"
   assert_line "$out" "item test-removed critical computed path Tests/AppTests/RouterTests.swift"
 }

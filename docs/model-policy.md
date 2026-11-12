@@ -5,7 +5,7 @@ Which model and effort each Overdrive agent runs on, and the measurements behind
 ## Standing rules
 
 - Builders and the standard reviewer and researcher run on `sonnet`.
-- `opus` is used only for the critical-lane reviewer and the final reviewer. Neither is ever moved to a cheaper model.
+- The critical-lane reviewer and the final reviewer default to `sonnet`; the skill dispatches them on `opus` when the task's items include money, data-migration, tenant-isolation or secrets, where a missed defect is the most expensive. A measured run on real tasks showed opus reviews and builder rounds made up over half of the critical lane's cost without catching more defects on those suites.
 - An effort setting changes only when the cheaper one is non-inferior on defects caught and measurably cheaper.
 - A skill that fails pressure tests or evals on `sonnet` after the fix cap is re-dispatched on `opus` with the reason recorded; that is a one-off, not a policy change.
 - Agents never poll CI. The controller watches it in the background and hands a fix agent the failing log excerpt.
@@ -16,8 +16,8 @@ Which model and effort each Overdrive agent runs on, and the measurements behind
 | --- | --- | --- | --- |
 | builder | sonnet | high | keep: medium saved nothing measurable |
 | reviewer | sonnet | high | keep: opus caught the same defects for about 1.7 times the cost |
-| critical-reviewer | opus | high | keep: xhigh caught the same defects for about 1.2 to 1.6 times the cost |
-| final-reviewer | opus | xhigh | not swept; never cheapened |
+| critical-reviewer | sonnet (opus for money, data, tenant isolation, secrets) | high | keep: xhigh caught the same defects for about 1.2 to 1.6 times the cost |
+| final-reviewer | sonnet (opus for money, data, tenant isolation, secrets) | xhigh | only for slices with two or more critical tasks |
 | researcher | sonnet | medium | not swept |
 
 ## Sweep (Claude Code 2.1.321, main session `claude-sonnet-5-5`, with-plugin arm only, 5 runs per cell)

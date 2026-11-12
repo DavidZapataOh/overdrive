@@ -1,22 +1,22 @@
-# Fix loop (critical tasks)
+# Critical review and correction
 
-After a critical task is `implemented`:
+After a critical task is built and `implemented`:
 
-1. `OD review-package --base BASE --head HEAD --brief BRIEF --lane critical` prints the package path. It is not gated on green evidence: the critical-reviewer reruns this task's red and green evidence itself, and the slice package carries the gate. Dispatch `overdrive:critical-reviewer` with that path and `Task N` in its description (`Critical review Task N`): the guard records the review from the description. `OD ledger add 'Task N: reviewing'` is the state line.
-2. Read its report. Run `OD findings merge FILE` on the findings file it names; act on the merged list only.
-3. No P0 or P1 and both verdicts PASS: `Task N: complete`.
-4. Otherwise `OD ledger add 'Task N: fixing round K'` and:
-   - Round 1 and 2: resume the same builder (SendMessage to its id) with the findings file path, not the findings text. It fixes, commits, and reports. Build a new package for the new head and re-review. Every fix needs a new `overdrive:critical-reviewer` dispatch with `Task N` in its description (for example `Re-review Task N fix`): the guard records it, and without it the final review and the PR are refused.
-   - Round 3: a fresh `overdrive:builder` with `model: opus`, given the brief path and the findings file path.
-5. Findings still open after round 3: choose one and write it down.
-   - The finding is wrong or accepted risk below P0: `Ruling: <finding> accepted — <why, with the reviewer's own evidence> — <cost if wrong>`.
-   - The finding is P0 on money, data, secrets or tenant isolation and cannot be fixed within the plan: stop condition; ask the user, naming the finding and the decision needed.
-6. A finding labeled `plan-mandated:yes` is a defect in the plan: Ruling for how you diverge, never silently follow it.
+1. `OD review-package --base BASE --head HEAD --brief BRIEF --lane critical` prints the package path. It is not gated on green evidence: the critical-reviewer reruns this task's red and green evidence itself, and the slice package carries the gate.
+2. Dispatch `overdrive:critical-reviewer` with that path and `Task N` in its description (`Critical review Task N`); the guard records the review from the description. Model: leave the agent's default (`sonnet`) unless the task's Risk items include money, data-migration, tenant-isolation or secrets; then pass `model: opus`. Wait for its report in this turn. `OD ledger add 'Task N: reviewing'` is the state line.
+3. Run `OD findings merge FILE` on the findings file it names; act on the merged list only.
+4. No P0 or P1 and both verdicts PASS: `Task N: complete`.
+5. Otherwise one correction:
+   - `OD ledger add 'Task N: fixing round 1'` (the line makes the task need its re-review).
+   - Fix every P0 and P1 inline, test first where a test can show the failure, one commit per finding, green evidence after the last one.
+   - One re-review: a new package whose base is the head the first review read, so it covers only the correction, and a new `overdrive:critical-reviewer` dispatch with `Task N` in its description (`Re-review Task N`), same model rule. It checks the findings it was given and anything the correction broke, nothing else.
+6. Still open after the re-review, choose one and write it down; there is no second correction:
+   - The finding is wrong or an accepted risk below P0: `Ruling: <finding> accepted — <why, with the reviewer's own evidence> — <cost if wrong>`.
+   - The finding is a P0 on money, data, secrets or tenant isolation: stop condition; ask the user, naming the finding and the decision needed.
+7. A finding labeled `plan-mandated:yes` is a defect in the plan: Ruling for how you diverge, never silently follow it.
 
 ## Loops and CI
 
-Progress is the only limit; there is no turn cap. Stop an agent only when it loops: the same test or check fails 3 consecutive attempts, or 3 fix rounds pass without the failing count dropping. The stopped builder's report lists every attempt, why each failed and the current state. Continue with a fresh builder briefed from that report plus the committed code; if that one loops too, it is a ledgered ruling or a stop condition (step 5).
-
-Builders push and hand back; they never wait for or poll CI. The controller watches CI in the background and dispatches a fix with the failing log excerpt.
+Stop and rule when the same test or check fails 3 consecutive attempts: the ledger gets what was tried and why each attempt failed. Watch CI in the foreground (`gh run watch <id> --exit-status`) and fix a red run with its failing log excerpt.
 
 Never argue a finding down because the author's report explains it; severity follows the failure mode. Never edit the reviewer's findings file.

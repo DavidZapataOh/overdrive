@@ -115,7 +115,7 @@ test_removed_test_cases_are_critical() {
   assert_eq 1 "$(printf '%s\n' "$out" | grep -c '^item test-removed ')"
 }
 
-test_untested_source_change_is_critical() {
+test_untested_source_change_is_standard() {
   local repo
   repo=$(make_repo)
   write_file "$repo" src/format.ts 'export const f = 1;'
@@ -129,15 +129,15 @@ test_untested_source_change_is_critical() {
   git -C "$repo" rm -q src/old.py
   write_file "$repo" lib/slug.py 'def slug(s): return s'
   risk "$repo" --worktree
-  assert_line "$out" "item untested-change critical computed path src/format.ts"
-  assert_line "$out" "item untested-change critical computed path lib/slug.py"
+  assert_line "$out" "item untested-change standard computed path src/format.ts"
+  assert_line "$out" "item untested-change standard computed path lib/slug.py"
   assert_no_line "$out" "untested-change .* (src/types.d.ts|vite.config.ts|src/old.py)$"
 
   # A test the change carries covers the sources beside it or named after it, no others.
   write_file "$repo" src/other.test.ts 'test("o", () => {});'
   risk "$repo" --worktree
   assert_no_line "$out" "untested-change .* src/format.ts$"
-  assert_line "$out" "item untested-change critical computed path lib/slug.py"
+  assert_line "$out" "item untested-change standard computed path lib/slug.py"
   write_file "$repo" tests/slug_test.py 'def test_s(): pass'
   risk "$repo" --worktree
   assert_no_line "$out" "untested-change"
@@ -162,8 +162,8 @@ test_source_change_with_sibling_test_is_not_untested() {
   printf '// more\n' >> "$repo/src/parse.js"
   printf '// more\n' >> "$repo/src/lonely.ts"
   risk "$repo" --worktree
-  assert_eq "Risk: critical — untested-change" "$(risk_line)"
-  assert_line "$out" "item untested-change critical computed path src/lonely.ts"
+  assert_eq "Risk: standard — untested-change" "$(risk_line)"
+  assert_line "$out" "item untested-change standard computed path src/lonely.ts"
   assert_eq 1 "$(printf '%s\n' "$out" | grep -c '^item ')"
   git -C "$repo" add -A
   risk "$repo" --staged
@@ -181,7 +181,7 @@ test_source_change_with_sibling_test_is_not_untested() {
   assert_line "$out" "item test-removed critical computed path test/format.spec.ts"
   risk "$bare" --diff HEAD~1..HEAD
   assert_eq 0 "$rc" "exit code: $(cat err)"
-  assert_line "$out" "item untested-change critical computed path src/format.ts"
+  assert_line "$out" "item untested-change standard computed path src/format.ts"
   risk "$bare" --diff HEAD~3..HEAD~2
   assert_no_line "$out" "path src/format.ts$"
 }
@@ -344,7 +344,7 @@ test_rename_of_a_test_to_a_non_test_removes_it() {
   risk "$repo" --worktree
   assert_line "$out" "item test-removed critical computed path src/a.test.ts"
   # The old test path no longer counts as a test the change carries.
-  assert_line "$out" "item untested-change critical computed path src/a.ts"
+  assert_line "$out" "item untested-change standard computed path src/a.ts"
 }
 
 test_accented_keyword_matches_any_case_and_form() {

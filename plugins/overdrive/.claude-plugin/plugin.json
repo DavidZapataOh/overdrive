@@ -1,7 +1,7 @@
 {
   "name": "overdrive",
   "displayName": "Overdrive",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Risk-scaled agentic skill framework: the process scales with risk, with direct, standard and critical lanes chosen by a deterministic classifier.",
   "author": {
     "name": "David Zapata",

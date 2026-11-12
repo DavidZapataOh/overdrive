@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 — 2026-11-12
+
+Lighter critical lane, measured on real tasks: the separate builder and the opus reviews made up most of the critical lane's time and cost without catching more defects.
+
+- Critical tasks are built in the main session; `overdrive:builder` is dispatched only for parallel independent tasks or when the context nears its limit.
+- One `overdrive:critical-reviewer` per task, on `sonnet` by default and on `opus` when the task's items include money, data-migration, tenant-isolation or secrets. One inline correction (`Task N: fixing round 1`) and one re-review of only that correction; what is left becomes a ruling or a question to the user.
+- `overdrive:final-reviewer` runs only for slices with two or more critical tasks, with the same model rule.
+- Reviewers report only findings with a concrete failure mode.
+- Agents and CI runs are awaited inside the turn; a turn never ends waiting for one.
+- `untested-change` is a `standard` item: a source change with no test is ordinary work, not a domain risk.
+
 ## 0.1.2 — 2026-11-12
 
 - Critical lane: the PreToolUse guard now classifies every `git commit` and denies one whose content has a critical domain item (a floor or project-map item; `untested-change`, the other computed items and `risk-map` do not gate) unless the critical flow is under way. The content is the index, the tracked changes for `-a` and pathspec operands, or the whole working tree when another command runs first in the same command line or the commit selects content itself (`-p`, `--interactive`, `--include`, `--pathspec-from-file`); an unborn HEAD is read against the empty tree. The flow is under way when the dispatched `overdrive:builder` commits (the hook input's `agent_type`, exactly `overdrive:builder`), when the active ledger of the current branch (any branch while a merge or squash is being concluded) holds a task marked critical and its run is open (`overdrive ledger critical-flow [--any-branch]`), or when the commit message cites `(lowered by user, D-NNNN)` for an active decision that lowers a lane and is the user's own words or already committed. The deny text lists the steps: plan, `ledger init`, `brief`, `overdrive:builder`, critical review. A request that pre-approves the plan now reads, in `risk-triage`, `risk-scaled-execution` and `decision-planning`, as approval of the plan's content and not of skipping the lane. Only `git commit` calls pay for a classification; a classifier that cannot run lets the commit through. Known limits are listed in docs/guard.md.
