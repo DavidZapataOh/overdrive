@@ -1544,14 +1544,18 @@ test_a_lowering_must_use_the_template_wording_and_cover_the_files() {
   assert_denies "$(bash_event 'git commit -m "x (lowered by user, D-0001)"' "$repo")" "Scope that does not cover src/payments/charge.js"
   sed -i.bak 's|^- Scope: .*|- Scope: the payments directory, src/payments/**|' "$repo/.overdrive/decisions.md"
   assert_allows "$(bash_event 'git commit -m "x (lowered by user, D-0001)"' "$repo")"
+  # shellcheck disable=SC2016  # the backquotes are the text
   sed -i.bak 's|^- Scope: .*|- Scope: `src/`|' "$repo/.overdrive/decisions.md"
   assert_allows "$(bash_event 'git commit -m "x (lowered by user, D-0001)"' "$repo")"
 }
 
 test_git_paths_are_made_absolute_unless_they_already_are() {
-  . "$(plugin_dir)/lib/path.sh"
+  # shellcheck disable=SC1091,SC2034  # guard.sh reads the plugin root from the caller
   plugin=$(plugin_dir)
-  . "$(plugin_dir)/lib/guard.sh"
+  # shellcheck disable=SC1091
+  . "$plugin/lib/path.sh"
+  # shellcheck disable=SC1091
+  . "$plugin/lib/guard.sh"
   abs_under /r '.git/MERGE_HEAD'
   assert_eq /r/.git/MERGE_HEAD "$ABS_PATH"
   abs_under /r 'C:/repo/.git/MERGE_HEAD'
