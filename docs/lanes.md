@@ -6,7 +6,7 @@ Every repository change is handled in one of three lanes. The lane sets how much
 | --- | --- | --- | --- | --- |
 | `direct` | a fix or adjustment that is clear after at most three reads and raises no risk item; new behavior is at least standard | none | test first if testable; otherwise `TDD: n/a — <reason>` | none; reread the diff and run the change's own check |
 | `standard` | work that is neither trivial nor risky | short decision plan | test-driven where it applies | one `overdrive:reviewer` per slice, before any pull request |
-| `critical` | a floor or a project risk-map rule | full test-first plan, approved by the user before the critical part is touched | test-driven with a hard-case list, real dependencies you own and a non-regression check | `overdrive:critical-reviewer` per task and after every change, then one `overdrive:final-reviewer` on the slice |
+| `critical` | a floor or a project risk-map rule | full test-first plan, approved by the user before the critical part is touched | test-driven with a hard-case list, real dependencies you own and a non-regression check | one `overdrive:critical-reviewer` per task, one correction and one re-review; one `overdrive:final-reviewer` when the slice has two or more critical tasks |
 
 ## How the classifier picks a lane
 

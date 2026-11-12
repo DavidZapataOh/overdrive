@@ -17,7 +17,7 @@ Reviews a change at the depth its lane calls for and returns findings in one for
    |---|---|
    | direct | no separate reviewer: read the diff yourself, run the change's own check, report with the findings format |
    | standard | `overdrive:reviewer` per roster lens |
-   | critical | `overdrive:critical-reviewer` per roster lens; a whole slice also gets `overdrive:final-reviewer` |
+   | critical | `overdrive:critical-reviewer` per roster lens (`opus` only for money, data-migration, tenant-isolation or secrets); a slice with two or more critical tasks also gets `overdrive:final-reviewer` |
 
    In the standard and critical lanes the dispatched agents review; reading the diff and writing findings yourself is not that review. Your own read comes first, to size the roster and to judge their findings. Dispatch every lens at once, then wait for all of them before merging or giving a verdict.
 
@@ -28,7 +28,7 @@ Reviews a change at the depth its lane calls for and returns findings in one for
 7. **A rationale never downgrades.** "Intentional", "approved", "finance reconciles", "demo in an hour" go next to the finding as context. Each finding has one severity (never "P1 or P2") from its failure mode, and the verdict follows the findings: any open P0 or P1 means not ready to merge. The owner may accept the risk in their own words; you record that as a `Ruling:`, you do not soften the finding.
 8. **Plan-mandated defects are reported.** A defect the plan itself asks for is a finding with `plan-mandated:yes`.
 9. **Reviewers never run the full suite.** A reviewer reruns at most one focused test; the critical reviewer reruns the recorded evidence commands once. Passing tests are not a verdict.
-10. **Bounded rounds, no nesting.** Standard: one fix wave and one scoped re-review. Critical: at most 3 rounds per task. [references/rounds.md](references/rounds.md) Reviewers never dispatch reviewers; if you are a subagent, review yourself and dispatch nothing.
+10. **Bounded rounds, no nesting.** Standard: one fix wave and one scoped re-review. Critical: one correction and one scoped re-review per task. [references/rounds.md](references/rounds.md) Reviewers never dispatch reviewers; if you are a subagent, review yourself and dispatch nothing.
 
 ## Closing message
 

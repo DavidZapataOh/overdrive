@@ -67,7 +67,7 @@ xhigh found nothing more and spent 2.2 to 2.4 times the opus output tokens. Its 
 
 ## Not covered
 
-- `e2e-critical-after-approval` (two builder tasks, seven critical reviews, one final review; about $2 to $5 and 25 to 40 minutes a run) was not rerun with a medium builder; the whole sweep cost about $32 in total. Rerun it before lowering the builder's effort.
+- The sweep above predates building critical tasks in the main session; `e2e-critical-after-approval` then ran two builder tasks, seven critical reviews and one final review (about $2 to $5 and 25 to 40 minutes a run). The builder now runs only for parallel tasks and the context backstop.
 - The final reviewer and researcher settings were not swept.
 
 ## Follow-ups found by the sweep

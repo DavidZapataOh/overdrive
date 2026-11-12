@@ -8,7 +8,7 @@ Lighter critical lane, measured on real tasks: the separate builder and the opus
 - One `overdrive:critical-reviewer` per task, on `sonnet` by default and on `opus` when the task's items include money, data-migration, tenant-isolation or secrets. One inline correction (`Task N: fixing round 1`) and one re-review of only that correction; what is left becomes a ruling or a question to the user.
 - `overdrive:final-reviewer` runs only for slices with two or more critical tasks, with the same model rule.
 - Reviewers report only findings with a concrete failure mode.
-- Agents and CI runs are awaited inside the turn; a turn never ends waiting for one.
+- Reviewers are awaited inside the turn; a turn never ends waiting for a subagent.
 - `untested-change` is a `standard` item: a source change with no test is ordinary work, not a domain risk.
 
 ## 0.1.2 — 2026-11-12

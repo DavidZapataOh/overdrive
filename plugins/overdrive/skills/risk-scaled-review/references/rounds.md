@@ -21,9 +21,9 @@ There is no second wave. A second round of findings means the first review was i
 
 ## Critical lane
 
-Per task, at most 3 rounds, run by the executor: rounds 1 and 2 resume the same builder with the findings file path, round 3 is a fresh builder on `opus`. [fix loop](../../risk-scaled-execution/references/fix-loop.md) A whole critical slice gets one `final-reviewer`, one fix wave and one scoped re-review.
+Per task, one correction and one scoped re-review, run by the executor in its own session: `Task N: fixing round 1` in the ledger first, the P0 and P1 findings fixed inline, then one `critical-reviewer` pass on only the correction. [fix loop](../../risk-scaled-execution/references/fix-loop.md) A critical slice with two or more critical tasks gets one `final-reviewer`, one fix wave and one scoped re-review.
 
-Stop an agent only when it loops: the same check fails 3 attempts in a row, or 3 rounds pass without fewer failures.
+Stop and rule when the same check fails 3 attempts in a row.
 
 ## When rounds run out
 

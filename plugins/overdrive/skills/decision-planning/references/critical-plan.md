@@ -7,7 +7,7 @@
 - Task shape
 - Approval
 
-A critical change is planned in full and approved before any build step. The plan is complete enough that a builder with no memory of the conversation can do each task from its brief.
+A critical change is planned in full and approved before any build step. The plan is complete enough that an executor with no memory of the conversation can do each task from its brief.
 
 ## Header
 

@@ -13,8 +13,8 @@ Critical slice with one critical task: that task's critical review, with its cor
 Critical slice with two or more critical tasks:
 
 1. Package for the whole slice with `--lane critical --require-green`; dispatch `overdrive:final-reviewer` with the package path, `model: opus` when any task's items include money, data-migration, tenant-isolation or secrets. It is refused (exit 65) while a task marked critical has had no `overdrive:critical-reviewer` dispatch (with `Task N` in its description) since its last `in-progress`, `implemented` or `fixing round` line: run that task's critical review first.
-2. Fix all its P0 and P1 findings inline in one wave, one commit per finding.
-3. One scoped re-review: a new package whose base is the head the final review read, so the reviewer reads only the fix wave. `overdrive:critical-reviewer` for this pass.
+2. Fix all its P0 and P1 findings inline in one wave, one commit per finding. Before the wave, write `Task N: fixing round 1` for every task the wave touches, so each needs its re-review again.
+3. One scoped re-review: a new package whose base is the head the final review read, so the reviewer reads only the fix wave. `overdrive:critical-reviewer` for this pass, with every task the wave touched in its description (`Re-review Tasks 1, 2`).
 4. Anything still open follows step 6 of the correction (Ruling or stop condition). There is no second wave.
 
 The Risk line and `OD ledger rulings` go in the summary after the last review passes.

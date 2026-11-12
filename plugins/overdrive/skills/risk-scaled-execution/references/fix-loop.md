@@ -17,6 +17,6 @@ After a critical task is built and `implemented`:
 
 ## Loops and CI
 
-Stop and rule when the same test or check fails 3 consecutive attempts: the ledger gets what was tried and why each attempt failed. Watch CI in the foreground (`gh run watch <id> --exit-status`) and fix a red run with its failing log excerpt.
+Stop and rule when the same test or check fails 3 consecutive attempts: the ledger gets what was tried and why each attempt failed. CI is watched as release-gates says; a red run is fixed with its failing log excerpt.
 
 Never argue a finding down because the author's report explains it; severity follows the failure mode. Never edit the reviewer's findings file.
